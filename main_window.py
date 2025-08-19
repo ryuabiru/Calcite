@@ -12,10 +12,13 @@ from PySide6.QtWidgets import (
     QMenu,
     QLineEdit,
     QApplication,
+    QDialog,      # ★--- 結果表示用にQDialogを追加 ---★
+    QVBoxLayout,  # ★--- 結果表示用にQVBoxLayoutを追加 ---★
+    QTextEdit,    # ★--- 結果表示用にQTextEditを追加 ---★
 )
 from PySide6.QtGui import QAction, QActionGroup, QIcon
 from PySide6.QtCore import Qt
-from scipy.stats import ttest_ind
+from scipy.stats import ttest_ind, f_oneway # ★--- f_oneway を ttest_ind の隣に追加 ---★
 from scipy.stats import linregress
 import io
 
@@ -24,6 +27,7 @@ from graph_widget import GraphWidget
 from properties_widget import PropertiesWidget
 from restructure_dialog import RestructureDialog
 from calculate_dialog import CalculateDialog
+from anova_dialog import AnovaDialog
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -194,9 +198,18 @@ class MainWindow(QMainWindow):
         
         # 解析メニュー
         analysis_menu = menu_bar.addMenu("&Analysis")
+        
         ttest_action = QAction("&Independent t-test...", self)
         ttest_action.triggered.connect(self.perform_t_test)
         analysis_menu.addAction(ttest_action)
+        
+        # ★--- ANOVAのアクションを追加 ---★
+        anova_action = QAction("&One-way ANOVA...", self)
+        anova_action.triggered.connect(self.perform_one_way_anova)
+        analysis_menu.addAction(anova_action)
+        
+        analysis_menu.addSeparator() # 見た目の区切り線を追加
+
         linreg_action = QAction("&Linear Regression...", self)
         linreg_action.triggered.connect(self.perform_linear_regression)
         analysis_menu.addAction(linreg_action)
@@ -427,6 +440,79 @@ class MainWindow(QMainWindow):
         ax.legend() # 凡例を表示
         self.graph_widget.canvas.draw() # キャンバスを再描画
         
+    # ★--- 一元配置分散分析を実行するメソッドを追加 ---★
+    def perform_one_way_anova(self):
+        if not hasattr(self, 'model'):
+            QMessageBox.warning(self, "Warning", "Please load data first.")
+            return
+
+        df = self.model._data
+        dialog = AnovaDialog(df.columns, self)
+
+        if dialog.exec():
+            settings = dialog.get_settings()
+            value_col = settings['value_col']
+            group_col = settings['group_col']
+
+            if not value_col or not group_col:
+                QMessageBox.warning(self, "Warning", "Please select both value and group columns.")
+                return
+            
+            if value_col == group_col:
+                QMessageBox.warning(self, "Warning", "Value and group columns cannot be the same.")
+                return
+
+            try:
+                # グループごとにデータを準備
+                groups = df[group_col].unique()
+                # 3グループ未満の場合は警告
+                if len(groups) < 3:
+                    QMessageBox.warning(self, "Warning", "ANOVA requires at least 3 groups.")
+                    return
+                    
+                samples = [df[value_col][df[group_col] == g].dropna() for g in groups]
+                
+                # ANOVAを実行
+                f_stat, p_value = f_oneway(*samples)
+
+                # 結果をフォーマット
+                result_text = "One-way ANOVA Results\n"
+                result_text += "======================\n\n"
+                result_text += f"Comparing '{value_col}' across groups in '{group_col}'.\n\n"
+                result_text += f"Number of groups: {len(groups)}\n"
+                result_text += f"F-statistic: {f_stat:.4f}\n"
+                result_text += f"p-value: {p_value:.4f}\n\n"
+
+                if p_value < 0.05:
+                    result_text += "Conclusion: There is a statistically significant difference between group means (p < 0.05)."
+                else:
+                    result_text += "Conclusion: There is no statistically significant difference between group means (p >= 0.05)."
+
+                # 結果を専用のダイアログで表示
+                self.show_results_dialog("ANOVA Result", result_text)
+
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to perform ANOVA: {e}")
+
+    # ★--- 結果表示用の汎用ダイアログメソッドを追加 ---★
+    def show_results_dialog(self, title, text):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setMinimumSize(400, 300)
+        
+        layout = QVBoxLayout(dialog)
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setText(text)
+        
+        # フォントを等幅フォントにすると見やすい
+        font = text_edit.font()
+        font.setFamily("Courier New")
+        text_edit.setFont(font)
+        
+        layout.addWidget(text_edit)
+        dialog.exec()
+
     def update_graph_properties(self, properties):
         ax = self.graph_widget.ax
         
