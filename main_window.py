@@ -12,34 +12,18 @@ from PySide6.QtWidgets import (
     QMenu,
     QLineEdit,
     QApplication,
-    QDialog,      # ★--- 結果表示用にQDialogを追加 ---★
-    QVBoxLayout,  # ★--- 結果表示用にQVBoxLayoutを追加 ---★
-    QTextEdit,    # ★--- 結果表示用にQTextEditを追加 ---★
-)
-from PySide6.QtGui import QAction, QActionGroup, QIcon
-from PySide6.QtCore import Qt
-# main_window.py
-
-import pandas as pd
-import numpy as np
-from PySide6.QtWidgets import (
-    QMainWindow, 
-    QSplitter, 
-    QTableView,
-    QFileDialog,
-    QMessageBox,
-    QToolBar,
-    QMenu,
-    QLineEdit,
-    QApplication,
     QDialog,
     QVBoxLayout,
     QTextEdit,
 )
-from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtGui import QAction, QActionGroup, QIcon
 from PySide6.QtCore import Qt
 from scipy.stats import ttest_ind, f_oneway, linregress
 import io
+
+from scipy.stats import ttest_ind, f_oneway, linregress
+from scipy.optimize import curve_fit
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
 
 from pandas_model import PandasModel
 from graph_widget import GraphWidget
@@ -47,6 +31,7 @@ from properties_widget import PropertiesWidget
 from restructure_dialog import RestructureDialog
 from calculate_dialog import CalculateDialog
 from anova_dialog import AnovaDialog
+from fitting_dialog import FittingDialog
 
 class MainWindow(QMainWindow):
     """
@@ -63,6 +48,7 @@ class MainWindow(QMainWindow):
         
         self.current_graph_type = 'scatter'
         self.header_editor = None
+        self.fit_curve = None
         
         self._create_menu_bar()
         self._create_toolbar()
@@ -250,6 +236,10 @@ class MainWindow(QMainWindow):
         linreg_action = QAction("&Linear Regression...", self)
         linreg_action.triggered.connect(self.perform_linear_regression)
         analysis_menu.addAction(linreg_action)
+        
+        fitting_action = QAction("&Non-linear Regression...", self)
+        fitting_action.triggered.connect(self.perform_fitting)
+        analysis_menu.addAction(fitting_action)
 
     def paste_from_clipboard(self):
         """クリップボードからタブ区切りテキストを読み込み、テーブルに貼り付ける。"""
@@ -385,6 +375,89 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error opening file: {e}")
 
+    # シグモイド曲線（4PL）の関数定義
+    def sigmoid_4pl(self, x, bottom, top, hill_slope, ec50):
+        """4パラメータロジスティック（4PL）モデルの関数"""
+        # log-transformed x (concentration) を想定
+        return bottom + (top - bottom) / (1 + 10**((np.log10(ec50) - x) * hill_slope))
+
+    # 非線形フィッティングを実行するメソッドを追加
+    def perform_fitting(self):
+        if not hasattr(self, 'model'):
+            QMessageBox.warning(self, "Warning", "Please load data first.")
+            return
+
+        df = self.model._data
+        dialog = FittingDialog(df.columns, self)
+
+        if dialog.exec():
+            settings = dialog.get_settings()
+            x_col, y_col = settings['x_col'], settings['y_col']
+
+            if not x_col or not y_col:
+                QMessageBox.warning(self, "Warning", "Please select both X and Y columns.")
+                return
+
+            try:
+                # データの準備 (欠損値を除外し、Xをlog変換)
+                fit_df = df[[x_col, y_col]].dropna().copy()
+                if (fit_df[x_col] <= 0).any():
+                    QMessageBox.warning(self, "Warning", "X-axis column contains non-positive values. Log transformation cannot be applied.")
+                    return
+                
+                fit_df['log_x'] = np.log10(fit_df[x_col])
+                
+                x_data = fit_df['log_x']
+                y_data = fit_df[y_col]
+
+                # パラメータの初期値を推定
+                p0 = [y_data.min(), y_data.max(), 1.0, np.median(fit_df[x_col])]
+                
+                # curve_fitでフィッティングを実行
+                params, _ = curve_fit(self.sigmoid_4pl, x_data, y_data, p0=p0, maxfev=10000)
+                
+                bottom, top, hill_slope, ec50 = params
+                
+                # R-squared (決定係数) を計算
+                y_pred = self.sigmoid_4pl(x_data, *params)
+                ss_res = np.sum((y_data - y_pred) ** 2)
+                ss_tot = np.sum((y_data - np.mean(y_data)) ** 2)
+                r_squared = 1 - (ss_res / ss_tot)
+
+                # 結果をフォーマット
+                result_text = "Non-linear Regression Results (Sigmoidal 4PL)\n"
+                result_text += "==============================================\n\n"
+                result_text += f"Top: {top:.4f}\n"
+                result_text += f"Bottom: {bottom:.4f}\n"
+                result_text += f"Hill Slope: {hill_slope:.4f}\n"
+                result_text += f"EC50: {ec50:.4f}\n\n"
+                result_text += f"R-squared: {r_squared:.4f}\n"
+                
+                self.show_results_dialog("Fitting Result", result_text)
+
+                # グラフに曲線を描画
+                ax = self.graph_widget.ax
+                # 既存の線をクリア
+                if self.regression_line and self.regression_line in ax.lines:
+                    self.regression_line.remove()
+                    self.regression_line = None
+                if self.fit_curve and self.fit_curve in ax.lines:
+                    self.fit_curve.remove()
+                
+                # 滑らかな曲線のためのX値を生成
+                x_fit = np.linspace(x_data.min(), x_data.max(), 200)
+                y_fit = self.sigmoid_4pl(x_fit, *params)
+                
+                # X軸を元のスケールに戻してプロット
+                self.fit_curve, = ax.plot(10**x_fit, y_fit, color='blue', label=f'4PL Fit (R²={r_squared:.3f})')
+                ax.set_xscale('log') # X軸を対数スケールに設定
+                ax.legend()
+                self.graph_widget.canvas.draw()
+
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to perform fitting: {e}")
+    
+
     def perform_t_test(self):
         """
         テーブルで選択された2つの列に対して独立t検定を実行し、結果をダイアログで表示する。
@@ -421,11 +494,8 @@ class MainWindow(QMainWindow):
 
         self.show_results_dialog("t-test Result", result_text)
 
+    # --- ★ perform_linear_regressionを修正 ---
     def perform_linear_regression(self):
-        """
-        テーブルで選択された2つの列（X, Y）に対して線形回帰分析を実行し、
-        回帰直線をグラフに描画する。
-        """
         if not hasattr(self, 'model'):
             QMessageBox.warning(self, "Warning", "Please load data first.")
             return
@@ -449,12 +519,17 @@ class MainWindow(QMainWindow):
         y_line = slope * x_line + intercept
 
         ax = self.graph_widget.ax
-        if hasattr(self, 'regression_line') and self.regression_line in ax.lines:
+        # --- 既存の線をクリア ---
+        if self.regression_line and self.regression_line in ax.lines:
             self.regression_line.remove()
+        if self.fit_curve and self.fit_curve in ax.lines: # ★ 追加
+            self.fit_curve.remove()
+            self.fit_curve = None
             
         self.regression_line, = ax.plot(x_line, y_line, color='red', linestyle='--', 
                                          label=f'R² = {r_squared:.4f}')
         
+        ax.set_xscale('linear') # ★ 軸を線形スケールに戻す
         ax.legend()
         self.graph_widget.canvas.draw()
         
@@ -557,6 +632,10 @@ class MainWindow(QMainWindow):
         df = self.model._data
         ax = self.graph_widget.ax
         ax.clear()
+        
+        # 既存の線オブジェクトへの参照をリセット
+        self.regression_line = None
+        self.fit_curve = None
 
         # プロパティパネルから描画設定を取得
         y_col = self.properties_panel.y_axis_combo.currentText()
@@ -581,6 +660,7 @@ class MainWindow(QMainWindow):
             self._draw_bar_chart(ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter)
         
         # グラフの再描画
+        ax.set_xscale('linear') # デフォルトは線形スケールに
         self.update_graph_properties(self.properties_panel.on_properties_changed() or {})
         self.graph_widget.fig.tight_layout()
         self.graph_widget.canvas.draw()
