@@ -8,7 +8,9 @@ from PySide6.QtWidgets import (
     QTableView,
     QFileDialog,
     QMessageBox,
-    QToolBar, # ★ ツールバーのために追加
+    QToolBar,
+    QMenu,
+    QLineEdit,
 )
 from PySide6.QtGui import QAction, QActionGroup, QIcon
 from PySide6.QtGui import QAction
@@ -27,6 +29,7 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 1024, 512)
         
         self.current_graph_type = 'scatter'
+        self.header_editor = None
         
         self._create_menu_bar()
         self._create_toolbar()
@@ -37,6 +40,9 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.table_view)
         
         self.graph_widget = GraphWidget()
+        # 右クリックメニューを有効にする
+        self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table_view.customContextMenuRequested.connect(self.show_table_context_menu)
         splitter.addWidget(self.graph_widget)
         
         splitter.setSizes([400, 800])
@@ -45,6 +51,92 @@ class MainWindow(QMainWindow):
         self.properties_panel = PropertiesWidget()
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.properties_panel)
         self.properties_panel.propertiesChanged.connect(self.update_graph_properties)
+
+    # ★--- ヘッダー編集用のメソッドを2つ追加 ---★
+    def edit_header(self, logicalIndex):
+        # 既存のエディタがあれば閉じる
+        if self.header_editor:
+            self.header_editor.close()
+
+        header = self.table_view.horizontalHeader()
+        model = self.table_view.model()
+        
+        # 編集用のQLineEditを作成し、現在のヘッダー名を設定
+        self.header_editor = QLineEdit(parent=header)
+        self.header_editor.setText(model.headerData(logicalIndex, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole))
+        
+        # エディタをヘッダーの正しい位置に表示
+        self.header_editor.setGeometry(header.sectionViewportPosition(logicalIndex), 0, header.sectionSize(logicalIndex), header.height())
+        self.header_editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # 編集が完了したらfinish_header_editを呼び出す
+        self.header_editor.editingFinished.connect(lambda: self.finish_header_edit(logicalIndex))
+        
+        self.header_editor.show()
+        self.header_editor.setFocus()
+
+    def finish_header_edit(self, logicalIndex):
+        if self.header_editor:
+            new_text = self.header_editor.text()
+            self.table_view.model().setHeaderData(logicalIndex, Qt.Orientation.Horizontal, new_text, Qt.ItemDataRole.EditRole)
+            
+            # エディタを閉じて削除
+            self.header_editor.close()
+            self.header_editor = None
+
+    def show_table_context_menu(self, position):
+        if not hasattr(self, 'model'):
+            return
+
+        menu = QMenu()
+        
+        insert_row_action = QAction("Insert Row Above", self)
+        insert_row_action.triggered.connect(lambda: self.insert_row())
+        menu.addAction(insert_row_action)
+
+        remove_row_action = QAction("Remove Selected Row(s)", self)
+        remove_row_action.triggered.connect(lambda: self.remove_row())
+        menu.addAction(remove_row_action)
+
+        menu.addSeparator()
+
+        insert_col_action = QAction("Insert Column Left", self)
+        insert_col_action.triggered.connect(lambda: self.insert_col())
+        menu.addAction(insert_col_action)
+
+        remove_col_action = QAction("Remove Selected Column(s)", self)
+        remove_col_action.triggered.connect(lambda: self.remove_col())
+        menu.addAction(remove_col_action)
+        
+        # メニューをカーソル位置に表示
+        menu.exec(self.table_view.viewport().mapToGlobal(position))
+
+    def insert_row(self):
+        selected_index = self.table_view.currentIndex()
+        row = selected_index.row() if selected_index.isValid() else self.model.rowCount()
+        self.model.insertRows(row, 1)
+
+    def remove_row(self):
+        selected_rows = sorted(list(set(index.row() for index in self.table_view.selectionModel().selectedRows())))
+        if not selected_rows:
+            return
+        
+        # 後ろから削除しないとインデックスがずれる
+        for row in reversed(selected_rows):
+            self.model.removeRows(row, 1)
+
+    def insert_col(self):
+        selected_index = self.table_view.currentIndex()
+        col = selected_index.column() if selected_index.isValid() else self.model.columnCount()
+        self.model.insertColumns(col, 1)
+
+    def remove_col(self):
+        selected_cols = sorted(list(set(index.column() for index in self.table_view.selectionModel().selectedColumns())))
+        if not selected_cols:
+            return
+
+        for col in reversed(selected_cols):
+            self.model.removeColumns(col, 1)
 
     def _create_toolbar(self):
         toolbar = QToolBar("Graph Type")
@@ -88,6 +180,7 @@ class MainWindow(QMainWindow):
         linreg_action.triggered.connect(self.perform_linear_regression)
         analysis_menu.addAction(linreg_action)
 
+
     def open_csv_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Open CSV File", "", "CSV Files (*.csv);;All Files (*)")
         if file_path:
@@ -95,7 +188,14 @@ class MainWindow(QMainWindow):
                 df = pd.read_csv(file_path)
                 self.model = PandasModel(df)
                 self.table_view.setModel(self.model)
+                
+                # シグナルとスロットを接続
                 self.table_view.selectionModel().selectionChanged.connect(self.update_graph)
+                self.model.dataChanged.connect(self.update_graph) 
+                
+                # ★--- ヘッダーのデータ変更もグラフ更新に接続 ---★
+                self.model.headerDataChanged.connect(self.update_graph)
+
             except Exception as e:
                 print(f"Error opening file: {e}")
 
