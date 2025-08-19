@@ -4,24 +4,30 @@ import pandas as pd
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
 
 class PandasModel(QAbstractTableModel):
+    """
+    pandasのDataFrameをQTableViewで表示・編集するためのモデルクラス。
+    QAbstractTableModelを継承し、必要なメソッドをオーバーライドしている。
+    """
     def __init__(self, data):
         super().__init__()
         self._data = data
 
     def rowCount(self, parent=None):
+        """行数を返す"""
         return self._data.shape[0]
 
     def columnCount(self, parent=None):
+        """列数を返す"""
         return self._data.shape[1]
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
-        # The hyphen is corrected to a period here
+        """指定されたインデックスとロールに対応するデータを返す"""
         if index.isValid() and role == Qt.ItemDataRole.DisplayRole:
             return str(self._data.iloc[index.row(), index.column()])
         return None
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
-        # The hyphen is corrected to a period here
+        """ヘッダーのデータを返す"""
         if role == Qt.ItemDataRole.DisplayRole:
             if orientation == Qt.Orientation.Horizontal:
                 return str(self._data.columns[section])
@@ -29,8 +35,10 @@ class PandasModel(QAbstractTableModel):
                 return str(self._data.index[section])
         return None
 
-    # ★--- カラム名変更を受け付けるメソッドを追加 ---★
     def setHeaderData(self, section, orientation, value, role):
+        """
+        ヘッダーのデータ（カラム名）が変更されたときに呼び出される。
+        """
         if role == Qt.ItemDataRole.EditRole and orientation == Qt.Orientation.Horizontal:
             new_columns = self._data.columns.tolist()
             new_columns[section] = value
@@ -40,13 +48,17 @@ class PandasModel(QAbstractTableModel):
         return super().setHeaderData(section, orientation, value, role)
 
     def setData(self, index, value, role):
-        # The hyphen is corrected to a period here
+        """
+        ユーザーによってセルのデータが編集されたときに呼び出される。
+        """
         if role == Qt.ItemDataRole.EditRole:
+            # 元のデータの型を維持しようと試みる
             try:
                 original_value = self._data.iloc[index.row(), index.column()]
                 value = type(original_value)(value)
                 self._data.iloc[index.row(), index.column()] = value
             except (ValueError, TypeError):
+                # 型変換に失敗した場合は、そのままの値を設定
                 self._data.iloc[index.row(), index.column()] = value
             
             self.dataChanged.emit(index, index)
@@ -54,19 +66,25 @@ class PandasModel(QAbstractTableModel):
         return False
 
     def flags(self, index):
+        """すべてのセルを編集可能にするためのフラグを返す"""
         return super().flags(index) | Qt.ItemFlag.ItemIsEditable
 
-    # ★--- 列が追加/削除されたことをビューに通知するメソッドを追加 ---★
     def refresh_model(self):
+        """
+        DataFrameの構造が大きく変更された後（列の追加・削除など）に
+        ビュー全体を更新するために呼び出す。
+        """
         self.layoutChanged.emit()
 
     def insertRows(self, row, count, parent=QModelIndex()):
+        """指定された位置に行を挿入する"""
         self.beginInsertRows(parent, row, row + count - 1)
         
         # DataFrameの途中に空行を挿入
         df_top = self._data.iloc[:row]
         df_bottom = self._data.iloc[row:]
-        df_new = pd.DataFrame(index=range(count), columns=self._data.columns).fillna('') # 空の行を作成
+        # 空の行を作成（データ型を維持するためNaNではなく空文字で埋める）
+        df_new = pd.DataFrame(index=range(count), columns=self._data.columns).fillna('')
         
         self._data = pd.concat([df_top, df_new, df_bottom]).reset_index(drop=True)
         
@@ -74,6 +92,7 @@ class PandasModel(QAbstractTableModel):
         return True
 
     def removeRows(self, row, count, parent=QModelIndex()):
+        """指定された位置の行を削除する"""
         self.beginRemoveRows(parent, row, row + count - 1)
         
         # 指定された行を削除
@@ -84,10 +103,12 @@ class PandasModel(QAbstractTableModel):
         return True
 
     def insertColumns(self, col, count, parent=QModelIndex()):
+        """指定された位置に列を挿入する"""
         self.beginInsertColumns(parent, col, col + count - 1)
 
         # 新しい列を挿入
         for i in range(count):
+            # 重複しないデフォルトの列名を作成
             new_col_name = f"Unnamed_{len(self._data.columns) + i}"
             self._data.insert(col + i, new_col_name, '')
 
@@ -95,6 +116,7 @@ class PandasModel(QAbstractTableModel):
         return True
 
     def removeColumns(self, col, count, parent=QModelIndex()):
+        """指定された位置の列を削除する"""
         self.beginRemoveColumns(parent, col, col + count - 1)
 
         # 指定された列を削除
