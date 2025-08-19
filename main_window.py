@@ -17,6 +17,7 @@ from PySide6.QtGui import QAction, QActionGroup, QIcon
 from PySide6.QtCore import Qt
 from scipy.stats import ttest_ind
 from scipy.stats import linregress
+import io
 
 from pandas_model import PandasModel
 from graph_widget import GraphWidget
@@ -170,18 +171,23 @@ class MainWindow(QMainWindow):
 
     def _create_menu_bar(self):
         menu_bar = self.menuBar()
-        
+
         file_menu = menu_bar.addMenu("&File")
         open_action = QAction("&Open CSV...", self)
         open_action.triggered.connect(self.open_csv_file)
         file_menu.addAction(open_action)
+        
+        # ★--- Editメニューを追加 ---★
+        edit_menu = menu_bar.addMenu("&Edit")
+        paste_action = QAction("&Paste", self)
+        paste_action.triggered.connect(self.paste_from_clipboard)
+        edit_menu.addAction(paste_action)
 
         data_menu = menu_bar.addMenu("&Data")
         restructure_action = QAction("&Restructure (Wide to Long)...", self)
         restructure_action.triggered.connect(self.show_restructure_dialog)
         data_menu.addAction(restructure_action)
         
-        # ★--- 新しいメニュー項目を追加 ---★
         calculate_action = QAction("&Calculate New Column...", self)
         calculate_action.triggered.connect(self.show_calculate_dialog)
         data_menu.addAction(calculate_action)
@@ -194,6 +200,32 @@ class MainWindow(QMainWindow):
         linreg_action = QAction("&Linear Regression...", self)
         linreg_action.triggered.connect(self.perform_linear_regression)
         analysis_menu.addAction(linreg_action)
+
+    # ★--- クリップボードからペーストするメソッドを追加 ---★
+    def paste_from_clipboard(self):
+        try:
+            clipboard = QApplication.clipboard()
+            text = clipboard.text()
+
+            if not text:
+                return
+
+            # クリップボードのテキストをファイルのように扱ってpandasで読み込む
+            # separator='\t' でタブ区切り文字を指定
+            df = pd.read_csv(io.StringIO(text), sep='\t')
+
+            self.model = PandasModel(df)
+            self.table_view.setModel(self.model)
+            
+            self.properties_panel.set_columns(df.columns)
+            
+            self.table_view.selectionModel().selectionChanged.connect(self.update_graph)
+            self.model.dataChanged.connect(self.update_graph) 
+            self.model.headerDataChanged.connect(self.update_graph)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to paste from clipboard: {e}")
+
 
     # ★--- ダイアログ表示と計算実行のメソッドを2つ追加 ---★
     def show_calculate_dialog(self):
