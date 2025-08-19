@@ -1,4 +1,9 @@
-Treatment,Replicate_1,Replicate_2,Replicate_3
-Control,5.2,5.5,5.1
-DrugA,8.1,8.3,8.2
-DrugB,7.5,7.2,7.7
+病因,患者,薬剤,濃度,測定値_1,測定値_2,測定値_3
+疾患A,Patient01,DrugX,10,15.2,15.5,15.1
+疾患A,Patient01,DrugX,20,25.8,26.1,25.9
+疾患A,Patient02,DrugX,10,14.8,14.5,14.7
+疾患A,Patient02,DrugX,20,24.9,25.2,25.3
+疾患B,Patient03,DrugY,10,18.3,18.1,18.4
+疾患B,Patient03,DrugY,20,32.1,32.5,32.0
+疾患B,Patient04,DrugY,10,17.9,18.2,18.0
+疾患B,Patient04,DrugY,20,31.5,31.7,31.9

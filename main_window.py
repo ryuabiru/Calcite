@@ -11,10 +11,9 @@ from PySide6.QtWidgets import (
     QToolBar,
     QMenu,
     QLineEdit,
-    qApp,
+    QApplication,
 )
 from PySide6.QtGui import QAction, QActionGroup, QIcon
-from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt
 from scipy.stats import ttest_ind
 from scipy.stats import linregress
@@ -211,7 +210,6 @@ class MainWindow(QMainWindow):
     def restructure_data(self, settings):
         try:
             df = self.model._data
-            # pandas.melt を使ってデータを変換
             new_df = pd.melt(
                 df,
                 id_vars=settings['id_vars'],
@@ -220,8 +218,6 @@ class MainWindow(QMainWindow):
                 value_name=settings['value_name']
             )
 
-            # ★--- 変換後のデータを「新しいウィンドウ」で開く ---★
-            # ユーザーが元データと変換後データを比較できるようにするため
             new_window = MainWindow()
             new_window.model = PandasModel(new_df)
             new_window.table_view.setModel(new_window.model)
@@ -229,10 +225,13 @@ class MainWindow(QMainWindow):
             new_window.setWindowTitle(self.windowTitle() + " [Restructured]")
             new_window.show()
             
-            # このリストに新しいウィンドウを追加して、GCに回収されるのを防ぐ
-            if not hasattr(qApp, 'main_windows'):
-                qApp.main_windows = []
-            qApp.main_windows.append(new_window)
+            # ★--- ここから修正 ---★
+            # qApp の代わりに QApplication.instance() を使用する
+            app = QApplication.instance()
+            if not hasattr(app, 'main_windows'):
+                app.main_windows = []
+            app.main_windows.append(new_window)
+            # ★--- ここまで修正 ---★
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to restructure data: {e}")
