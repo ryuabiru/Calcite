@@ -7,21 +7,22 @@ from PySide6.QtWidgets import (
     QSplitter, 
     QTableView,
     QFileDialog,
-    QMessageBox, # ポップアップ表示のために追加
+    QMessageBox,
 )
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt
-from scipy.stats import ttest_ind # t検定のために追加
+from scipy.stats import ttest_ind
 from scipy.stats import linregress
 
 from pandas_model import PandasModel
 from graph_widget import GraphWidget
+from properties_widget import PropertiesWidget
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Calcite")
-        self.setGeometry(100, 100, 1024, 512) # From 1200, 800
+        self.setGeometry(100, 100, 1024, 512)
         
         self._create_menu_bar()
 
@@ -35,6 +36,10 @@ class MainWindow(QMainWindow):
         
         splitter.setSizes([400, 800])
         self.setCentralWidget(splitter)
+        
+        self.properties_panel = PropertiesWidget()
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.properties_panel)
+        self.properties_panel.propertiesChanged.connect(self.update_graph_properties)
 
     def _create_menu_bar(self):
         menu_bar = self.menuBar()
@@ -50,11 +55,9 @@ class MainWindow(QMainWindow):
         ttest_action.triggered.connect(self.perform_t_test)
         analysis_menu.addAction(ttest_action)
 
-        # ★--- 線形回帰アクションを追加 ---★
         linreg_action = QAction("&Linear Regression...", self)
         linreg_action.triggered.connect(self.perform_linear_regression)
         analysis_menu.addAction(linreg_action)
-        # ★--------------------------★
 
     def open_csv_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Open CSV File", "", "CSV Files (*.csv);;All Files (*)")
@@ -109,7 +112,6 @@ class MainWindow(QMainWindow):
 
         QMessageBox.information(self, "t-test Result", result_text)
 
-# ★--- 線形回帰を実行するメソッドを追加 ---★
     def perform_linear_regression(self):
         if not hasattr(self, 'model'):
             QMessageBox.warning(self, "Warning", "Please load data first.")
@@ -154,8 +156,20 @@ class MainWindow(QMainWindow):
         ax.legend() # 凡例を表示
         self.graph_widget.canvas.draw() # キャンバスを再描画
         
+    def update_graph_properties(self, properties):
+        ax = self.graph_widget.ax
+        
+        if 'title' in properties:
+            ax.set_title(properties['title'])
+        if 'xlabel' in properties:
+            ax.set_xlabel(properties['xlabel'])
+        if 'ylabel' in properties:
+            ax.set_ylabel(properties['ylabel'])
+        
+        self.graph_widget.fig.tight_layout()
+        self.graph_widget.canvas.draw()
+        
     def update_graph(self):
-        # ... (このメソッドに変更はありません) ...
         if not hasattr(self, 'model'):
             return
 
