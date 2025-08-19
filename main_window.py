@@ -43,6 +43,8 @@ class MainWindow(QMainWindow):
         # 右クリックメニューを有効にする
         self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self.show_table_context_menu)
+        self.table_view.horizontalHeader().sectionDoubleClicked.connect(self.edit_header)
+        
         splitter.addWidget(self.graph_widget)
         
         splitter.setSizes([400, 800])
