@@ -2,24 +2,25 @@
 
 from PySide6.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QLabel, QLineEdit, 
-    QComboBox, QFormLayout, QPushButton, QColorDialog
+    QComboBox, QFormLayout, QPushButton, QColorDialog, QHBoxLayout
 )
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QColor
 
 class PropertiesWidget(QDockWidget):
-    # A signal that will be emitted when any property changes
-    # It will send a dictionary like {'title': 'New Title'}
     propertiesChanged = Signal(dict)
-    graphUpdateRequest = Signal()
-    
+    subgroupColumnChanged = Signal(str)
+
     def __init__(self, parent=None):
         super().__init__("Properties", parent)
 
-        # Create the main widget and layout for the panel
+        self.current_color = None
+        self.subgroup_colors = {}
+        self.subgroup_widgets = {}
+
         main_widget = QWidget()
         layout = QFormLayout(main_widget)
-        layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows) # ラベルが長い場合に折り返す
+        layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
 
         # --- Graph Title & Labels ---
         self.title_edit = QLineEdit()
@@ -34,13 +35,17 @@ class PropertiesWidget(QDockWidget):
         self.yaxis_edit.editingFinished.connect(self.on_properties_changed)
         layout.addRow(QLabel("Y-Axis Label:"), self.yaxis_edit)
 
-        # ★--- ここからグラフ描画UIを追加 ---★
         layout.addRow(QLabel("---")) # セパレーター
 
         self.y_axis_combo = QComboBox()
         self.x_axis_combo = QComboBox()
         self.subgroup_combo = QComboBox()
-        
+
+        self.subgroup_combo.currentTextChanged.connect(self.subgroupColumnChanged.emit)
+        layout.addRow(QLabel("Y-Axis (Value):"), self.y_axis_combo)
+        layout.addRow(QLabel("X-Axis (Group):"), self.x_axis_combo)
+        layout.addRow(QLabel("Sub-group (Color):"), self.subgroup_combo)
+
         # ドロップダウンが変更されたらグラフ更新をリクエストする
         self.y_axis_combo.currentTextChanged.connect(self.graphUpdateRequest.emit)
         self.x_axis_combo.currentTextChanged.connect(self.graphUpdateRequest.emit)
@@ -50,7 +55,6 @@ class PropertiesWidget(QDockWidget):
         layout.addRow(QLabel("X-Axis (Group):"), self.x_axis_combo)
         layout.addRow(QLabel("Sub-group (Color):"), self.subgroup_combo)
 
-        # ★--- ここからグラフスタイルUIを追加 ---★
         layout.addRow(QLabel("---"))
 
         # マーカースタイル選択
@@ -61,24 +65,54 @@ class PropertiesWidget(QDockWidget):
         self.marker_combo.currentTextChanged.connect(self.graphUpdateRequest.emit)
         layout.addRow(QLabel("Marker Style:"), self.marker_combo)
 
-        # 色選択
-        self.color_button = QPushButton("Select Color")
-        self.color_button.clicked.connect(self.open_color_dialog)
-        layout.addRow(QLabel("Graph Color:"), self.color_button)
-        # ★--- ここまで追加 ---★
+        self.single_color_button = QPushButton("Select Color")
+        self.single_color_button.clicked.connect(self.open_single_color_dialog)
+        layout.addRow(QLabel("Graph Color (Single):"), self.single_color_button)
+
+        self.subgroup_color_layout = QFormLayout()
+        layout.addRow(QLabel("Graph Color (Sub-group):"))
+        layout.addRow(self.subgroup_color_layout)
+
+        layout.addRow(QLabel("---"))
+        update_button = QPushButton("Update Graph")
+        update_button.clicked.connect(self.graphUpdateRequest.emit)
+        layout.addRow(update_button)
 
         self.setWidget(main_widget)
         
-    # ★--- 色選択ダイアログを開くメソッドを追加 ---★
-    def open_color_dialog(self):
+    def open_single_color_dialog(self):
         color = QColorDialog.getColor()
         if color.isValid():
-            self.current_color = color.name() # 色名を #RRGGBB 形式で保存
-            # ボタンの背景色を選択した色に変更して、どの色が選ばれているか分かりやすくする
-            self.color_button.setStyleSheet(f"background-color: {self.current_color};")
-            self.graphUpdateRequest.emit() # グラフ更新をリクエスト
+            self.current_color = color.name()
+            self.single_color_button.setStyleSheet(f"background-color: {self.current_color};")
 
-    # ★--- カラム名をドロップダウンに設定するメソッドを追加 ---★
+    def open_subgroup_color_dialog(self, category):
+        color = QColorDialog.getColor()
+        if color.isValid():
+            color_name = color.name()
+            self.subgroup_colors[category] = color_name
+            # 対応するボタンの色を更新
+            if category in self.subgroup_widgets:
+                self.subgroup_widgets[category].setStyleSheet(f"background-color: {color_name};")
+
+    def update_subgroup_color_ui(self, categories):
+        # 既存のウィジェットをクリア
+        for i in reversed(range(self.subgroup_color_layout.count())): 
+            self.subgroup_color_layout.itemAt(i).widget().setParent(None)
+        self.subgroup_widgets.clear()
+        self.subgroup_colors.clear()
+
+        # カテゴリごとに色選択ボタンを作成
+        for category in categories:
+            label = QLabel(f"{category}:")
+            button = QPushButton("Select Color")
+            # functools.partial を使うと、ループ変数(category)を正しく渡せる
+            from functools import partial
+            button.clicked.connect(partial(self.open_subgroup_color_dialog, category))
+            
+            self.subgroup_color_layout.addRow(label, button)
+            self.subgroup_widgets[category] = button
+
     def set_columns(self, columns):
         # いったんクリア
         self.y_axis_combo.clear()

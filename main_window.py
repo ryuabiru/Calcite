@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.properties_panel)
         self.properties_panel.propertiesChanged.connect(self.update_graph_properties)
         self.properties_panel.graphUpdateRequest.connect(self.update_graph)
+        self.properties_panel.subgroupColumnChanged.connect(self.on_subgroup_column_changed)
 
     # ★--- ヘッダー編集用のメソッドを2つ追加 ---★
     def edit_header(self, logicalIndex):
@@ -236,6 +237,18 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to restructure data: {e}")
 
+    # ★--- サブグループ列が選択されたときに呼ばれるメソッド ---★
+    def on_subgroup_column_changed(self, column_name):
+        if not hasattr(self, 'model') or not column_name:
+            self.properties_panel.update_subgroup_color_ui([]) # 空のリストでUIをクリア
+            return
+        
+        try:
+            # 選択された列のユニークな値を取得してUIを更新
+            unique_categories = self.model._data[column_name].unique()
+            self.properties_panel.update_subgroup_color_ui(sorted(unique_categories))
+        except KeyError:
+            self.properties_panel.update_subgroup_color_ui([])
 
     def open_csv_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Open CSV File", "", "CSV Files (*.csv);;All Files (*)")
@@ -374,7 +387,8 @@ class MainWindow(QMainWindow):
         # ★--- スタイル情報を取得 ---★
         # currentData()で値('o', 's'など)を取得
         marker_style = self.properties_panel.marker_combo.currentData()
-        color = self.properties_panel.current_color
+        single_color = self.properties_panel.current_color
+        subgroup_colors_map = self.properties_panel.subgroup_colors
 
         # --- 描画ロジック ---
         if not y_col or not x_col:
@@ -390,16 +404,24 @@ class MainWindow(QMainWindow):
 
         elif self.current_graph_type == 'bar':
             try:
-                # サブグループが指定されている場合 (色はmatplotlibのデフォルトサイクルに任せる)
                 if subgroup_col:
                     summary = df.groupby([x_col, subgroup_col])[y_col].agg(['mean', 'std'])
-                    # ★--- colorを渡すと全棒が同じ色になるため、ここでは渡さない ---★
-                    summary.unstack().plot(kind='bar', y='mean', yerr='std', ax=ax, capsize=4, rot=0)
-                # 単一グループの場合
+                    pivot_summary = summary.unstack()
+                    
+                    # ★--- サブグループの色を適用するロジック ---★
+                    color_list = None
+                    if subgroup_colors_map:
+                        # プロットされる凡例の順序に合わせて色のリストを作成
+                        subgroup_order = pivot_summary['mean'].columns
+                        color_list = [subgroup_colors_map.get(cat) for cat in subgroup_order]
+                    
+                    pivot_summary.plot(kind='bar', y='mean', yerr=pivot_summary['std'], 
+                                       ax=ax, capsize=4, rot=0, color=color_list)
                 else:
                     summary = df.groupby(x_col)[y_col].agg(['mean', 'std'])
-                    # ★--- colorをplot関数に渡す ---★
-                    summary.plot(kind='bar', y='mean', yerr='std', ax=ax, capsize=4, rot=0, legend=False, color=color)
+                    # ★--- single_color を適用 ---★
+                    summary.plot(kind='bar', y='mean', yerr='std', ax=ax, capsize=4, 
+                                 rot=0, legend=False, color=single_color)
                 
                 ax.set_xlabel(x_col)
                 ax.set_ylabel(f"Mean of {y_col}")
