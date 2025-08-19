@@ -19,7 +19,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Calcite")
-        self.setGeometry(100, 100, 1200, 800)
+        self.setGeometry(100, 100, 1024, 512) # From 1200, 800
         
         self._create_menu_bar()
 
