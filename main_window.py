@@ -1,6 +1,7 @@
 # main_window.py
 
 import pandas as pd
+import numpy as np
 from PySide6.QtWidgets import (
     QMainWindow, 
     QSplitter, 
@@ -11,6 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt
 from scipy.stats import ttest_ind # t検定のために追加
+from scipy.stats import linregress
 
 from pandas_model import PandasModel
 from graph_widget import GraphWidget
@@ -43,12 +45,16 @@ class MainWindow(QMainWindow):
         open_action.triggered.connect(self.open_csv_file)
         file_menu.addAction(open_action)
         
-        # ★--- 解析メニューを追加 ---★
         analysis_menu = menu_bar.addMenu("&Analysis")
         ttest_action = QAction("&Independent t-test...", self)
         ttest_action.triggered.connect(self.perform_t_test)
         analysis_menu.addAction(ttest_action)
-        # ★------------------------★
+
+        # ★--- 線形回帰アクションを追加 ---★
+        linreg_action = QAction("&Linear Regression...", self)
+        linreg_action.triggered.connect(self.perform_linear_regression)
+        analysis_menu.addAction(linreg_action)
+        # ★--------------------------★
 
     def open_csv_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Open CSV File", "", "CSV Files (*.csv);;All Files (*)")
@@ -61,7 +67,6 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 print(f"Error opening file: {e}")
 
-    # ★--- t検定を実行するメソッドを追加 ---★
     def perform_t_test(self):
         # データが読み込まれていないか、列が2つ選択されていなければ何もしない
         if not hasattr(self, 'model'):
@@ -103,8 +108,52 @@ class MainWindow(QMainWindow):
             result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
 
         QMessageBox.information(self, "t-test Result", result_text)
-    # ★---------------------------------★
 
+# ★--- 線形回帰を実行するメソッドを追加 ---★
+    def perform_linear_regression(self):
+        if not hasattr(self, 'model'):
+            QMessageBox.warning(self, "Warning", "Please load data first.")
+            return
+
+        selected_indexes = self.table_view.selectionModel().selectedIndexes()
+        if not selected_indexes:
+            QMessageBox.warning(self, "Warning", "Please select two columns for regression.")
+            return
+            
+        selected_columns = sorted(list(set(index.column() for index in selected_indexes)))
+
+        if len(selected_columns) != 2:
+            QMessageBox.warning(self, "Warning", "Please select exactly two columns.")
+            return
+
+        df = self.model._data
+        x_col_index, y_col_index = selected_columns
+        
+        # 欠損値を除外
+        x_data = df.iloc[:, x_col_index].dropna()
+        y_data = df.iloc[:, y_col_index].dropna()
+        
+        # 線形回帰を実行
+        slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data)
+        r_squared = r_value**2
+
+        # 回帰直線を描画するためのX値を準備
+        x_line = np.array([x_data.min(), x_data.max()])
+        y_line = slope * x_line + intercept
+
+        # グラフを更新
+        ax = self.graph_widget.ax
+        # 既存の回帰直線を削除 (あれば)
+        if hasattr(self, 'regression_line') and self.regression_line in ax.lines:
+            self.regression_line.remove()
+            
+        # 新しい回帰直線をプロット
+        self.regression_line, = ax.plot(x_line, y_line, color='red', linestyle='--', 
+                                         label=f'R² = {r_squared:.4f}')
+        
+        ax.legend() # 凡例を表示
+        self.graph_widget.canvas.draw() # キャンバスを再描画
+        
     def update_graph(self):
         # ... (このメソッドに変更はありません) ...
         if not hasattr(self, 'model'):
