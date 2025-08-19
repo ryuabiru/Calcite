@@ -21,9 +21,11 @@ from scipy.stats import linregress
 from pandas_model import PandasModel
 from graph_widget import GraphWidget
 from properties_widget import PropertiesWidget
+from restructure_dialog import RestructureDialog
 
 class MainWindow(QMainWindow):
     def __init__(self):
+        from PySide6.QtWidgets import qApp # ★ qApp をインポート
         super().__init__()
         self.setWindowTitle("Calcite")
         self.setGeometry(100, 100, 1024, 512)
@@ -173,15 +175,67 @@ class MainWindow(QMainWindow):
         open_action = QAction("&Open CSV...", self)
         open_action.triggered.connect(self.open_csv_file)
         file_menu.addAction(open_action)
+
+        # ★--- データメニューを新設 ---★
+        data_menu = menu_bar.addMenu("&Data")
+        restructure_action = QAction("&Restructure (Wide to Long)...", self)
+        restructure_action.triggered.connect(self.show_restructure_dialog)
+        data_menu.addAction(restructure_action)
         
+        # 解析メニュー
         analysis_menu = menu_bar.addMenu("&Analysis")
         ttest_action = QAction("&Independent t-test...", self)
         ttest_action.triggered.connect(self.perform_t_test)
         analysis_menu.addAction(ttest_action)
-
         linreg_action = QAction("&Linear Regression...", self)
         linreg_action.triggered.connect(self.perform_linear_regression)
         analysis_menu.addAction(linreg_action)
+
+    # ★--- ダイアログ表示とデータ変換のメソッドを2つ追加 ---★
+    def show_restructure_dialog(self):
+        if not hasattr(self, 'model'):
+            QMessageBox.warning(self, "Warning", "Please load data first.")
+            return
+
+        df = self.model._data
+        dialog = RestructureDialog(df.columns, self)
+        
+        # ダイアログでOKが押されたら、データを変換する
+        if dialog.exec():
+            settings = dialog.get_settings()
+            if not settings['id_vars'] or not settings['value_vars']:
+                QMessageBox.warning(self, "Warning", "Please select both Identifier and Value columns.")
+                return
+            self.restructure_data(settings)
+            
+    def restructure_data(self, settings):
+        try:
+            df = self.model._data
+            # pandas.melt を使ってデータを変換
+            new_df = pd.melt(
+                df,
+                id_vars=settings['id_vars'],
+                value_vars=settings['value_vars'],
+                var_name=settings['var_name'],
+                value_name=settings['value_name']
+            )
+
+            # ★--- 変換後のデータを「新しいウィンドウ」で開く ---★
+            # ユーザーが元データと変換後データを比較できるようにするため
+            new_window = MainWindow()
+            new_window.model = PandasModel(new_df)
+            new_window.table_view.setModel(new_window.model)
+            new_window.properties_panel.set_columns(new_df.columns)
+            new_window.setWindowTitle(self.windowTitle() + " [Restructured]")
+            new_window.show()
+            
+            # このリストに新しいウィンドウを追加して、GCに回収されるのを防ぐ
+            if not hasattr(qApp, 'main_windows'):
+                qApp.main_windows = []
+            qApp.main_windows.append(new_window)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to restructure data: {e}")
 
 
     def open_csv_file(self):
