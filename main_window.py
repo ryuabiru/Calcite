@@ -8,7 +8,9 @@ from PySide6.QtWidgets import (
     QTableView,
     QFileDialog,
     QMessageBox,
+    QToolBar, # ★ ツールバーのために追加
 )
+from PySide6.QtGui import QAction, QActionGroup, QIcon
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt
 from scipy.stats import ttest_ind
@@ -24,7 +26,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Calcite")
         self.setGeometry(100, 100, 1024, 512)
         
+        self.current_graph_type = 'scatter'
+        
         self._create_menu_bar()
+        self._create_toolbar()
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         
@@ -40,6 +45,30 @@ class MainWindow(QMainWindow):
         self.properties_panel = PropertiesWidget()
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.properties_panel)
         self.properties_panel.propertiesChanged.connect(self.update_graph_properties)
+
+    def _create_toolbar(self):
+        toolbar = QToolBar("Graph Type")
+        self.addToolBar(toolbar)
+
+        action_group = QActionGroup(self)
+        action_group.setExclusive(True)
+
+        scatter_action = QAction("Scatter Plot", self)
+        scatter_action.setCheckable(True)
+        scatter_action.setChecked(True)
+        scatter_action.triggered.connect(lambda: self.set_graph_type('scatter'))
+        toolbar.addAction(scatter_action)
+        action_group.addAction(scatter_action)
+
+        bar_action = QAction("Bar Chart", self)
+        bar_action.setCheckable(True)
+        bar_action.triggered.connect(lambda: self.set_graph_type('bar'))
+        toolbar.addAction(bar_action)
+        action_group.addAction(bar_action)
+
+    def set_graph_type(self, graph_type):
+        self.current_graph_type = graph_type
+        self.update_graph() # グラフタイプが変更されたらグラフを再描画
 
     def _create_menu_bar(self):
         menu_bar = self.menuBar()
@@ -168,7 +197,8 @@ class MainWindow(QMainWindow):
         
         self.graph_widget.fig.tight_layout()
         self.graph_widget.canvas.draw()
-        
+
+# ★--- update_graphメソッドを大幅に更新 ---★
     def update_graph(self):
         if not hasattr(self, 'model'):
             return
@@ -177,21 +207,47 @@ class MainWindow(QMainWindow):
         if not selected_indexes:
             return
 
+        df = self.model._data
+        ax = self.graph_widget.ax
+        ax.clear() # グラフをクリア
+        
         selected_columns = sorted(list(set(index.column() for index in selected_indexes)))
 
-        if len(selected_columns) == 2:
-            df = self.model._data
-            x_col_index, y_col_index = selected_columns
-            
-            if pd.api.types.is_numeric_dtype(df.iloc[:, x_col_index]) and pd.api.types.is_numeric_dtype(df.iloc[:, y_col_index]):
-                x_data = df.iloc[:, x_col_index]
-                y_data = df.iloc[:, y_col_index]
+        # グラフの種類に応じて描画処理を分岐
+        if self.current_graph_type == 'scatter':
+            if len(selected_columns) == 2:
+                # (既存の散布図ロジック)
+                x_col_index, y_col_index = selected_columns
+                if pd.api.types.is_numeric_dtype(df.iloc[:, x_col_index]) and pd.api.types.is_numeric_dtype(df.iloc[:, y_col_index]):
+                    x_data, y_data = df.iloc[:, x_col_index], df.iloc[:, y_col_index]
+                    ax.scatter(x_data, y_data)
+                    ax.set_xlabel(df.columns[x_col_index])
+                    ax.set_ylabel(df.columns[y_col_index])
+
+        elif self.current_graph_type == 'bar':
+            if len(selected_columns) == 2 or len(selected_columns) == 3:
+                # カテゴリ列と数値列を特定
+                category_col = None
+                value_cols = []
+                for col_index in selected_columns:
+                    if pd.api.types.is_string_dtype(df.iloc[:, col_index]):
+                        category_col = col_index
+                    elif pd.api.types.is_numeric_dtype(df.iloc[:, col_index]):
+                        value_cols.append(col_index)
                 
-                ax = self.graph_widget.ax
-                ax.clear()
-                ax.scatter(x_data, y_data)
-                ax.set_xlabel(df.columns[x_col_index])
-                ax.set_ylabel(df.columns[y_col_index])
-                ax.set_title(f'{df.columns[y_col_index]} vs {df.columns[x_col_index]}')
-                self.graph_widget.fig.tight_layout()
-                self.graph_widget.canvas.draw()
+                if category_col is None or not value_cols:
+                    return # 適切な列が選択されていない
+
+                categories = df.iloc[:, category_col]
+                values = df.iloc[:, value_cols[0]]
+                errors = None
+                if len(value_cols) > 1:
+                    errors = df.iloc[:, value_cols[1]]
+
+                ax.bar(categories, values, yerr=errors, capsize=5) # capsizeはエラーバーの傘のサイズ
+                ax.set_xlabel(df.columns[category_col])
+                ax.set_ylabel(df.columns[value_cols[0]])
+
+        # グラフの再描画
+        self.graph_widget.fig.tight_layout()
+        self.graph_widget.canvas.draw()
