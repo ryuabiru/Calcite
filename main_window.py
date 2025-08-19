@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QToolBar,
     QMenu,
     QLineEdit,
+    qApp,
 )
 from PySide6.QtGui import QAction, QActionGroup, QIcon
 from PySide6.QtGui import QAction
@@ -25,7 +26,6 @@ from restructure_dialog import RestructureDialog
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        from PySide6.QtWidgets import qApp # ★ qApp をインポート
         super().__init__()
         self.setWindowTitle("Calcite")
         self.setGeometry(100, 100, 1024, 512)
