@@ -53,6 +53,7 @@ class MainWindow(QMainWindow):
         self.properties_panel = PropertiesWidget()
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.properties_panel)
         self.properties_panel.propertiesChanged.connect(self.update_graph_properties)
+        self.properties_panel.graphUpdateRequest.connect(self.update_graph)
 
     # ★--- ヘッダー編集用のメソッドを2つ追加 ---★
     def edit_header(self, logicalIndex):
@@ -191,6 +192,9 @@ class MainWindow(QMainWindow):
                 self.model = PandasModel(df)
                 self.table_view.setModel(self.model)
                 
+                # ★--- プロパティパネルにカラム名を設定 ---★
+                self.properties_panel.set_columns(df.columns)
+                
                 # シグナルとスロットを接続
                 self.table_view.selectionModel().selectionChanged.connect(self.update_graph)
                 self.model.dataChanged.connect(self.update_graph) 
@@ -300,56 +304,53 @@ class MainWindow(QMainWindow):
         self.graph_widget.fig.tight_layout()
         self.graph_widget.canvas.draw()
 
-# ★--- update_graphメソッドを大幅に更新 ---★
+    # ★--- update_graphメソッドを全面的に書き換え ---★
     def update_graph(self):
         if not hasattr(self, 'model'):
             return
 
-        selected_indexes = self.table_view.selectionModel().selectedIndexes()
-        if not selected_indexes:
-            return
-
         df = self.model._data
         ax = self.graph_widget.ax
-        ax.clear() # グラフをクリア
-        
-        selected_columns = sorted(list(set(index.column() for index in selected_indexes)))
+        ax.clear()
 
-        # グラフの種類に応じて描画処理を分岐
+        # プロパティパネルから選択された列名を取得
+        y_col = self.properties_panel.y_axis_combo.currentText()
+        x_col = self.properties_panel.x_axis_combo.currentText()
+        subgroup_col = self.properties_panel.subgroup_combo.currentText()
+
+        # Y軸とX軸が選択されていなければ何もしない
+        if not y_col or not x_col:
+            self.graph_widget.canvas.draw()
+            return
+            
+        # グラフの種類に応じて描画
         if self.current_graph_type == 'scatter':
-            if len(selected_columns) == 2:
-                # (既存の散布図ロジック)
-                x_col_index, y_col_index = selected_columns
-                if pd.api.types.is_numeric_dtype(df.iloc[:, x_col_index]) and pd.api.types.is_numeric_dtype(df.iloc[:, y_col_index]):
-                    x_data, y_data = df.iloc[:, x_col_index], df.iloc[:, y_col_index]
-                    ax.scatter(x_data, y_data)
-                    ax.set_xlabel(df.columns[x_col_index])
-                    ax.set_ylabel(df.columns[y_col_index])
+            # 散布図は2つの数値列が必要
+            if pd.api.types.is_numeric_dtype(df[y_col]) and pd.api.types.is_numeric_dtype(df[x_col]):
+                ax.scatter(df[x_col], df[y_col])
+                ax.set_xlabel(x_col)
+                ax.set_ylabel(y_col)
 
         elif self.current_graph_type == 'bar':
-            if len(selected_columns) == 2 or len(selected_columns) == 3:
-                # カテゴリ列と数値列を特定
-                category_col = None
-                value_cols = []
-                for col_index in selected_columns:
-                    if pd.api.types.is_string_dtype(df.iloc[:, col_index]):
-                        category_col = col_index
-                    elif pd.api.types.is_numeric_dtype(df.iloc[:, col_index]):
-                        value_cols.append(col_index)
+            try:
+                # サブグループが指定されているかで処理を分岐
+                if subgroup_col:
+                    # Multi-indexで集計 (クロス集計)
+                    summary = df.groupby([x_col, subgroup_col])[y_col].agg(['mean', 'std'])
+                    summary.unstack().plot(kind='bar', y='mean', yerr='std', ax=ax, capsize=4, rot=0)
+
+                else:
+                    # 単一のグループで集計
+                    summary = df.groupby(x_col)[y_col].agg(['mean', 'std'])
+                    summary.plot(kind='bar', y='mean', yerr='std', ax=ax, capsize=4, rot=0, legend=False)
                 
-                if category_col is None or not value_cols:
-                    return # 適切な列が選択されていない
+                ax.set_xlabel(x_col)
+                ax.set_ylabel(f"Mean of {y_col}")
 
-                categories = df.iloc[:, category_col]
-                values = df.iloc[:, value_cols[0]]
-                errors = None
-                if len(value_cols) > 1:
-                    errors = df.iloc[:, value_cols[1]]
+            except Exception as e:
+                print(f"Could not generate bar chart: {e}")
 
-                ax.bar(categories, values, yerr=errors, capsize=5) # capsizeはエラーバーの傘のサイズ
-                ax.set_xlabel(df.columns[category_col])
-                ax.set_ylabel(df.columns[value_cols[0]])
-
-        # グラフの再描画
+        # グラフの再描画とプロパティの適用
+        self.update_graph_properties(self.properties_panel.on_properties_changed() or {})
         self.graph_widget.fig.tight_layout()
         self.graph_widget.canvas.draw()

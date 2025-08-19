@@ -1,0 +1,16 @@
+Treatment,Dose,Replicate,Value
+Control,0,1,5.2
+Control,0,2,5.5
+Control,0,3,5.1
+DrugA,10,1,8.1
+DrugA,10,2,8.3
+DrugA,10,3,8.2
+DrugA,20,1,12.5
+DrugA,20,2,12.8
+DrugA,20,3,12.6
+DrugB,10,1,7.5
+DrugB,10,2,7.2
+DrugB,10,3,7.7
+DrugB,20,1,10.1
+DrugB,20,2,10.5
+DrugB,20,3,10.3
