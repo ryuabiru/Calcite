@@ -206,7 +206,13 @@ class MainWindow(QMainWindow):
         open_action = QAction("&Open CSV...", self)
         open_action.triggered.connect(self.open_csv_file)
         file_menu.addAction(open_action)
+        file_menu.addSeparator() # 区切り線を追加
         
+        # ラフ保存のアクション
+        save_graph_action = QAction("&Save Graph As...", self)
+        save_graph_action.triggered.connect(self.save_graph)
+        file_menu.addAction(save_graph_action)
+
         # Edit Menu
         edit_menu = menu_bar.addMenu("&Edit")
         paste_action = QAction("&Paste", self)
@@ -242,6 +248,32 @@ class MainWindow(QMainWindow):
         fitting_action = QAction("&Non-linear Regression...", self)
         fitting_action.triggered.connect(self.perform_fitting)
         analysis_menu.addAction(fitting_action)
+
+    # ★--- グラフを保存するメソッドを追加 ---★
+    def save_graph(self):
+        """
+        現在のグラフを画像ファイルとして保存する。
+        """
+        if not hasattr(self, 'model'):
+            QMessageBox.warning(self, "Warning", "No data to save.")
+            return
+
+        # ファイル保存ダイアログを表示
+        file_path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Save Graph",
+            "", # デフォルトのファイルパス
+            "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg);;SVG Vector Image (*.svg);;PDF Document (*.pdf)"
+        )
+
+        # ユーザーがキャンセルしなかった場合
+        if file_path:
+            try:
+                # Matplotlibのsavefigメソッドで、高解像度(300 dpi)を指定して保存
+                self.graph_widget.fig.savefig(file_path, dpi=300)
+                QMessageBox.information(self, "Success", f"Graph successfully saved to:\n{file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save graph: {e}")
 
     def paste_from_clipboard(self):
         """クリップボードからタブ区切りテキストを読み込み、テーブルに貼り付ける。"""
