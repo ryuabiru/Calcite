@@ -304,7 +304,7 @@ class MainWindow(QMainWindow):
         self.graph_widget.fig.tight_layout()
         self.graph_widget.canvas.draw()
 
-    # ★--- update_graphメソッドを全面的に書き換え ---★
+    # ★--- update_graphメソッドを修正 ---★
     def update_graph(self):
         if not hasattr(self, 'model'):
             return
@@ -313,36 +313,40 @@ class MainWindow(QMainWindow):
         ax = self.graph_widget.ax
         ax.clear()
 
-        # プロパティパネルから選択された列名を取得
+        # --- プロパティパネルから情報を取得 ---
         y_col = self.properties_panel.y_axis_combo.currentText()
         x_col = self.properties_panel.x_axis_combo.currentText()
         subgroup_col = self.properties_panel.subgroup_combo.currentText()
+        
+        # ★--- スタイル情報を取得 ---★
+        # currentData()で値('o', 's'など)を取得
+        marker_style = self.properties_panel.marker_combo.currentData()
+        color = self.properties_panel.current_color
 
-        # Y軸とX軸が選択されていなければ何もしない
+        # --- 描画ロジック ---
         if not y_col or not x_col:
             self.graph_widget.canvas.draw()
             return
             
-        # グラフの種類に応じて描画
         if self.current_graph_type == 'scatter':
-            # 散布図は2つの数値列が必要
             if pd.api.types.is_numeric_dtype(df[y_col]) and pd.api.types.is_numeric_dtype(df[x_col]):
-                ax.scatter(df[x_col], df[y_col])
+                # ★--- markerとcolorをscatter関数に渡す ---★
+                ax.scatter(df[x_col], df[y_col], marker=marker_style, color=color)
                 ax.set_xlabel(x_col)
                 ax.set_ylabel(y_col)
 
         elif self.current_graph_type == 'bar':
             try:
-                # サブグループが指定されているかで処理を分岐
+                # サブグループが指定されている場合 (色はmatplotlibのデフォルトサイクルに任せる)
                 if subgroup_col:
-                    # Multi-indexで集計 (クロス集計)
                     summary = df.groupby([x_col, subgroup_col])[y_col].agg(['mean', 'std'])
+                    # ★--- colorを渡すと全棒が同じ色になるため、ここでは渡さない ---★
                     summary.unstack().plot(kind='bar', y='mean', yerr='std', ax=ax, capsize=4, rot=0)
-
+                # 単一グループの場合
                 else:
-                    # 単一のグループで集計
                     summary = df.groupby(x_col)[y_col].agg(['mean', 'std'])
-                    summary.plot(kind='bar', y='mean', yerr='std', ax=ax, capsize=4, rot=0, legend=False)
+                    # ★--- colorをplot関数に渡す ---★
+                    summary.plot(kind='bar', y='mean', yerr='std', ax=ax, capsize=4, rot=0, legend=False, color=color)
                 
                 ax.set_xlabel(x_col)
                 ax.set_ylabel(f"Mean of {y_col}")
@@ -350,7 +354,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 print(f"Could not generate bar chart: {e}")
 
-        # グラフの再描画とプロパティの適用
+        # --- グラフの再描画 ---
         self.update_graph_properties(self.properties_panel.on_properties_changed() or {})
         self.graph_widget.fig.tight_layout()
         self.graph_widget.canvas.draw()

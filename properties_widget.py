@@ -1,7 +1,11 @@
 # properties_widget.py
 
-from PySide6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QLabel, QLineEdit, QComboBox, QFormLayout
+from PySide6.QtWidgets import (
+    QDockWidget, QWidget, QVBoxLayout, QLabel, QLineEdit, 
+    QComboBox, QFormLayout, QPushButton, QColorDialog
+)
 from PySide6.QtCore import Signal, Qt
+from PySide6.QtGui import QColor
 
 class PropertiesWidget(QDockWidget):
     # A signal that will be emitted when any property changes
@@ -45,9 +49,34 @@ class PropertiesWidget(QDockWidget):
         layout.addRow(QLabel("Y-Axis (Value):"), self.y_axis_combo)
         layout.addRow(QLabel("X-Axis (Group):"), self.x_axis_combo)
         layout.addRow(QLabel("Sub-group (Color):"), self.subgroup_combo)
+
+        # ★--- ここからグラフスタイルUIを追加 ---★
+        layout.addRow(QLabel("---"))
+
+        # マーカースタイル選択
+        self.marker_combo = QComboBox()
+        markers = {'Circle': 'o', 'Square': 's', 'Triangle': '^', 'Diamond': 'D', 'None': 'None'}
+        for name, style in markers.items():
+            self.marker_combo.addItem(name, style) # 表示名と値(matplotlibで使う記号)をセット
+        self.marker_combo.currentTextChanged.connect(self.graphUpdateRequest.emit)
+        layout.addRow(QLabel("Marker Style:"), self.marker_combo)
+
+        # 色選択
+        self.color_button = QPushButton("Select Color")
+        self.color_button.clicked.connect(self.open_color_dialog)
+        layout.addRow(QLabel("Graph Color:"), self.color_button)
         # ★--- ここまで追加 ---★
 
         self.setWidget(main_widget)
+        
+    # ★--- 色選択ダイアログを開くメソッドを追加 ---★
+    def open_color_dialog(self):
+        color = QColorDialog.getColor()
+        if color.isValid():
+            self.current_color = color.name() # 色名を #RRGGBB 形式で保存
+            # ボタンの背景色を選択した色に変更して、どの色が選ばれているか分かりやすくする
+            self.color_button.setStyleSheet(f"background-color: {self.current_color};")
+            self.graphUpdateRequest.emit() # グラフ更新をリクエスト
 
     # ★--- カラム名をドロップダウンに設定するメソッドを追加 ---★
     def set_columns(self, columns):
@@ -65,6 +94,8 @@ class PropertiesWidget(QDockWidget):
         self.y_axis_combo.addItems(columns)
         self.x_axis_combo.addItems(columns)
         self.subgroup_combo.addItems(columns)
+
+
 
     def on_properties_changed(self):
         # 複数のプロパティを一度に送信するように変更
