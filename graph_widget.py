@@ -1,15 +1,6 @@
 # graph_widget.py
 
 import matplotlib
-matplotlib.use('QtAgg') # "Qt6Agg"から"QtAgg"に変更 (PySide/PyQtを自動検出)
-
-# from PyQt6.QtWidgets import QWidget, QVBoxLayout
-from PySide6.QtWidgets import QWidget, QVBoxLayout # ← 変更
-
-# from matplotlib.backends.backend_qt6agg import FigureCanvasQTAgg as FigureCanvas
-# graph_widget.py
-
-import matplotlib
 matplotlib.use('QtAgg') # PySide/PyQtを自動検出
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout
@@ -28,7 +19,7 @@ class GraphWidget(QWidget):
         super().__init__(parent)
 
         # Matplotlibの図（Figure）と描画エリア（Axes）を作成
-        self.fig = Figure()
+        self.fig = Figure(dpi=150)
         self.ax = self.fig.add_subplot(111)
         self.canvas = FigureCanvas(self.fig)
 

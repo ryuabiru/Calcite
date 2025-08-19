@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         self.header_editor = None
         self.regression_line = None
         self.fit_curve = None
+        self.fit_params = None
         
         self._create_menu_bar()
         self._create_toolbar()
@@ -425,6 +426,14 @@ class MainWindow(QMainWindow):
                 ss_tot = np.sum((y_data - np.mean(y_data)) ** 2)
                 r_squared = 1 - (ss_res / ss_tot)
 
+                # 計算結果をインスタンス変数に保存
+                self.fit_params = {
+                    "params": params,
+                    "r_squared": r_squared,
+                    "x_col": x_col,
+                    "y_col": y_col
+                }
+
                 # 結果をフォーマット
                 result_text = "Non-linear Regression Results (Sigmoidal 4PL)\n"
                 result_text += "==============================================\n\n"
@@ -435,6 +444,9 @@ class MainWindow(QMainWindow):
                 result_text += f"R-squared: {r_squared:.4f}\n"
                 
                 self.show_results_dialog("Fitting Result", result_text)
+
+                # グラフ全体を更新して、データと曲線を再描画
+                self.update_graph()
 
                 # グラフに曲線を描画
                 ax = self.graph_widget.ax
@@ -495,7 +507,6 @@ class MainWindow(QMainWindow):
 
         self.show_results_dialog("t-test Result", result_text)
 
-    # --- ★ perform_linear_regressionを修正 ---
     def perform_linear_regression(self):
         if not hasattr(self, 'model'):
             QMessageBox.warning(self, "Warning", "Please load data first.")
@@ -519,7 +530,11 @@ class MainWindow(QMainWindow):
         x_line = np.array([x_data.min(), x_data.max()])
         y_line = slope * x_line + intercept
 
+        # 既存のフィッティング曲線をクリア
+        self.fit_params = None
+
         ax = self.graph_widget.ax
+        
         # --- 既存の線をクリア ---
         if self.regression_line and self.regression_line in ax.lines:
             self.regression_line.remove()
@@ -658,8 +673,28 @@ class MainWindow(QMainWindow):
             self._draw_scatter_plot(ax, df, x_col, y_col, marker_style, single_color)
 
         elif self.current_graph_type == 'bar':
+            self.fit_params = None
             self._draw_bar_chart(ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter)
-        
+
+        # フィッティングパラメータが存在し、現在の表示列と一致する場合に曲線を描画
+        if self.fit_params and self.fit_params['x_col'] == x_col and self.fit_params['y_col'] == y_col:
+            
+            fit_df = df[[x_col, y_col]].dropna().copy()
+            if not (fit_df[x_col] <= 0).any():
+                fit_df['log_x'] = np.log10(fit_df[x_col])
+                x_data = fit_df['log_x']
+
+                x_fit = np.linspace(x_data.min(), x_data.max(), 200)
+                y_fit = self.sigmoid_4pl(x_fit, *self.fit_params['params'])
+                
+                r_squared = self.fit_params['r_squared']
+                self.fit_curve, = ax.plot(10**x_fit, y_fit, color='blue', label=f'4PL Fit (R²={r_squared:.3f})')
+                ax.set_xscale('log')
+                ax.legend()
+
+        else:
+             ax.set_xscale('linear') # フィットがない場合は線形スケール
+
         # グラフの再描画
         ax.set_xscale('linear') # デフォルトは線形スケールに
         self.update_graph_properties(self.properties_panel.on_properties_changed() or {})
