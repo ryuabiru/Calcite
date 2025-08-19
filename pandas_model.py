@@ -56,6 +56,10 @@ class PandasModel(QAbstractTableModel):
     def flags(self, index):
         return super().flags(index) | Qt.ItemFlag.ItemIsEditable
 
+    # ★--- 列が追加/削除されたことをビューに通知するメソッドを追加 ---★
+    def refresh_model(self):
+        self.layoutChanged.emit()
+
     def insertRows(self, row, count, parent=QModelIndex()):
         self.beginInsertRows(parent, row, row + count - 1)
         

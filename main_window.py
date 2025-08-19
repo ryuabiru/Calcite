@@ -22,6 +22,7 @@ from pandas_model import PandasModel
 from graph_widget import GraphWidget
 from properties_widget import PropertiesWidget
 from restructure_dialog import RestructureDialog
+from calculate_dialog import CalculateDialog
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -170,17 +171,20 @@ class MainWindow(QMainWindow):
     def _create_menu_bar(self):
         menu_bar = self.menuBar()
         
-        # ファイルメニュー
         file_menu = menu_bar.addMenu("&File")
         open_action = QAction("&Open CSV...", self)
         open_action.triggered.connect(self.open_csv_file)
         file_menu.addAction(open_action)
 
-        # ★--- データメニューを新設 ---★
         data_menu = menu_bar.addMenu("&Data")
         restructure_action = QAction("&Restructure (Wide to Long)...", self)
         restructure_action.triggered.connect(self.show_restructure_dialog)
         data_menu.addAction(restructure_action)
+        
+        # ★--- 新しいメニュー項目を追加 ---★
+        calculate_action = QAction("&Calculate New Column...", self)
+        calculate_action.triggered.connect(self.show_calculate_dialog)
+        data_menu.addAction(calculate_action)
         
         # 解析メニュー
         analysis_menu = menu_bar.addMenu("&Analysis")
@@ -190,6 +194,40 @@ class MainWindow(QMainWindow):
         linreg_action = QAction("&Linear Regression...", self)
         linreg_action.triggered.connect(self.perform_linear_regression)
         analysis_menu.addAction(linreg_action)
+
+    # ★--- ダイアログ表示と計算実行のメソッドを2つ追加 ---★
+    def show_calculate_dialog(self):
+        if not hasattr(self, 'model'):
+            QMessageBox.warning(self, "Warning", "Please load data first.")
+            return
+
+        df = self.model._data
+        dialog = CalculateDialog(df.columns, self)
+        
+        if dialog.exec():
+            settings = dialog.get_settings()
+            if not settings['new_column_name'] or not settings['formula']:
+                QMessageBox.warning(self, "Warning", "Please enter both a new column name and a formula.")
+                return
+            self.calculate_new_column(settings)
+
+    def calculate_new_column(self, settings):
+        try:
+            df = self.model._data
+            new_col_name = settings['new_column_name']
+            formula = settings['formula']
+
+            # pandas.eval を使って新しい列を計算
+            # カラム名にスペースなどがあっても動くように、エンジンをpythonに指定
+            df[new_col_name] = df.eval(formula, engine='python')
+
+            # モデルとビューを更新
+            self.model.refresh_model()
+            # プロパティパネルのドロップダウンも更新
+            self.properties_panel.set_columns(df.columns)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to calculate column: {e}")
 
     # ★--- ダイアログ表示とデータ変換のメソッドを2つ追加 ---★
     def show_restructure_dialog(self):
