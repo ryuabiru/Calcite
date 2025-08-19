@@ -401,71 +401,70 @@ class MainWindow(QMainWindow):
                 ax.set_xlabel(x_col)
                 ax.set_ylabel(y_col)
 
+        # ★--- ここから棒グラフのロジックを全面的に書き換え ---★
         elif self.current_graph_type == 'bar':
             try:
-                # --- 棒グラフの描画 ---
-                if subgroup_col:
-                    # サブグループあり
-                    summary = df.groupby([x_col, subgroup_col])[y_col].agg(['mean', 'std'])
-                    pivot_summary = summary.unstack()
-                    color_list = None
-                    if subgroup_colors_map:
-                        subgroup_order = pivot_summary['mean'].columns
-                        color_list = [subgroup_colors_map.get(cat) for cat in subgroup_order]
-                    
-                    pivot_summary.plot(kind='bar', y='mean', yerr=pivot_summary['std'], 
-                                       ax=ax, capsize=4, rot=0, color=color_list)
-                else:
-                    # サブグループなし
-                    summary = df.groupby(x_col)[y_col].agg(['mean', 'std'])
-                    color_to_plot = single_color if single_color else '#1f77b4'
-                    summary.plot(kind='bar', y='mean', yerr='std', ax=ax, capsize=4, 
-                                 rot=0, legend=False, color=color_to_plot)
+                ax.clear()
                 
-                # --- ★ここから散布図オーバーレイのロジックを全面改修★ ---
-                if show_scatter:
-                    # 描画された棒（patch）の位置情報を直接利用する
-                    # エラーバーの線などを除外し、実際に描画された棒のみを対象にする
-                    patches = [p for p in ax.patches if p.get_height() != 0 and p.get_width() > 0]
+                # X軸のカテゴリをソートして順序を固定
+                categories = sorted(df[x_col].unique())
+                x_indices = np.arange(len(categories))
+                
+                if subgroup_col:
+                    # サブグループありの場合
+                    subcategories = sorted(df[subgroup_col].unique())
+                    n_subgroups = len(subcategories)
                     
-                    if subgroup_col:
-                        # サブグループありの場合
-                        categories = pivot_summary.index
-                        subcategories = pivot_summary['mean'].columns
-                        
-                        # patchesはカテゴリ→サブカテゴリの順で並んでいると仮定して処理
-                        if len(patches) == len(categories) * len(subcategories):
-                            for i, patch in enumerate(patches):
-                                # iからカテゴリとサブカテゴリを逆算
-                                cat = categories[i // len(subcategories)]
-                                subcat = subcategories[i % len(subcategories)]
-                                
-                                points = df[(df[x_col] == cat) & (df[subgroup_col] == subcat)][y_col]
-                                
-                                # 棒の中心X座標を取得
-                                bar_center = patch.get_x() + patch.get_width() / 2.
-                                # 棒の幅に応じてjitterの幅を決定
-                                jitter_width = patch.get_width() * 0.4
-                                jitter = np.random.uniform(-jitter_width, jitter_width, len(points))
-                                ax.scatter(bar_center + jitter, points, color='black', alpha=0.6, zorder=2)
-                    else:
-                        # サブグループなしの場合
-                        categories = summary.index
-                        if len(patches) == len(categories):
-                            for i, patch in enumerate(patches):
-                                cat = categories[i]
-                                points = df[df[x_col] == cat][y_col]
-                                
-                                bar_center = patch.get_x() + patch.get_width() / 2.
-                                jitter_width = patch.get_width() * 0.4 
-                                jitter = np.random.uniform(-jitter_width, jitter_width, len(points))
-                                ax.scatter(bar_center + jitter, points, color='black', alpha=0.6, zorder=2)
+                    bar_width = 0.8
+                    sub_bar_width = bar_width / n_subgroups
+                    
+                    for i, subcat in enumerate(subcategories):
+                        # 各サブカテゴリの棒の位置を計算
+                        offsets = (i - (n_subgroups - 1) / 2.) * sub_bar_width
+                        bar_positions = x_indices + offsets
 
+                        means = []
+                        stds = []
+                        for cat in categories:
+                            subset = df[(df[x_col] == cat) & (df[subgroup_col] == subcat)][y_col]
+                            means.append(subset.mean())
+                            stds.append(subset.std())
+                        
+                        color = subgroup_colors_map.get(subcat)
+                        ax.bar(bar_positions, means, width=sub_bar_width * 0.9, yerr=stds, label=subcat, capsize=4, color=color)
+
+                        if show_scatter:
+                            for k, cat in enumerate(categories):
+                                points = df[(df[x_col] == cat) & (df[subgroup_col] == subcat)][y_col]
+                                jitter_width = sub_bar_width * 0.4
+                                jitter = np.random.uniform(-jitter_width / 2, jitter_width / 2, len(points))
+                                ax.scatter(bar_positions[k] + jitter, points, color='black', alpha=0.6, zorder=2)
+                    
+                    ax.legend(title=subgroup_col)
+
+                else:
+                    # サブグループなしの場合
+                    summary = df.groupby(x_col)[y_col].agg(['mean', 'std']).reindex(categories)
+                    color_to_plot = single_color if single_color else '#1f77b4'
+                    
+                    ax.bar(x_indices, summary['mean'], width=0.8, yerr=summary['std'], capsize=4, color=color_to_plot)
+
+                    if show_scatter:
+                        for i, cat in enumerate(categories):
+                            points = df[df[x_col] == cat][y_col]
+                            jitter_width = 0.8 * 0.4
+                            jitter = np.random.uniform(-jitter_width / 2, jitter_width / 2, len(points))
+                            ax.scatter(i + jitter, points, color='black', alpha=0.6, zorder=2)
+                
+                # X軸のラベルを設定
+                ax.set_xticks(x_indices)
+                ax.set_xticklabels(categories, rotation=0)
                 ax.set_xlabel(x_col)
                 ax.set_ylabel(f"Mean of {y_col}")
 
             except Exception as e:
                 print(f"Could not generate bar chart: {e}")
+        
         # --- グラフの再描画 ---
         self.update_graph_properties(self.properties_panel.on_properties_changed() or {})
         self.graph_widget.fig.tight_layout()
