@@ -389,6 +389,7 @@ class MainWindow(QMainWindow):
         marker_style = self.properties_panel.marker_combo.currentData()
         single_color = self.properties_panel.current_color
         subgroup_colors_map = self.properties_panel.subgroup_colors
+        show_scatter = self.properties_panel.scatter_overlay_check.isChecked()
 
         # --- 描画ロジック ---
         if not y_col or not x_col:
@@ -398,31 +399,58 @@ class MainWindow(QMainWindow):
         if self.current_graph_type == 'scatter':
             if pd.api.types.is_numeric_dtype(df[y_col]) and pd.api.types.is_numeric_dtype(df[x_col]):
                 # ★--- markerとcolorをscatter関数に渡す ---★
-                ax.scatter(df[x_col], df[y_col], marker=marker_style, color=color)
+                ax.scatter(df[x_col], df[y_col], marker=marker_style, color=single_color)
                 ax.set_xlabel(x_col)
                 ax.set_ylabel(y_col)
 
+        # ★--- 棒グラフの描画ロジックを修正 ---★
         elif self.current_graph_type == 'bar':
             try:
+                # --- 棒グラフの描画 (ここまではこれまでと同じ) ---
                 if subgroup_col:
                     summary = df.groupby([x_col, subgroup_col])[y_col].agg(['mean', 'std'])
                     pivot_summary = summary.unstack()
-                    
-                    # ★--- サブグループの色を適用するロジック ---★
                     color_list = None
                     if subgroup_colors_map:
-                        # プロットされる凡例の順序に合わせて色のリストを作成
                         subgroup_order = pivot_summary['mean'].columns
                         color_list = [subgroup_colors_map.get(cat) for cat in subgroup_order]
-                    
                     pivot_summary.plot(kind='bar', y='mean', yerr=pivot_summary['std'], 
                                        ax=ax, capsize=4, rot=0, color=color_list)
                 else:
                     summary = df.groupby(x_col)[y_col].agg(['mean', 'std'])
-                    # ★--- single_color を適用 ---★
                     summary.plot(kind='bar', y='mean', yerr='std', ax=ax, capsize=4, 
                                  rot=0, legend=False, color=single_color)
                 
+                # --- ★ここから散布図オーバーレイのロジック★ ---
+                if show_scatter:
+                    # seabornのstripplotを参考に、jitter付き散布図を自前で実装
+                    if subgroup_col:
+                        # サブグループありの場合
+                        categories = df[x_col].unique()
+                        subcategories = df[subgroup_col].unique()
+                        n_subgroups = len(subcategories)
+                        bar_width = 0.8 # matplotlibの棒グラフのデフォルト幅
+                        sub_bar_width = bar_width / n_subgroups
+                        
+                        for i, cat in enumerate(categories):
+                            for j, subcat in enumerate(subcategories):
+                                # 該当するデータを抽出
+                                points = df[(df[x_col] == cat) & (df[subgroup_col] == subcat)][y_col]
+                                # X座標を計算 (棒グラフの中心位置 + サブグループごとのオフセット)
+                                x_pos = i - bar_width/2 + sub_bar_width/2 + j*sub_bar_width
+                                # X座標にjitter (ランダムなずれ) を加える
+                                jitter = np.random.uniform(-sub_bar_width/4, sub_bar_width/4, len(points))
+                                ax.scatter(x_pos + jitter, points, color='black', alpha=0.6, zorder=2)
+
+                    else:
+                        # サブグループなしの場合
+                        categories = df[x_col].unique()
+                        for i, cat in enumerate(categories):
+                            points = df[df[x_col] == cat][y_col]
+                            # X座標は棒グラフのインデックス (0, 1, 2...)
+                            jitter = np.random.uniform(-0.1, 0.1, len(points))
+                            ax.scatter(np.full_like(points, i, dtype=float) + jitter, points, color='black', alpha=0.6, zorder=2) # zorderで点を棒より手前に表示
+
                 ax.set_xlabel(x_col)
                 ax.set_ylabel(f"Mean of {y_col}")
 
