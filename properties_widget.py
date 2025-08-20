@@ -65,6 +65,9 @@ class PropertiesWidget(QDockWidget):
         self.ymin_edit.editingFinished.connect(self.propertiesChanged.emit)
         self.ymax_edit.editingFinished.connect(self.propertiesChanged.emit)
         self.grid_check.stateChanged.connect(self.propertiesChanged.emit)
+        self.x_log_scale_check.stateChanged.connect(self.propertiesChanged.emit)
+        self.y_log_scale_check.stateChanged.connect(self.propertiesChanged.emit)
+
 
     def create_data_tab(self):
         widget = QWidget()
@@ -132,24 +135,12 @@ class PropertiesWidget(QDockWidget):
         return widget
 
     def create_axes_tab(self):
-        """軸の範囲やグリッドを設定するUIを持つタブを作成する"""
+        """軸の範囲やスケールを設定するUIを持つタブを作成する"""
         widget = QWidget()
         layout = QFormLayout(widget)
 
         # 軸範囲
-        validator = QDoubleValidator()
-        self.xmin_edit = QLineEdit(); self.xmin_edit.setValidator(validator)
-        self.xmax_edit = QLineEdit(); self.xmax_edit.setValidator(validator)
-        self.ymin_edit = QLineEdit(); self.ymin_edit.setValidator(validator)
-        self.ymax_edit = QLineEdit(); self.ymax_edit.setValidator(validator)
-
-        x_range_layout = QHBoxLayout()
-        x_range_layout.addWidget(self.xmin_edit); x_range_layout.addWidget(QLabel("to")); x_range_layout.addWidget(self.xmax_edit)
-        y_range_layout = QHBoxLayout()
-        y_range_layout.addWidget(self.ymin_edit); y_range_layout.addWidget(QLabel("to")); y_range_layout.addWidget(self.ymax_edit)
-
-        layout.addRow(QLabel("X-Axis Range:"), x_range_layout)
-        layout.addRow(QLabel("Y-Axis Range:"), y_range_layout)
+        # ... (変更なし) ...
         
         layout.addRow(QLabel("---"))
 
@@ -157,23 +148,26 @@ class PropertiesWidget(QDockWidget):
         self.grid_check = QCheckBox("Show Grid")
         layout.addRow(self.grid_check)
 
+        layout.addRow(QLabel("---")) # 区切り線
+
+        # ★--- スケール変換のチェックボックスを追加 ---★
+        self.x_log_scale_check = QCheckBox("Logarithmic Scale")
+        self.y_log_scale_check = QCheckBox("Logarithmic Scale")
+        layout.addRow(QLabel("X-Axis Scale:"), self.x_log_scale_check)
+        layout.addRow(QLabel("Y-Axis Scale:"), self.y_log_scale_check)
+
         return widget
     
     def get_properties(self):
         """UIから現在の設定値をすべて集めて辞書として返す。"""
         return {
-            'title': self.title_edit.text(),
-            'xlabel': self.xaxis_edit.text(),
-            'ylabel': self.yaxis_edit.text(),
-            'title_fontsize': self.title_fontsize_spin.value(),
-            'xlabel_fontsize': self.xlabel_fontsize_spin.value(),
-            'ylabel_fontsize': self.ylabel_fontsize_spin.value(),
-            'ticks_fontsize': self.ticks_fontsize_spin.value(),
-            'xmin': self.xmin_edit.text(),
-            'xmax': self.xmax_edit.text(),
+            # ... (既存のプロパティは変更なし) ...
             'ymin': self.ymin_edit.text(),
             'ymax': self.ymax_edit.text(),
             'show_grid': self.grid_check.isChecked(),
+            # ★--- 新しいプロパティを追加 ---★
+            'x_log_scale': self.x_log_scale_check.isChecked(),
+            'y_log_scale': self.y_log_scale_check.isChecked(),
         }
 
     def open_single_color_dialog(self):
