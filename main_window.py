@@ -804,7 +804,8 @@ class MainWindow(QMainWindow):
         linewidth = properties.get('marker_edgewidth', 1.0)
         
         if pd.api.types.is_numeric_dtype(df[y_col]) and pd.api.types.is_numeric_dtype(df[x_col]):
-            ax.scatter(df[x_col], df[y_col], marker=marker_style, color=color_to_plot)
+            ax.scatter(df[x_col], df[y_col], marker=marker_style, color=color_to_plot, 
+                       edgecolors=edgecolor, linewidths=linewidth)
             ax.set_xlabel(x_col)
             ax.set_ylabel(y_col)
 
@@ -880,8 +881,9 @@ class MainWindow(QMainWindow):
                 stds.append(subset.std())
             
             color = subgroup_colors_map.get(subcat)
-            ax.bar(bar_positions, means, width=sub_bar_width * 0.9, yerr=stds, label=subcat, capsize=capsize, color=color)
-
+            ax.bar(bar_positions, means, width=sub_bar_width * 0.9, yerr=stds, 
+                   label=subcat, capsize=capsize, color=color,
+                   edgecolor=edgecolor, linewidth=linewidth)
             if show_scatter:
                 for k, cat in enumerate(categories):
                     points = df[(df[x_col] == cat) & (df[subgroup_col] == subcat)][y_col]

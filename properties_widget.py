@@ -247,6 +247,8 @@ class PropertiesWidget(QDockWidget):
             'capsize': self.capsize_spin.value(),
             'marker_edgecolor': self.current_marker_edgecolor,
             'marker_edgewidth': self.marker_edgewidth_spin.value(),
+            'bar_edgecolor': self.current_bar_edgecolor,
+            'bar_edgewidth': self.bar_edgewidth_spin.value(),
         }
 
     def open_single_color_dialog(self):
