@@ -21,7 +21,7 @@ from PySide6.QtCore import Qt
 from scipy.stats import ttest_ind, f_oneway, linregress
 import io
 
-from scipy.stats import ttest_ind, f_oneway, linregress, chi2_contingency
+from scipy.stats import ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency
 from scipy.optimize import curve_fit
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 
@@ -32,6 +32,7 @@ from restructure_dialog import RestructureDialog
 from calculate_dialog import CalculateDialog
 from anova_dialog import AnovaDialog
 from ttest_dialog import TTestDialog
+from paired_ttest_dialog import PairedTTestDialog
 from fitting_dialog import FittingDialog
 from contingency_dialog import ContingencyDialog
 
@@ -252,6 +253,10 @@ class MainWindow(QMainWindow):
         ttest_action = QAction("&Independent t-test...", self)
         ttest_action.triggered.connect(self.perform_t_test)
         analysis_menu.addAction(ttest_action)
+        
+        paired_ttest_action = QAction("&Paired t-test...", self)
+        paired_ttest_action.triggered.connect(self.perform_paired_t_test)
+        analysis_menu.addAction(paired_ttest_action)
         
         anova_action = QAction("&One-way ANOVA...", self)
         anova_action.triggered.connect(self.perform_one_way_anova)
@@ -550,7 +555,6 @@ class MainWindow(QMainWindow):
 
                 t_stat, p_value = ttest_ind(group1_data, group2_data)
 
-                # ★--- ここからが追加・変更箇所 ---★
                 # アノテーション情報を辞書として作成
                 annotation = {
                     "type": "ttest",
@@ -564,7 +568,6 @@ class MainWindow(QMainWindow):
 
                 # グラフを更新してアノテーションを描画
                 self.update_graph()
-                # ★--- ここまで ---★
 
                 # --- 結果表示ダイアログ (変更なし) ---
                 result_text = (
@@ -585,6 +588,67 @@ class MainWindow(QMainWindow):
 
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to perform t-test: {e}")
+                
+    def perform_paired_t_test(self):
+        """
+        対応のあるt検定を実行するためのダイアログを表示し、
+        指定された2列で検定を行い、結果をダイアログで表示する。
+        """
+        if not hasattr(self, 'model'):
+            QMessageBox.warning(self, "Warning", "Please load data first.")
+            return
+
+        df = self.model._data
+        dialog = PairedTTestDialog(df.columns, self)
+
+        if dialog.exec():
+            settings = dialog.get_settings()
+            col1, col2 = settings['col1'], settings['col2']
+
+            if not col1 or not col2:
+                QMessageBox.warning(self, "Warning", "Please select both columns.")
+                return
+            if col1 == col2:
+                QMessageBox.warning(self, "Warning", "Please select two different columns.")
+                return
+
+            try:
+                # 欠損値を除外
+                data1 = df[col1].dropna()
+                data2 = df[col2].dropna()
+
+                # 対応のあるデータなので、ペアの長さを揃える
+                min_len = min(len(data1), len(data2))
+                data1 = data1[:min_len]
+                data2 = data2[:min_len]
+
+                if min_len < 2:
+                    QMessageBox.warning(self, "Warning", "Not enough paired data to perform the test.")
+                    return
+
+                # SciPyの ttest_rel を使用
+                t_stat, p_value = ttest_rel(data1, data2)
+
+                # 結果表示
+                result_text = (
+                    f"Paired t-test results:\n"
+                    f"=====================\n\n"
+                    f"Comparing:\n"
+                    f"- Column 1: '{col1}' (Mean: {data1.mean():.3f})\n"
+                    f"- Column 2: '{col2}' (Mean: {data2.mean():.3f})\n\n"
+                    f"---\n"
+                    f"t-statistic: {t_stat:.4f}\n"
+                    f"p-value: {p_value:.4f}\n\n"
+                )
+                if p_value < 0.05:
+                    result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
+                else:
+                    result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
+                
+                self.show_results_dialog("Paired t-test Result", result_text)
+
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to perform paired t-test: {e}")
 
     def perform_linear_regression(self):
         if not hasattr(self, 'model'):
@@ -620,8 +684,8 @@ class MainWindow(QMainWindow):
         
     def perform_one_way_anova(self):
         """
-        一元配置分散分析（ANOVA）を実行するためのダイアログを表示し、
-        指定された列で検定を行い、結果をダイアログで表示する。
+        一元配置分散分析（ANOVA）を実行し、結果が有意であれば
+        Tukey's HSDによる多重比較を行い、アノテーションとして保存する。
         """
         if not hasattr(self, 'model'):
             QMessageBox.warning(self, "Warning", "Please load data first.")
@@ -642,27 +706,68 @@ class MainWindow(QMainWindow):
                 return
 
             try:
-                groups = df[group_col].unique()
+                # 検定の準備
+                groups = df[group_col].dropna().unique()
                 if len(groups) < 3:
                     QMessageBox.warning(self, "Warning", "ANOVA requires at least 3 groups.")
                     return
-                    
+                
                 samples = [df[value_col][df[group_col] == g].dropna() for g in groups]
                 
+                # まず、全体のANOVA検定を実行
                 f_stat, p_value = f_oneway(*samples)
 
+                # ▼▼▼ ここからが重要な追加・変更部分 ▼▼▼
+                
+                # 結果表示用のテキストを作成
                 result_text = (
-                    f"One-way ANOVA Results"
-                    f"======================"
-                    f"Comparing '{value_col}' across groups in '{group_col}'."
-                    f"Number of groups: {len(groups)}"
-                    f"F-statistic: {f_stat:.4f}"
-                    f"p-value: {p_value:.4f}"
+                    f"One-way ANOVA Results\n"
+                    f"======================\n"
+                    f"Comparing '{value_col}' across groups in '{group_col}'.\n"
+                    f"Number of groups: {len(groups)}\n"
+                    f"F-statistic: {f_stat:.4f}\n"
+                    f"p-value: {p_value:.4f}\n\n"
                 )
+
+                # ANOVAの結果が有意（p < 0.05）な場合のみ、多重比較へ進む
                 if p_value < 0.05:
-                    result_text += "Conclusion: There is a statistically significant difference between group means (p < 0.05)."
+                    result_text += "Conclusion: There is a statistically significant difference between group means (p < 0.05).\n\n"
+                    
+                    # Tukey's HSDのためのデータ準備
+                    all_data = pd.concat([s for s in samples])
+                    group_labels = []
+                    for g, s in zip(groups, samples):
+                        group_labels.extend([g] * len(s))
+
+                    # Tukey's HSD検定を実行
+                    tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
+                    
+                    # 結果をDataFrameに変換して扱いやすくする
+                    df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
+
+                    # 有意差のあったペアについてアノテーションを作成
+                    for _, row in df_tukey.iterrows():
+                        if row['p-adj'] < 0.05:
+                            annotation = {
+                                "type": "ttest", # 既存のttest描画ロジックを再利用
+                                "p_value": row['p-adj'],
+                                "group_col": group_col,
+                                "value_col": value_col,
+                                "groups": [row['group1'], row['group2']]
+                            }
+                            self.statistical_annotations.append(annotation)
+
+                    # グラフを更新してアノテーションを描画
+                    self.update_graph()
+                    
+                    # 結果ダイアログにTukeyの結果も追加
+                    result_text += "Post-hoc test (Tukey's HSD):\n"
+                    result_text += str(tukey_result)
+
                 else:
                     result_text += "Conclusion: There is no statistically significant difference between group means (p >= 0.05)."
+                
+                # ▲▲▲ ここまで ▲▲▲
 
                 self.show_results_dialog("ANOVA Result", result_text)
 
