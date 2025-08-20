@@ -45,33 +45,43 @@ class MainWindow(QMainWindow):
         """
         super().__init__()
         self.setWindowTitle("Calcite")
-        self.setGeometry(100, 100, 1000, 650)
+        self.setGeometry(100, 100, 1000, 650) # ウィンドウの高さを少し広げました
         
         self.current_graph_type = 'scatter'
         self.header_editor = None
-        self.regression_line = None
-        self.fit_curve = None
+        self.regression_line_params = None # 以前の修正で追加
         self.fit_params = None
         
         self._create_menu_bar()
         self._create_toolbar()
 
-        # --- メインレイアウトの設定 ---
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        # --- メインレイアウトの設定 (ここからが新しいレイアウト) ---
+        main_splitter = QSplitter(Qt.Orientation.Vertical)
+
+        # --- 上段ウィジェット (テーブルとグラフ用の水平スプリッター) ---
+        top_splitter = QSplitter(Qt.Orientation.Horizontal)
         
         self.table_view = QTableView()
-        splitter.addWidget(self.table_view)
+        top_splitter.addWidget(self.table_view)
         
         self.graph_widget = GraphWidget()
-        splitter.addWidget(self.graph_widget)
+        top_splitter.addWidget(self.graph_widget)
         
-        splitter.setSizes([550, 450])
-        self.setCentralWidget(splitter)
-        
-        # --- プロパティパネルのドックウィジェット ---
-        self.properties_panel = PropertiesWidget()
-        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.properties_panel)
+        top_splitter.setSizes([550, 450]) # 上段の左右の初期サイズ
 
+        # --- 下段ウィジェット (プロパティパネル) ---
+        self.properties_panel = PropertiesWidget()
+
+        # --- メインの垂直スプリッターに上段と下段を追加 ---
+        main_splitter.addWidget(top_splitter)
+        main_splitter.addWidget(self.properties_panel)
+        
+        # ★★★ ご要望の初期サイズ設定 ★★★
+        # 上段に550px, 下段に250pxを割り当てます (お好みで調整してください)
+        main_splitter.setSizes([550, 250])
+
+        self.setCentralWidget(main_splitter)
+        
         # --- シグナルとスロットの接続 ---
         self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self.show_table_context_menu)

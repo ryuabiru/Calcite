@@ -1,7 +1,7 @@
 # properties_widget.py
 
 from PySide6.QtWidgets import (
-    QDockWidget, QWidget, QVBoxLayout, QLabel, QLineEdit,
+    QWidget, QVBoxLayout, QLabel, QLineEdit,
     QComboBox, QFormLayout, QPushButton, QColorDialog, QHBoxLayout,
     QScrollArea, QCheckBox, QTabWidget, QSpinBox, QDoubleSpinBox
 )
@@ -9,22 +9,23 @@ from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QColor, QDoubleValidator
 from functools import partial
 
-class PropertiesWidget(QDockWidget):
+class PropertiesWidget(QWidget):
     propertiesChanged = Signal()
     graphUpdateRequest = Signal()
     subgroupColumnChanged = Signal(str)
 
     def __init__(self, parent=None):
-        super().__init__("Properties", parent)
+        super().__init__(parent)
 
         self.current_color = None
-        self.current_marker_edgecolor = 'black' # ★ マーカーの枠線色の初期値
-        self.current_bar_edgecolor = 'black'   # ★ 棒グラフの枠線色の初期値
+        self.current_marker_edgecolor = 'black'
+        self.current_bar_edgecolor = 'black'
         self.subgroup_colors = {}
         self.subgroup_widgets = {}
 
-        main_widget = QWidget()
-        main_layout = QVBoxLayout(main_widget)
+        # ★★★ ここからが修正箇所です ★★★
+        # レイアウトを中間ウィジェットではなく、self (PropertiesWidget自身) に直接適用します
+        main_layout = QVBoxLayout(self)
         
         tab_widget = QTabWidget()
 
@@ -44,8 +45,8 @@ class PropertiesWidget(QDockWidget):
         main_layout.addWidget(tab_widget)
         main_layout.addWidget(update_button)
 
-        self.setWidget(main_widget)
-        
+        # self.setWidget(main_widget) の行は不要なので削除しました
+
         self.connect_signals()
 
     def connect_signals(self):
