@@ -953,58 +953,95 @@ class MainWindow(QMainWindow):
         
         ax.legend(title=subgroup_col)
 
-    # ★ MainWindowクラスの一番最後に、このメソッドを丸ごと追加してください ★
     def _draw_annotations(self):
         """
-        保存されている統計解析結果に基づいて、グラフにアノテーションを描画する。
+        保存されている統計解析結果に基づき、重なりを回避しながら
+        グラフにアノテーションを描画する。
         """
         if self.current_graph_type != 'bar' or not hasattr(self, 'model'):
             return
 
         ax = self.graph_widget.ax
         df = self.model._data
+        
+        if not self.statistical_annotations:
+            return
+        
+        base_group_col = self.statistical_annotations[0].get('group_col')
+        if not base_group_col or base_group_col not in df.columns:
+            return
+            
+        categories = sorted(df[base_group_col].unique())
+        
+        occupied_levels = {cat: 0 for cat in categories}
 
-        for annotation in self.statistical_annotations:
-            if annotation['type'] == 'ttest':
-                group_col = annotation['group_col']
-                value_col = annotation['value_col']
-                group1_name, group2_name = annotation['groups']
-                p_value = annotation['p_value']
+        sorted_annotations = sorted(self.statistical_annotations, key=lambda x: x['p_value'])
 
-                # グラフに表示されているカテゴリのリストと、そのX座標を取得
-                categories = sorted(df[group_col].unique())
-                try:
-                    x1 = categories.index(group1_name)
-                    x2 = categories.index(group2_name)
-                except ValueError:
-                    continue # 比較対象のグループが現在のグラフにない場合はスキップ
+        for annotation in sorted_annotations:
+            if annotation.get('type') != 'ttest':
+                continue
 
-                # 2つの棒の最大高さを計算 (エラーバー含む)
-                y1_mean = df[df[group_col] == group1_name][value_col].mean()
-                y1_std = df[df[group_col] == group1_name][value_col].std()
-                y2_mean = df[df[group_col] == group2_name][value_col].mean()
-                y2_std = df[df[group_col] == group2_name][value_col].std()
-                
-                max_y = max(y1_mean + y1_std, y2_mean + y2_std)
-                
-                # ブラケットの高さを決定
-                bracket_height = max_y * 1.05 # 棒の最大値より5%高い位置
-                text_height = max_y * 1.08    # テキストはさらにその少し上
+            group_col = annotation['group_col']
+            value_col = annotation['value_col']
+            group1_name, group2_name = annotation['groups']
+            p_value = annotation['p_value']
 
-                # p値からアスタリスクに変換
-                if p_value < 0.001:
-                    significance = '***'
-                elif p_value < 0.01:
-                    significance = '**'
-                elif p_value < 0.05:
-                    significance = '*'
-                else:
-                    significance = 'ns' # Not Significant
+            if group_col != base_group_col:
+                continue
 
-                # ブラケットを描画
-                ax.plot([x1, x1, x2, x2], [bracket_height, text_height, text_height, bracket_height], lw=1.5, c='black')
-                # テキスト(アスタリスク)を描画
-                ax.text((x1 + x2) * 0.5, text_height, significance, ha='center', va='bottom', fontsize=14)
+            try:
+                g1_str, g2_str = str(group1_name), str(group2_name)
+                idx1 = categories.index(g1_str)
+                idx2 = categories.index(g2_str)
+                x1, x2 = min(idx1, idx2), max(idx1, idx2)
+            except ValueError:
+                continue
+
+            df[group_col] = df[group_col].astype(str)
+            group1_data = df[df[group_col] == g1_str][value_col].dropna()
+            group2_data = df[df[group_col] == g2_str][value_col].dropna()
+            
+            if group1_data.empty or group2_data.empty:
+                continue
+
+            y1_mean, y1_std = group1_data.mean(), group1_data.std()
+            y2_mean, y2_std = group2_data.mean(), group2_data.std()
+            y1_std = y1_std if pd.notna(y1_std) else 0
+            y2_std = y2_std if pd.notna(y2_std) else 0
+            bar_max_y = max(y1_mean + y1_std, y2_mean + y2_std)
+
+            level_check_range = categories[x1:x2+1]
+            max_occupied_y = max(occupied_levels[cat] for cat in level_check_range) if level_check_range else 0
+            
+            # --- ★★★ 高さ計算ロジック最終版 ★★★ ---
+            # 描画の基準となる最高点を決定
+            highest_point_below = max(bar_max_y, max_occupied_y)
+            
+            # Y軸の全体範囲を基準に、アノテーションに必要な各パーツの高さを定義
+            y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
+            # 重要なのはこの「最初の隙間」
+            initial_gap = y_range * 0.04 
+            vertical_tick_height = y_range * 0.03
+            gap_from_bracket_to_text = y_range * 0.01
+
+            # 新しいアノテーションの各Y座標を計算
+            base_y = highest_point_below + initial_gap # 最高点から、まず隙間を空ける
+            bracket_y = base_y + vertical_tick_height   # そこからブラケットの縦棒を伸ばす
+            text_y = bracket_y + gap_from_bracket_to_text     # さらに隙間を空けてテキストを配置
+            # --- ★★★ ここまで ★★★ ---
+
+            if p_value < 0.001: significance = '***'
+            elif p_value < 0.01: significance = '**'
+            elif p_value < 0.05: significance = '*'
+            else: significance = 'ns'
+
+            # 新しい座標で描画
+            ax.plot([x1, x1, x2, x2], [base_y, bracket_y, bracket_y, base_y], lw=1.5, c='black')
+            ax.text((x1 + x2) * 0.5, text_y, significance, ha='center', va='bottom', fontsize=14)
+
+            # このアノテーションが占有した高さを記録
+            for cat in level_check_range:
+                occupied_levels[cat] = text_y
                 
     def clear_annotations(self):
         """
