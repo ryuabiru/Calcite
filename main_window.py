@@ -711,10 +711,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(text_edit)
         dialog.exec()
 
-    def update_graph_properties(self, properties):
-        """
-        プロパティパネルから受け取った情報でグラフのテキスト要素（タイトル、軸ラベル）を更新する。
-        """
+    def update_graph_properties(self):
+        """プロパティパネルから現在の全設定を取得し、グラフに適用する。"""
         properties = self.properties_panel.get_properties()
         ax = self.graph_widget.ax
         
@@ -730,24 +728,42 @@ class MainWindow(QMainWindow):
             xmax = float(properties['xmax']) if properties['xmax'] else None
             if xmin is not None and xmax is not None:
                 ax.set_xlim(xmin, xmax)
+            else:
+                # 片方でも空なら自動スケールに戻す
+                ax.autoscale(enable=True, axis='x')
+
 
             ymin = float(properties['ymin']) if properties['ymin'] else None
             ymax = float(properties['ymax']) if properties['ymax'] else None
             if ymin is not None and ymax is not None:
                 ax.set_ylim(ymin, ymax)
+            else:
+                ax.autoscale(enable=True, axis='y')
         except (ValueError, TypeError):
             pass
         
         # グリッドの表示/非表示
         ax.grid(properties.get('show_grid', False))
+        
+        # ★--- スケール設定ロジックをここに集約 ---★
+        # 非線形フィット中はX軸を強制的に対数スケールにする
+        if self.fit_params and self.fit_params['x_col'] == self.properties_panel.x_axis_combo.currentText():
+            ax.set_xscale('log')
+        else:
+            ax.set_xscale('log' if properties.get('x_log_scale') else 'linear')
+        
+        ax.set_yscale('log' if properties.get('y_log_scale') else 'linear')
+        
+        # 凡例が必要な場合のみ表示
+        if ax.get_legend_handles_labels()[1]:
+            ax.legend()
 
         self.graph_widget.fig.tight_layout()
         self.graph_widget.canvas.draw()
-
+        
     def update_graph(self):
         """
         現在の設定に基づいてグラフ全体を再描画する。
-        データの変更、グラフタイプの変更、プロパティの変更など、様々なトリガーから呼び出される。
         """
         if not hasattr(self, 'model'):
             return
@@ -756,16 +772,13 @@ class MainWindow(QMainWindow):
         ax = self.graph_widget.ax
         ax.clear()
         
-        # 既存の線オブジェクトへの参照をリセット
         self.regression_line = None
         self.fit_curve = None
 
-        # プロパティパネルから描画設定を取得
         y_col = self.properties_panel.y_axis_combo.currentText()
         x_col = self.properties_panel.x_axis_combo.currentText()
         subgroup_col = self.properties_panel.subgroup_combo.currentText()
         
-        # スタイル情報を取得
         marker_style = self.properties_panel.marker_combo.currentData()
         single_color = self.properties_panel.current_color
         subgroup_colors_map = self.properties_panel.subgroup_colors
@@ -775,36 +788,27 @@ class MainWindow(QMainWindow):
             self.graph_widget.canvas.draw()
             return
             
-        # グラフタイプに応じて描画を分岐
         if self.current_graph_type == 'scatter':
             self._draw_scatter_plot(ax, df, x_col, y_col, marker_style, single_color)
-
         elif self.current_graph_type == 'bar':
-            self.fit_params = None
+            # 棒グラフに切り替えたらフィット情報はクリア
+            self.fit_params = None 
             self._draw_bar_chart(ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter)
 
-        # フィッティングパラメータが存在し、現在の表示列と一致する場合に曲線を描画
+        # ★--- スケール設定の呼び出しを削除し、プロパティ更新に一本化 ---★
+        # フィッティングパラメータが存在する場合に曲線を描画
         if self.fit_params and self.fit_params['x_col'] == x_col and self.fit_params['y_col'] == y_col:
-            
             fit_df = df[[x_col, y_col]].dropna().copy()
             if not (fit_df[x_col] <= 0).any():
                 fit_df['log_x'] = np.log10(fit_df[x_col])
                 x_data = fit_df['log_x']
-
                 x_fit = np.linspace(x_data.min(), x_data.max(), 200)
                 y_fit = self.sigmoid_4pl(x_fit, *self.fit_params['params'])
-                
                 r_squared = self.fit_params['r_squared']
                 self.fit_curve, = ax.plot(10**x_fit, y_fit, color='blue', label=f'4PL Fit (R²={r_squared:.3f})')
-                ax.set_xscale('log')
-                ax.legend()
 
-        else:
-             ax.set_xscale('linear') # フィットがない場合は線形スケール
-
-        # グラフの再描画
-        #ax.set_xscale('linear') # ★ この行は不要になることが多いのでコメントアウト
-        self.update_graph_properties() # 引数なしで呼び出すように変更
+        # グラフのプロパティを最後にまとめて適用
+        self.update_graph_properties()
 
     def _draw_scatter_plot(self, ax, df, x_col, y_col, marker_style, color):
         """散布図を描画する内部メソッド。"""
