@@ -468,8 +468,12 @@ class MainWindow(QMainWindow):
                     "params": params,
                     "r_squared": r_squared,
                     "x_col": x_col,
-                    "y_col": y_col
+                    "y_col": y_col,
+                    "log_x_data": x_data # 再描画のためにXデータを保存
                 }
+                
+                # 既存の回帰直線をクリア
+                self.regression_line_params = None
 
                 # 結果をフォーマット
                 result_text = "Non-linear Regression Results (Sigmoidal 4PL)\n"
@@ -482,32 +486,8 @@ class MainWindow(QMainWindow):
                 
                 self.show_results_dialog("Fitting Result", result_text)
 
-                # ★ グラフ描画の前にプロパティを取得
-                properties = self.properties_panel.get_properties()
-                linestyle = properties.get('linestyle', '-')
-                linewidth = properties.get('linewidth', 1.5)
-
                 # グラフ全体を更新して、データと曲線を再描画
                 self.update_graph()
-
-                # グラフに曲線を描画
-                ax = self.graph_widget.ax
-                # 既存の線をクリア
-                if self.regression_line and self.regression_line in ax.lines:
-                    self.regression_line.remove()
-                    self.regression_line = None
-                if self.fit_curve and self.fit_curve in ax.lines:
-                    self.fit_curve.remove()
-                
-                # 滑らかな曲線のためのX値を生成
-                x_fit = np.linspace(x_data.min(), x_data.max(), 200)
-                y_fit = self.sigmoid_4pl(x_fit, *params)
-                
-                # X軸を元のスケールに戻してプロット
-                self.fit_curve, = ax.plot(10**x_fit, y_fit, color='blue', label=f'4PL Fit (R²={r_squared:.3f})')
-                ax.set_xscale('log') # X軸を対数スケールに設定
-                ax.legend()
-                self.graph_widget.canvas.draw()
 
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to perform fitting: {e}")
@@ -567,36 +547,19 @@ class MainWindow(QMainWindow):
         y_data = df.iloc[:, y_col_index].dropna()
         
         slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data)
-        r_squared = r_value**2
 
-        x_line = np.array([x_data.min(), x_data.max()])
-        y_line = slope * x_line + intercept
-
-        # ★ グラフ描画の前にプロパティを取得
-        properties = self.properties_panel.get_properties()
-        linestyle = properties.get('linestyle', '--')
-        linewidth = properties.get('linewidth', 1.5)
+        # 描画に必要なパラメータをインスタンス変数に保存する
+        self.regression_line_params = {
+            "x_line": np.array([x_data.min(), x_data.max()]),
+            "y_line": slope * np.array([x_data.min(), x_data.max()]) + intercept,
+            "r_squared": r_value**2
+        }
 
         # 既存のフィッティング曲線をクリア
         self.fit_params = None
 
-        ax = self.graph_widget.ax
-        
-        # --- 既存の線をクリア ---
-        if self.regression_line and self.regression_line in ax.lines:
-            self.regression_line.remove()
-        if self.fit_curve and self.fit_curve in ax.lines: # ★ 追加
-            self.fit_curve.remove()
-            self.fit_curve = None
-            
-        self.regression_line, = ax.plot(x_line, y_line, color='red', 
-                                         label=f'R² = {r_squared:.4f}',
-                                         linestyle=linestyle,
-                                         linewidth=linewidth)
-        
-        ax.set_xscale('linear') # ★ 軸を線形スケールに戻す
-        ax.legend()
-        self.graph_widget.canvas.draw()
+        # グラフ全体の更新をトリガーする
+        self.update_graph()
         
     def perform_one_way_anova(self):
         """
@@ -784,17 +747,13 @@ class MainWindow(QMainWindow):
         ax = self.graph_widget.ax
         ax.clear()
         
-        self.regression_line = None
-        self.fit_curve = None
-        
-        # ★ プロパティを一括で取得
         properties = self.properties_panel.get_properties()
-
+        
         y_col = self.properties_panel.y_axis_combo.currentText()
         x_col = self.properties_panel.x_axis_combo.currentText()
         subgroup_col = self.properties_panel.subgroup_combo.currentText()
         
-        marker_style = self.properties_panel.marker_combo.currentData()
+        marker_style = properties.get('marker_style', 'o')
         single_color = self.properties_panel.current_color
         subgroup_colors_map = self.properties_panel.subgroup_colors
         show_scatter = self.properties_panel.scatter_overlay_check.isChecked()
@@ -808,19 +767,31 @@ class MainWindow(QMainWindow):
         elif self.current_graph_type == 'bar':
             # 棒グラフに切り替えたらフィット情報はクリア
             self.fit_params = None 
+            self.regression_line_params = None
             self._draw_bar_chart(ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter, properties)
 
-        # ★--- スケール設定の呼び出しを削除し、プロパティ更新に一本化 ---★
-        # フィッティングパラメータが存在する場合に曲線を描画
+        # ここで回帰直線とフィッティング曲線を再描画
+        linestyle = properties.get('linestyle', '-')
+        linewidth = properties.get('linewidth', 1.5)
+
+        # 線形回帰直線が存在する場合に再描画
+        if hasattr(self, 'regression_line_params') and self.regression_line_params:
+            params = self.regression_line_params
+            ax.plot(params["x_line"], params["y_line"], color='red', 
+                    label=f'R² = {params["r_squared"]:.4f}',
+                    linestyle=linestyle,
+                    linewidth=linewidth)
+
+        # 非線形フィッティング曲線が存在する場合に再描画
         if self.fit_params and self.fit_params['x_col'] == x_col and self.fit_params['y_col'] == y_col:
-            fit_df = df[[x_col, y_col]].dropna().copy()
-            if not (fit_df[x_col] <= 0).any():
-                fit_df['log_x'] = np.log10(fit_df[x_col])
-                x_data = fit_df['log_x']
-                x_fit = np.linspace(x_data.min(), x_data.max(), 200)
-                y_fit = self.sigmoid_4pl(x_fit, *self.fit_params['params'])
-                r_squared = self.fit_params['r_squared']
-                self.fit_curve, = ax.plot(10**x_fit, y_fit, color='blue', label=f'4PL Fit (R²={r_squared:.3f})')
+            x_data = self.fit_params['log_x_data']
+            x_fit = np.linspace(x_data.min(), x_data.max(), 200)
+            y_fit = self.sigmoid_4pl(x_fit, *self.fit_params['params'])
+            r_squared = self.fit_params['r_squared']
+            ax.plot(10**x_fit, y_fit, color='blue', 
+                      label=f'4PL Fit (R²={r_squared:.3f})',
+                      linestyle=linestyle,
+                      linewidth=linewidth)
 
         # グラフのプロパティを最後にまとめて適用
         self.update_graph_properties()
