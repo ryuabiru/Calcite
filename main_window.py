@@ -1002,8 +1002,9 @@ class MainWindow(QMainWindow):
         show_scatter = self.properties_panel.scatter_overlay_check.isChecked()
 
         if not y_col or not x_col:
-            self.graph_widget.canvas.draw()
-            return
+            if self.current_graph_type != 'paired_scatter':
+                self.graph_widget.canvas.draw()
+                return
 
         # 棒グラフのカテゴリ情報を保持する変数を初期化
         bar_categories, bar_x_indices = None, None
@@ -1016,12 +1017,12 @@ class MainWindow(QMainWindow):
             # 描画関数からカテゴリ情報を受け取る
             bar_categories, bar_x_indices = self._draw_bar_chart(ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter, properties)
         elif self.current_graph_type == 'paired_scatter':
-            # ★★★ 修正箇所 ★★★
             self.fit_params = None
             self.regression_line_params = None
             if hasattr(self, 'paired_plot_cols'):
                 col1 = self.paired_plot_cols['col1']
                 col2 = self.paired_plot_cols['col2']
+                # 正しい引数で関数を呼び出す
                 self._draw_paired_plot(ax, df, col1, col2, properties)
             else:
                 QMessageBox.warning(self, "Warning", "Please select columns for the paired plot from the dialog.")
@@ -1190,10 +1191,15 @@ class MainWindow(QMainWindow):
     def _draw_paired_plot(self, ax, df, col1, col2, properties):
         """
         ペアデータ（対応のあるデータ）の散布図を描画し、データポイント間を線で結ぶ。
+        ワイド形式のデータ（例：'Before'列と'After'列）を想定。
         """
         try:
             # データの準備
             plot_df = df[[col1, col2]].dropna().copy()
+
+            if plot_df.empty:
+                QMessageBox.warning(self, "Warning", "No valid paired data to plot.")
+                return
 
             # X軸のカテゴリとインデックスを定義
             categories = [col1, col2]
@@ -1211,13 +1217,14 @@ class MainWindow(QMainWindow):
                     linestyle='--', linewidth=2, label="Mean")
 
             # 軸のラベルを設定
-            ax.set_xlabel(properties.get('xlabel', ''))
-            ax.set_ylabel(properties.get('ylabel', ''))
+            ax.set_xlabel(properties.get('xlabel', 'Condition'))
+            ax.set_ylabel(properties.get('ylabel', 'Value'))
             
             # X軸の目盛りをカテゴリ名に設定
             ax.set_xticks(x_indices)
             ax.set_xticklabels(categories)
             ax.set_xlim(-0.2, 1.2) # 見栄えを良くするため少し余白を設ける
+            ax.legend()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to draw paired plot: {e}")
@@ -2157,8 +2164,6 @@ class MainWindow(QMainWindow):
         ax.set_ylabel(properties.get('ylabel', ''), fontsize=properties.get('ylabel_fontsize', 12))
         ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
 
-        # --- ★★★ ここからが修正箇所です ★★★ ---
-
         # 軸範囲を設定
         # Y軸の範囲設定は常に有効
         try:
@@ -2171,8 +2176,8 @@ class MainWindow(QMainWindow):
         except (ValueError, TypeError):
             pass
         
-        # X軸の範囲設定は、棒グラフ以外のときのみ有効にする
-        if self.current_graph_type != 'bar':
+        # X軸の範囲設定は、棒グラフやペアプロット以外のときのみ有効にする
+        if self.current_graph_type not in ['bar', 'paired_scatter']:
             try:
                 xmin = float(properties['xmin']) if properties['xmin'] else None
                 xmax = float(properties['xmax']) if properties['xmax'] else None
@@ -2182,6 +2187,7 @@ class MainWindow(QMainWindow):
                     ax.autoscale(enable=True, axis='x')
             except (ValueError, TypeError):
                 pass
+
         
         # グリッドの表示/非表示
         ax.grid(properties.get('show_grid', False))
@@ -2423,41 +2429,6 @@ class MainWindow(QMainWindow):
             
             self.update_graph()
 
-    def _draw_paired_plot(self, ax, df, col1, col2, properties):
-        """
-        ペアデータ（対応のあるデータ）の散布図を描画し、データポイント間を線で結ぶ。
-        """
-        try:
-            # データの準備
-            plot_df = df[[col1, col2]].dropna().copy()
-
-            # X軸のカテゴリとインデックスを定義
-            categories = [col1, col2]
-            x_indices = [0, 1]
-
-            # 各行（ID）ごとにループして線を引く
-            for index, row in plot_df.iterrows():
-                ax.plot(x_indices, [row[col1], row[col2]], 
-                        color='gray', marker='o', linestyle='-', alpha=0.5)
-
-            # 各グループの平均値をプロット
-            mean1 = plot_df[col1].mean()
-            mean2 = plot_df[col2].mean()
-            ax.plot(x_indices, [mean1, mean2], color='red', marker='o', 
-                    linestyle='--', linewidth=2, label="Mean")
-
-            # 軸のラベルを設定
-            ax.set_xlabel(properties.get('xlabel', ''))
-            ax.set_ylabel(properties.get('ylabel', ''))
-            
-            # X軸の目盛りをカテゴリ名に設定
-            ax.set_xticks(x_indices)
-            ax.set_xticklabels(categories)
-            ax.set_xlim(-0.2, 1.2) # 見栄えを良くするため少し余白を設ける
-
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to draw paired plot: {e}")
-
     def _draw_annotations(self):
         """
         ユーザー提案の「レベル」概念に基づき、重なりとエラーバーとの接触を
@@ -2558,51 +2529,6 @@ class MainWindow(QMainWindow):
             if highest_annotation_y > current_ylim[1]:
                 new_ylim_top = highest_annotation_y + (level_height * 0.2)
                 ax.set_ylim(current_ylim[0], new_ylim_top)
-                
-# ★--- ペアード散布図を描画する内部メソッド ---★
-    def _draw_paired_plot(self, ax, df, x_col, y_col, subgroup_col, properties):
-        """
-        ペアデータ（対応のあるデータ）の散布図を描画し、データポイント間を線で結ぶ。
-        """
-        try:
-            # 棒グラフ描画と同様に、x軸をカテゴリとして扱う
-            categories = sorted(df[x_col].unique())
-            x_indices = {cat: i for i, cat in enumerate(categories)}
-
-            # 各ペアのデータを取得し、線で結ぶ
-            # 線の色を既存のサブグループ設定から取得
-            subgroup_colors_map = self.properties_panel.subgroup_colors
-            
-            # 各ペア（ID）ごとにループして線を引く
-            for i, (paired_id, group) in enumerate(df.groupby(subgroup_col)):
-                if len(group) != len(categories):
-                    print(f"Skipping paired ID '{paired_id}': data is not complete for all categories.")
-                    continue
-                
-                # X軸とY軸のデータを、X列のカテゴリの順序に並び替える
-                group = group.set_index(x_col).reindex(categories).reset_index()
-                
-                # 線の色をサブグループ設定から取得、なければデフォルト色
-                color_to_plot = subgroup_colors_map.get(str(paired_id)) if subgroup_col else '#1f77b4'
-                
-                # 線の描画
-                ax.plot([x_indices[cat] for cat in categories], group[y_col], 
-                        color=color_to_plot, marker='o', linestyle='-', label=str(paired_id))
-
-            # 軸のラベルを設定
-            ax.set_xlabel(properties.get('xlabel') or x_col)
-            ax.set_ylabel(properties.get('ylabel') or y_col)
-            
-            # 凡例が必要な場合のみ表示
-            if subgroup_col:
-                 ax.legend(title=subgroup_col, bbox_to_anchor=(1.05, 1), loc='upper left')
-
-            # X軸の目盛りをカテゴリ名に設定
-            ax.set_xticks([x_indices[cat] for cat in categories])
-            ax.set_xticklabels([str(cat) for cat in categories], rotation=0)
-
-        except Exception as e:
-            print(f"Could not generate paired scatter plot: {e}")
                 
     def clear_annotations(self):
         """
