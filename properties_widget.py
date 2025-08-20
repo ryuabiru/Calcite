@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QLabel, QLineEdit,
     QComboBox, QFormLayout, QPushButton, QColorDialog, QHBoxLayout,
-    QScrollArea, QCheckBox, QTabWidget, QSpinBox
+    QScrollArea, QCheckBox, QTabWidget, QSpinBox, QDoubleSpinBox
 )
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QColor, QDoubleValidator
@@ -65,6 +65,11 @@ class PropertiesWidget(QDockWidget):
         self.grid_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
         self.x_log_scale_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
         self.y_log_scale_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
+        # 線のスタイル
+        self.linestyle_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
+        self.linewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        self.capsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+
 
     def create_data_tab(self):
         widget = QWidget()
@@ -84,6 +89,8 @@ class PropertiesWidget(QDockWidget):
         scroll_area.setWidgetResizable(True)
         scroll_area.setWidget(widget)
         layout = QFormLayout(widget)
+        
+        # マーカのシンボル
         self.scatter_overlay_check = QCheckBox()
         layout.addRow(QLabel("Overlay Individual Points:"), self.scatter_overlay_check)
         self.marker_combo = QComboBox()
@@ -91,12 +98,37 @@ class PropertiesWidget(QDockWidget):
         for name, style in markers.items():
             self.marker_combo.addItem(name, style)
         layout.addRow(QLabel("Marker Style:"), self.marker_combo)
+        
+         # 線のスタイル
+        self.linestyle_combo = QComboBox()
+        linestyles = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'Dash-Dot': '-.'}
+        for name, style in linestyles.items():
+            self.linestyle_combo.addItem(name, style)
+        layout.addRow(QLabel("Line Style (Regression):"), self.linestyle_combo)
+
+        # 線の太さ
+        self.linewidth_spin = QDoubleSpinBox()
+        self.linewidth_spin.setRange(0.5, 10.0)
+        self.linewidth_spin.setSingleStep(0.5)
+        self.linewidth_spin.setValue(1.5)
+        layout.addRow(QLabel("Line Width (Regression):"), self.linewidth_spin)
+
+        # エラーバーのキャップサイズ
+        self.capsize_spin = QSpinBox()
+        self.capsize_spin.setRange(0, 20)
+        self.capsize_spin.setValue(4)
+        layout.addRow(QLabel("Error Bar Cap Size:"), self.capsize_spin)
+        
+        # グラフの色
         self.single_color_button = QPushButton("Select Color")
         self.single_color_button.clicked.connect(self.open_single_color_dialog)
         layout.addRow(QLabel("Graph Color (Single):"), self.single_color_button)
         self.subgroup_color_layout = QFormLayout()
         layout.addRow(QLabel("Graph Color (Sub-group):"))
         layout.addRow(self.subgroup_color_layout)
+        
+        
+        
         return scroll_area
 
     def create_text_tab(self):
@@ -165,6 +197,13 @@ class PropertiesWidget(QDockWidget):
             'show_grid': self.grid_check.isChecked(),
             'x_log_scale': self.x_log_scale_check.isChecked(),
             'y_log_scale': self.y_log_scale_check.isChecked(),
+            'show_grid': self.grid_check.isChecked(),
+            'x_log_scale': self.x_log_scale_check.isChecked(),
+            'y_log_scale': self.y_log_scale_check.isChecked(),
+            'marker_style': self.marker_combo.currentData(),
+            'linestyle': self.linestyle_combo.currentData(),
+            'linewidth': self.linewidth_spin.value(),
+            'capsize': self.capsize_spin.value(),
         }
 
     def open_single_color_dialog(self):

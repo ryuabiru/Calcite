@@ -482,6 +482,11 @@ class MainWindow(QMainWindow):
                 
                 self.show_results_dialog("Fitting Result", result_text)
 
+                # ★ グラフ描画の前にプロパティを取得
+                properties = self.properties_panel.get_properties()
+                linestyle = properties.get('linestyle', '-')
+                linewidth = properties.get('linewidth', 1.5)
+
                 # グラフ全体を更新して、データと曲線を再描画
                 self.update_graph()
 
@@ -567,6 +572,11 @@ class MainWindow(QMainWindow):
         x_line = np.array([x_data.min(), x_data.max()])
         y_line = slope * x_line + intercept
 
+        # ★ グラフ描画の前にプロパティを取得
+        properties = self.properties_panel.get_properties()
+        linestyle = properties.get('linestyle', '--')
+        linewidth = properties.get('linewidth', 1.5)
+
         # 既存のフィッティング曲線をクリア
         self.fit_params = None
 
@@ -579,8 +589,10 @@ class MainWindow(QMainWindow):
             self.fit_curve.remove()
             self.fit_curve = None
             
-        self.regression_line, = ax.plot(x_line, y_line, color='red', linestyle='--', 
-                                         label=f'R² = {r_squared:.4f}')
+        self.regression_line, = ax.plot(x_line, y_line, color='red', 
+                                         label=f'R² = {r_squared:.4f}',
+                                         linestyle=linestyle,
+                                         linewidth=linewidth)
         
         ax.set_xscale('linear') # ★ 軸を線形スケールに戻す
         ax.legend()
@@ -774,6 +786,9 @@ class MainWindow(QMainWindow):
         
         self.regression_line = None
         self.fit_curve = None
+        
+        # ★ プロパティを一括で取得
+        properties = self.properties_panel.get_properties()
 
         y_col = self.properties_panel.y_axis_combo.currentText()
         x_col = self.properties_panel.x_axis_combo.currentText()
@@ -793,7 +808,7 @@ class MainWindow(QMainWindow):
         elif self.current_graph_type == 'bar':
             # 棒グラフに切り替えたらフィット情報はクリア
             self.fit_params = None 
-            self._draw_bar_chart(ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter)
+            self._draw_bar_chart(ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter, properties)
 
         # ★--- スケール設定の呼び出しを削除し、プロパティ更新に一本化 ---★
         # フィッティングパラメータが存在する場合に曲線を描画
@@ -818,7 +833,7 @@ class MainWindow(QMainWindow):
             ax.set_xlabel(x_col)
             ax.set_ylabel(y_col)
 
-    def _draw_bar_chart(self, ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter):
+    def _draw_bar_chart(self, ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter, properties):
         """棒グラフを描画する内部メソッド。サブグループ化と実測値の重ね描きに対応。"""
         try:
             categories = sorted(df[x_col].unique())
@@ -826,10 +841,10 @@ class MainWindow(QMainWindow):
             
             if subgroup_col:
                 # サブグループあり
-                self._draw_grouped_bar_chart(ax, df, x_col, y_col, subgroup_col, categories, x_indices, subgroup_colors_map, show_scatter)
+                                self._draw_grouped_bar_chart(ax, df, x_col, y_col, subgroup_col, categories, x_indices, subgroup_colors_map, show_scatter, properties)
             else:
                 # サブグループなし
-                self._draw_simple_bar_chart(ax, df, x_col, y_col, categories, x_indices, single_color, show_scatter)
+                self._draw_simple_bar_chart(ax, df, x_col, y_col, categories, x_indices, single_color, show_scatter, properties)
             
             ax.set_xticks(x_indices)
             ax.set_xticklabels(categories, rotation=0)
@@ -839,12 +854,14 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Could not generate bar chart: {e}")
 
-    def _draw_simple_bar_chart(self, ax, df, x_col, y_col, categories, x_indices, color, show_scatter):
+    def _draw_simple_bar_chart(self, ax, df, x_col, y_col, categories, x_indices, color, show_scatter, properties):
         """サブグループのない単純な棒グラフを描画する。"""
         summary = df.groupby(x_col)[y_col].agg(['mean', 'std']).reindex(categories)
         color_to_plot = color if color else '#1f77b4'
         
-        ax.bar(x_indices, summary['mean'], width=0.8, yerr=summary['std'], capsize=4, color=color_to_plot)
+        capsize = properties.get('capsize', 4)
+        ax.bar(x_indices, summary['mean'], width=0.8, yerr=summary['std'], capsize=capsize, color=color_to_plot)
+
 
         if show_scatter:
             for i, cat in enumerate(categories):
@@ -852,13 +869,15 @@ class MainWindow(QMainWindow):
                 jitter = np.random.uniform(-0.15, 0.15, len(points))
                 ax.scatter(i + jitter, points, color='black', alpha=0.6, zorder=2)
 
-    def _draw_grouped_bar_chart(self, ax, df, x_col, y_col, subgroup_col, categories, x_indices, subgroup_colors_map, show_scatter):
+    def _draw_grouped_bar_chart(self, ax, df, x_col, y_col, subgroup_col, categories, x_indices, subgroup_colors_map, show_scatter, properties):
         """サブグループ化された棒グラフを描画する。"""
         subcategories = sorted(df[subgroup_col].unique())
         n_subgroups = len(subcategories)
         bar_width = 0.8
         sub_bar_width = bar_width / n_subgroups
-        
+
+        capsize = properties.get('capsize', 4)
+       
         for i, subcat in enumerate(subcategories):
             offsets = (i - (n_subgroups - 1) / 2.) * sub_bar_width
             bar_positions = x_indices + offsets
@@ -871,7 +890,7 @@ class MainWindow(QMainWindow):
                 stds.append(subset.std())
             
             color = subgroup_colors_map.get(subcat)
-            ax.bar(bar_positions, means, width=sub_bar_width * 0.9, yerr=stds, label=subcat, capsize=4, color=color)
+            ax.bar(bar_positions, means, width=sub_bar_width * 0.9, yerr=stds, label=subcat, capsize=capsize, color=color)
 
             if show_scatter:
                 for k, cat in enumerate(categories):
