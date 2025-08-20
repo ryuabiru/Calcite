@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
         self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self.show_table_context_menu)
         self.table_view.horizontalHeader().sectionDoubleClicked.connect(self.edit_header)
-        self.properties_panel.propertiesChanged.connect(self.update_graph_properties)
+        self.properties_panel.propertiesChanged.connect(self.update_graph)
         self.properties_panel.graphUpdateRequest.connect(self.update_graph)
         self.properties_panel.subgroupColumnChanged.connect(self.on_subgroup_column_changed)
 
@@ -763,7 +763,7 @@ class MainWindow(QMainWindow):
             return
             
         if self.current_graph_type == 'scatter':
-            self._draw_scatter_plot(ax, df, x_col, y_col, marker_style, single_color)
+            self._draw_scatter_plot(ax, df, x_col, y_col, marker_style, single_color, properties)
         elif self.current_graph_type == 'bar':
             # 棒グラフに切り替えたらフィット情報はクリア
             self.fit_params = None 
@@ -796,9 +796,13 @@ class MainWindow(QMainWindow):
         # グラフのプロパティを最後にまとめて適用
         self.update_graph_properties()
 
-    def _draw_scatter_plot(self, ax, df, x_col, y_col, marker_style, color):
+    def _draw_scatter_plot(self, ax, df, x_col, y_col, marker_style, color, properties):
         """散布図を描画する内部メソッド。"""
         color_to_plot = color if color else '#1f77b4'
+        
+        edgecolor = properties.get('marker_edgecolor', 'black')
+        linewidth = properties.get('marker_edgewidth', 1.0)
+        
         if pd.api.types.is_numeric_dtype(df[y_col]) and pd.api.types.is_numeric_dtype(df[x_col]):
             ax.scatter(df[x_col], df[y_col], marker=marker_style, color=color_to_plot)
             ax.set_xlabel(x_col)
@@ -830,6 +834,16 @@ class MainWindow(QMainWindow):
         summary = df.groupby(x_col)[y_col].agg(['mean', 'std']).reindex(categories)
         color_to_plot = color if color else '#1f77b4'
         
+        # ★ properties から棒グラフ用の設定値を取得
+        capsize = properties.get('capsize', 4)
+        edgecolor = properties.get('bar_edgecolor', 'black')
+        linewidth = properties.get('bar_edgewidth', 1.0)
+        
+        # ★ edgecolor と linewidth を ax.bar に適用
+        ax.bar(x_indices, summary['mean'], width=0.8, yerr=summary['std'], 
+               capsize=capsize, color=color_to_plot,
+               edgecolor=edgecolor, linewidth=linewidth)
+        
         capsize = properties.get('capsize', 4)
         ax.bar(x_indices, summary['mean'], width=0.8, yerr=summary['std'], capsize=capsize, color=color_to_plot)
 
@@ -846,6 +860,11 @@ class MainWindow(QMainWindow):
         n_subgroups = len(subcategories)
         bar_width = 0.8
         sub_bar_width = bar_width / n_subgroups
+
+        # ★ properties から棒グラフ用の設定値を取得
+        capsize = properties.get('capsize', 4)
+        edgecolor = properties.get('bar_edgecolor', 'black')
+        linewidth = properties.get('bar_edgewidth', 1.0)
 
         capsize = properties.get('capsize', 4)
        

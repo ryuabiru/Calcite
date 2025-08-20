@@ -18,6 +18,8 @@ class PropertiesWidget(QDockWidget):
         super().__init__("Properties", parent)
 
         self.current_color = None
+        self.current_marker_edgecolor = 'black' # ★ マーカーの枠線色の初期値
+        self.current_bar_edgecolor = 'black'   # ★ 棒グラフの枠線色の初期値
         self.subgroup_colors = {}
         self.subgroup_widgets = {}
 
@@ -69,6 +71,10 @@ class PropertiesWidget(QDockWidget):
         self.linestyle_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
         self.linewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
         self.capsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        # edgecolor
+        self.marker_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        self.bar_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+
 
 
     def create_data_tab(self):
@@ -99,36 +105,71 @@ class PropertiesWidget(QDockWidget):
             self.marker_combo.addItem(name, style)
         layout.addRow(QLabel("Marker Style:"), self.marker_combo)
         
-         # 線のスタイル
-        self.linestyle_combo = QComboBox()
-        linestyles = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'Dash-Dot': '-.'}
-        for name, style in linestyles.items():
-            self.linestyle_combo.addItem(name, style)
-        layout.addRow(QLabel("Line Style (Regression):"), self.linestyle_combo)
+        # ★ マーカーの枠線の色
+        self.marker_edgecolor_button = QPushButton("Select Color")
+        self.marker_edgecolor_button.setStyleSheet(f"background-color: {self.current_marker_edgecolor};")
+        self.marker_edgecolor_button.clicked.connect(self.open_marker_edgecolor_dialog)
+        layout.addRow(QLabel("Marker Edge Color:"), self.marker_edgecolor_button)
 
-        # 線の太さ
-        self.linewidth_spin = QDoubleSpinBox()
-        self.linewidth_spin.setRange(0.5, 10.0)
-        self.linewidth_spin.setSingleStep(0.5)
-        self.linewidth_spin.setValue(1.5)
-        layout.addRow(QLabel("Line Width (Regression):"), self.linewidth_spin)
+        # ★ マーカーの枠線の太さ
+        self.marker_edgewidth_spin = QDoubleSpinBox()
+        self.marker_edgewidth_spin.setRange(0, 10)
+        self.marker_edgewidth_spin.setSingleStep(0.5)
+        self.marker_edgewidth_spin.setValue(1.0)
+        layout.addRow(QLabel("Marker Edge Width:"), self.marker_edgewidth_spin)
+        
+        layout.addRow(QLabel("---")) # 区切り線
+        
+        # --- 棒グラフ設定 ---
+        layout.addRow(QLabel("<b>Bar Chart Settings</b>"))
+        self.scatter_overlay_check = QCheckBox()
+        layout.addRow(QLabel("Overlay Individual Points:"), self.scatter_overlay_check)
+        
+        # 棒グラフの枠線の色
+        self.bar_edgecolor_button = QPushButton("Select Color")
+        self.bar_edgecolor_button.setStyleSheet(f"background-color: {self.current_bar_edgecolor};")
+        self.bar_edgecolor_button.clicked.connect(self.open_bar_edgecolor_dialog)
+        layout.addRow(QLabel("Bar Edge Color:"), self.bar_edgecolor_button)
 
-        # エラーバーのキャップサイズ
+        # 棒グラフの枠線の太さ
+        self.bar_edgewidth_spin = QDoubleSpinBox()
+        self.bar_edgewidth_spin.setRange(0, 10)
+        self.bar_edgewidth_spin.setSingleStep(0.5)
+        self.bar_edgewidth_spin.setValue(1.0)
+        layout.addRow(QLabel("Bar Edge Width:"), self.bar_edgewidth_spin)
+
         self.capsize_spin = QSpinBox()
         self.capsize_spin.setRange(0, 20)
         self.capsize_spin.setValue(4)
         layout.addRow(QLabel("Error Bar Cap Size:"), self.capsize_spin)
+
+        layout.addRow(QLabel("---")) # 区切り線
+
+        # --- 回帰直線設定 ---
+        layout.addRow(QLabel("<b>Regression Line Settings</b>"))
+        self.linestyle_combo = QComboBox()
+        linestyles = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'Dash-Dot': '-.'}
+        for name, style in linestyles.items():
+            self.linestyle_combo.addItem(name, style)
+        layout.addRow(QLabel("Line Style:"), self.linestyle_combo)
+
+        self.linewidth_spin = QDoubleSpinBox()
+        self.linewidth_spin.setRange(0.5, 10.0)
+        self.linewidth_spin.setSingleStep(0.5)
+        self.linewidth_spin.setValue(1.5)
+        layout.addRow(QLabel("Line Width:"), self.linewidth_spin)
         
-        # グラフの色
+        layout.addRow(QLabel("---")) # 区切り線
+
+        # --- 色設定 ---
+        layout.addRow(QLabel("<b>Color Settings</b>"))
         self.single_color_button = QPushButton("Select Color")
         self.single_color_button.clicked.connect(self.open_single_color_dialog)
         layout.addRow(QLabel("Graph Color (Single):"), self.single_color_button)
         self.subgroup_color_layout = QFormLayout()
         layout.addRow(QLabel("Graph Color (Sub-group):"))
         layout.addRow(self.subgroup_color_layout)
-        
-        
-        
+
         return scroll_area
 
     def create_text_tab(self):
@@ -204,6 +245,8 @@ class PropertiesWidget(QDockWidget):
             'linestyle': self.linestyle_combo.currentData(),
             'linewidth': self.linewidth_spin.value(),
             'capsize': self.capsize_spin.value(),
+            'marker_edgecolor': self.current_marker_edgecolor,
+            'marker_edgewidth': self.marker_edgewidth_spin.value(),
         }
 
     def open_single_color_dialog(self):
@@ -211,6 +254,22 @@ class PropertiesWidget(QDockWidget):
         if color.isValid():
             self.current_color = color.name()
             self.single_color_button.setStyleSheet(f"background-color: {self.current_color};")
+            self.propertiesChanged.emit()
+            
+    def open_marker_edgecolor_dialog(self):
+        """マーカーの枠線の色を選択するダイアログを開く"""
+        color = QColorDialog.getColor()
+        if color.isValid():
+            self.current_marker_edgecolor = color.name()
+            self.marker_edgecolor_button.setStyleSheet(f"background-color: {self.current_marker_edgecolor};")
+            self.propertiesChanged.emit()
+
+    def open_bar_edgecolor_dialog(self):
+        """棒グラフの枠線の色を選択するダイアログを開く"""
+        color = QColorDialog.getColor()
+        if color.isValid():
+            self.current_bar_edgecolor = color.name()
+            self.bar_edgecolor_button.setStyleSheet(f"background-color: {self.current_bar_edgecolor};")
             self.propertiesChanged.emit()
 
     def open_subgroup_color_dialog(self, category):
