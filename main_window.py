@@ -205,6 +205,12 @@ class MainWindow(QMainWindow):
         bar_action.triggered.connect(lambda: self.set_graph_type('bar'))
         toolbar.addAction(bar_action)
         action_group.addAction(bar_action)
+        
+        paired_scatter_action = QAction("Paired Scatter", self)
+        paired_scatter_action.setCheckable(True)
+        paired_scatter_action.triggered.connect(lambda: self.set_graph_type('paired_scatter'))
+        toolbar.addAction(paired_scatter_action)
+        action_group.addAction(paired_scatter_action)
 
     def set_graph_type(self, graph_type):
         """グラフのタイプ（散布図、棒グラフなど）を設定し、グラフを更新する。"""
@@ -953,6 +959,10 @@ class MainWindow(QMainWindow):
             self.regression_line_params = None
             # 描画関数からカテゴリ情報を受け取る
             bar_categories, bar_x_indices = self._draw_bar_chart(ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter, properties)
+        elif self.current_graph_type == 'paired_scatter':
+            self.fit_params = None
+            self.regression_line_params = None
+            self._draw_paired_plot(ax, df, x_col, y_col, subgroup_col, properties)
 
         # 回帰直線とフィッティング曲線を再描画
         linestyle = properties.get('linestyle', '-')
@@ -1185,6 +1195,51 @@ class MainWindow(QMainWindow):
             if highest_annotation_y > current_ylim[1]:
                 new_ylim_top = highest_annotation_y + (level_height * 0.2)
                 ax.set_ylim(current_ylim[0], new_ylim_top)
+                
+# ★--- ペアード散布図を描画する内部メソッド ---★
+    def _draw_paired_plot(self, ax, df, x_col, y_col, subgroup_col, properties):
+        """
+        ペアデータ（対応のあるデータ）の散布図を描画し、データポイント間を線で結ぶ。
+        """
+        try:
+            # 棒グラフ描画と同様に、x軸をカテゴリとして扱う
+            categories = sorted(df[x_col].unique())
+            x_indices = {cat: i for i, cat in enumerate(categories)}
+
+            # 各ペアのデータを取得し、線で結ぶ
+            # 線の色を既存のサブグループ設定から取得
+            subgroup_colors_map = self.properties_panel.subgroup_colors
+            
+            # 各ペア（ID）ごとにループして線を引く
+            for i, (paired_id, group) in enumerate(df.groupby(subgroup_col)):
+                if len(group) != len(categories):
+                    print(f"Skipping paired ID '{paired_id}': data is not complete for all categories.")
+                    continue
+                
+                # X軸とY軸のデータを、X列のカテゴリの順序に並び替える
+                group = group.set_index(x_col).reindex(categories).reset_index()
+                
+                # 線の色をサブグループ設定から取得、なければデフォルト色
+                color_to_plot = subgroup_colors_map.get(str(paired_id)) if subgroup_col else '#1f77b4'
+                
+                # 線の描画
+                ax.plot([x_indices[cat] for cat in categories], group[y_col], 
+                        color=color_to_plot, marker='o', linestyle='-', label=str(paired_id))
+
+            # 軸のラベルを設定
+            ax.set_xlabel(properties.get('xlabel') or x_col)
+            ax.set_ylabel(properties.get('ylabel') or y_col)
+            
+            # 凡例が必要な場合のみ表示
+            if subgroup_col:
+                 ax.legend(title=subgroup_col, bbox_to_anchor=(1.05, 1), loc='upper left')
+
+            # X軸の目盛りをカテゴリ名に設定
+            ax.set_xticks([x_indices[cat] for cat in categories])
+            ax.set_xticklabels([str(cat) for cat in categories], rotation=0)
+
+        except Exception as e:
+            print(f"Could not generate paired scatter plot: {e}")
                 
     def clear_annotations(self):
         """
