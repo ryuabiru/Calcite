@@ -982,8 +982,8 @@ class MainWindow(QMainWindow):
 
     def _draw_annotations(self):
         """
-        ユーザー提案の「レベル」概念に基づき、重なりを回避しながら
-        グラフにアノテーションを描画する。
+        ユーザー提案の「レベル」概念に基づき、重なりとエラーバーとの接触を
+        完全に回避しながら、グラフにアノテーションを描画する。
         """
         if self.current_graph_type != 'bar' or not hasattr(self, 'model'):
             return
@@ -1000,8 +1000,7 @@ class MainWindow(QMainWindow):
             
         categories = sorted([str(c) for c in df[base_group_col].unique()])
         
-        # --- 新アルゴリズム Step 1: 「レベル」管理の準備 ---
-        # 各カテゴリが、どのレベルまで専有されているかを記録 (-1は未使用)
+        # レベル管理: 各カテゴリがどのレベルまで専有されているか (-1は未使用)
         occupied_levels = {cat: -1 for cat in categories}
 
         # アノテーションを「幅が狭い順」にソート
@@ -1015,26 +1014,26 @@ class MainWindow(QMainWindow):
                 return float('inf')
         sorted_annotations = sorted(self.statistical_annotations, key=get_span)
 
-        # --- 新アルゴリズム Step 4: 全データ点の最高点を算出 ---
-        # まず、すべてのエラーバーの先端を含めた最大高さを計算しておく
+        # 全データ点の最高点（エラーバー含む）を算出
         max_bar_y = 0
         df_str_group = df.copy()
         df_str_group[base_group_col] = df_str_group[base_group_col].astype(str)
+        value_col_for_max = self.statistical_annotations[0]['value_col']
         for cat in categories:
-            cat_data = df_str_group[df_str_group[base_group_col] == cat][self.statistical_annotations[0]['value_col']].dropna()
+            cat_data = df_str_group[df_str_group[base_group_col] == cat][value_col_for_max].dropna()
             if not cat_data.empty:
                 mean = cat_data.mean()
                 std = cat_data.std() if pd.notna(cat_data.std()) else 0
                 max_bar_y = max(max_bar_y, mean + std)
 
-        # アノテーション1レベルあたりの高さを定義 (Y軸範囲の12% -> 15% に変更)
+        # アノテーション1レベルあたりの高さを、Y軸の表示範囲を基に定義
         y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
-        level_height = y_range * 0.15 
+        level_height = y_range * 0.15 # 1レベルあたりの高さ
 
-        # 描画されたアノテーションの最高点を追跡
         highest_annotation_y = 0
 
         for annotation in sorted_annotations:
+            # ... (データ取得部分は変更なし) ...
             group_col, value_col = annotation['group_col'], annotation['value_col']
             group1_name, group2_name = annotation['groups']
             p_value = annotation['p_value']
@@ -1045,17 +1044,20 @@ class MainWindow(QMainWindow):
                 x1, x2 = min(idx1, idx2), max(idx1, idx2)
             except ValueError: continue
 
-            # --- 新アルゴリズム Step 2: 最高レベルを調査 ---
+            # 最高レベルを調査
             level_check_range = categories[x1:x2+1]
-            max_level_in_span = max(occupied_levels[cat] for cat in level_check_range) if level_check_range else -1
+            max_level_in_span = max(occupied_levels[cat] for cat in level_check_range)
             
-            # --- 新アルゴリズム Step 3: 新しいレベルを決定 ---
+            # 新しいレベルを決定
             new_level = max_level_in_span + 1
             
-            # --- Y座標をレベルに基づいて計算 ---
-            base_y = max_bar_y + (new_level * level_height)
+            # --- ★★★ 新しいY座標計算ロジック ★★★ ---
+            # 最初の隙間 + 各レベルの高さ でY座標を計算
+            initial_gap_from_bar = level_height * 0.3 # レベル0とエラーバーの間の隙間
+            base_y = max_bar_y + initial_gap_from_bar + (new_level * level_height)
+            
             bracket_y = base_y + (level_height * 0.2)
-            text_y = bracket_y + (level_height * 0.1)
+            text_y = bracket_y + (level_height * 0.05)
             highest_annotation_y = max(highest_annotation_y, text_y)
 
             # p値からアスタリスクに変換
@@ -1076,7 +1078,7 @@ class MainWindow(QMainWindow):
         if highest_annotation_y > 0:
             current_ylim = ax.get_ylim()
             if highest_annotation_y > current_ylim[1]:
-                new_ylim_top = highest_annotation_y + (level_height * 0.2) # 少し余白を追加
+                new_ylim_top = highest_annotation_y + (level_height * 0.2)
                 ax.set_ylim(current_ylim[0], new_ylim_top)
                 
     def clear_annotations(self):
