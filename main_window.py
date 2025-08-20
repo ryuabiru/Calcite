@@ -715,18 +715,19 @@ class MainWindow(QMainWindow):
         """
         プロパティパネルから受け取った情報でグラフのテキスト要素（タイトル、軸ラベル）を更新する。
         """
-        properties = self.properties_panel.on_properties_changed()
+        properties = self.properties_panel.get_properties()
         ax = self.graph_widget.ax
         
-        ax.set_title(properties.get('title', ''))
-        ax.set_xlabel(properties.get('xlabel', ''))
-        ax.set_ylabel(properties.get('ylabel', ''))
+        # テキストとフォントサイズを設定
+        ax.set_title(properties.get('title', ''), fontsize=properties.get('title_fontsize', 16))
+        ax.set_xlabel(properties.get('xlabel', ''), fontsize=properties.get('xlabel_fontsize', 12))
+        ax.set_ylabel(properties.get('ylabel', ''), fontsize=properties.get('ylabel_fontsize', 12))
+        ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
 
-        # ★--- 軸範囲を設定するロジックを追加 ---★
+        # 軸範囲を設定
         try:
             xmin = float(properties['xmin']) if properties['xmin'] else None
             xmax = float(properties['xmax']) if properties['xmax'] else None
-            # xminとxmaxの両方が指定されている場合のみ範囲を設定
             if xmin is not None and xmax is not None:
                 ax.set_xlim(xmin, xmax)
 
@@ -735,8 +736,10 @@ class MainWindow(QMainWindow):
             if ymin is not None and ymax is not None:
                 ax.set_ylim(ymin, ymax)
         except (ValueError, TypeError):
-            # 不正な値が入力された場合は何もしない
             pass
+        
+        # グリッドの表示/非表示
+        ax.grid(properties.get('show_grid', False))
 
         self.graph_widget.fig.tight_layout()
         self.graph_widget.canvas.draw()
