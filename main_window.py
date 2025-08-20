@@ -407,6 +407,11 @@ class MainWindow(QMainWindow):
             new_window.setWindowTitle(self.windowTitle() + " [Restructured]")
             new_window.show()
             
+            # 新しいウィンドウでシグナルを接続する
+            new_window.table_view.selectionModel().selectionChanged.connect(new_window.update_graph)
+            new_window.model.dataChanged.connect(new_window.update_graph)
+            new_window.model.headerDataChanged.connect(new_window.update_graph)
+            
             # アプリケーションのインスタンスに新しいウィンドウを登録（メモリ管理のため）
             app = QApplication.instance()
             if not hasattr(app, 'main_windows'):
@@ -455,6 +460,11 @@ class MainWindow(QMainWindow):
             new_window.properties_panel.set_columns(new_df.columns)
             new_window.setWindowTitle(self.windowTitle() + " [Pivoted]")
             new_window.show()
+            
+            # 新しいウィンドウでシグナルを接続する
+            new_window.table_view.selectionModel().selectionChanged.connect(new_window.update_graph)
+            new_window.model.dataChanged.connect(new_window.update_graph)
+            new_window.model.headerDataChanged.connect(new_window.update_graph)
 
             # アプリケーションのインスタンスに新しいウィンドウを登録（メモリ管理のため）
             app = QApplication.instance()
@@ -992,44 +1002,50 @@ class MainWindow(QMainWindow):
         
         properties = self.properties_panel.get_properties()
         
-        y_col = self.properties_panel.y_axis_combo.currentText()
-        x_col = self.properties_panel.x_axis_combo.currentText()
-        subgroup_col = self.properties_panel.subgroup_combo.currentText()
-        
-        marker_style = properties.get('marker_style', 'o')
-        single_color = self.properties_panel.current_color
-        subgroup_colors_map = self.properties_panel.subgroup_colors
-        show_scatter = self.properties_panel.scatter_overlay_check.isChecked()
-
-        if not y_col or not x_col:
-            if self.current_graph_type != 'paired_scatter':
-                self.graph_widget.canvas.draw()
-                return
-
-        # 棒グラフのカテゴリ情報を保持する変数を初期化
+        # グラフタイプに応じて描画処理を完全に分岐させる
         bar_categories, bar_x_indices = None, None
             
         if self.current_graph_type == 'scatter':
+            y_col = self.properties_panel.y_axis_combo.currentText()
+            x_col = self.properties_panel.x_axis_combo.currentText()
+            if not y_col or not x_col:
+                self.graph_widget.canvas.draw()
+                return
+                
+            marker_style = properties.get('marker_style', 'o')
+            single_color = self.properties_panel.current_color
             self._draw_scatter_plot(ax, df, x_col, y_col, marker_style, single_color, properties)
+
         elif self.current_graph_type == 'bar':
+            y_col = self.properties_panel.y_axis_combo.currentText()
+            x_col = self.properties_panel.x_axis_combo.currentText()
+            if not y_col or not x_col:
+                self.graph_widget.canvas.draw()
+                return
+
+            subgroup_col = self.properties_panel.subgroup_combo.currentText()
+            single_color = self.properties_panel.current_color
+            subgroup_colors_map = self.properties_panel.subgroup_colors
+            show_scatter = self.properties_panel.scatter_overlay_check.isChecked()
+            
             self.fit_params = None 
             self.regression_line_params = None
-            # 描画関数からカテゴリ情報を受け取る
             bar_categories, bar_x_indices = self._draw_bar_chart(ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter, properties)
+
         elif self.current_graph_type == 'paired_scatter':
             self.fit_params = None
             self.regression_line_params = None
             if hasattr(self, 'paired_plot_cols'):
                 col1 = self.paired_plot_cols['col1']
                 col2 = self.paired_plot_cols['col2']
-                # 正しい引数で関数を呼び出す
                 self._draw_paired_plot(ax, df, col1, col2, properties)
             else:
-                QMessageBox.warning(self, "Warning", "Please select columns for the paired plot from the dialog.")
-                self.set_graph_type('scatter') # デフォルトに戻す
-                return
+                # ユーザーがダイアログでカラムを選択するまで、グラフは描画しない
+                pass
 
-        # 回帰直線とフィッティング曲線を再描画
+        # --- 以下は全グラフ共通の追加描画処理 ---
+
+        # 回帰直線とフィッティング曲線を描画
         linestyle = properties.get('linestyle', '-')
         linewidth = properties.get('linewidth', 1.5)
         if hasattr(self, 'regression_line_params') and self.regression_line_params:
@@ -1038,7 +1054,11 @@ class MainWindow(QMainWindow):
                     label=f'R² = {params["r_squared"]:.4f}',
                     linestyle=linestyle,
                     linewidth=linewidth)
-        if self.fit_params and self.fit_params['x_col'] == x_col and self.fit_params['y_col'] == y_col:
+        
+        # 非線形フィット曲線は、現在のX/Y軸設定と一致する場合のみ描画
+        current_x_col = self.properties_panel.x_axis_combo.currentText()
+        current_y_col = self.properties_panel.y_axis_combo.currentText()
+        if self.fit_params and self.fit_params['x_col'] == current_x_col and self.fit_params['y_col'] == current_y_col:
             x_data = self.fit_params['log_x_data']
             x_fit = np.linspace(x_data.min(), x_data.max(), 200)
             y_fit = self.sigmoid_4pl(x_fit, *self.fit_params['params'])
@@ -1051,15 +1071,15 @@ class MainWindow(QMainWindow):
         # アノテーションを描画
         self._draw_annotations()
 
-        # グラフのプロパティを適用
+        # グラフの共通プロパティ（タイトル、軸ラベル、フォントサイズなど）を適用
         self.update_graph_properties()
 
-        # ★★★ すべてのプロパティ設定が終わった後で、X軸のラベルを最終設定 ★★★
+        # 棒グラフの場合、X軸の目盛りラベルをカテゴリ名に設定
         if self.current_graph_type == 'bar' and bar_categories is not None:
             ax.set_xticks(bar_x_indices)
             ax.set_xticklabels(bar_categories, rotation=0)
 
-        # 最終的な再描画命令
+        # 最終的な再描画
         self.graph_widget.fig.tight_layout()
         self.graph_widget.canvas.draw()
 
