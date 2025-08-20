@@ -690,7 +690,6 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to perform Chi-squared test: {e}")
 
-
     def show_results_dialog(self, title, text):
         """
         解析結果などを表示するための汎用的なダイアログを表示する。
