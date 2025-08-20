@@ -31,6 +31,7 @@ from properties_widget import PropertiesWidget
 from restructure_dialog import RestructureDialog
 from calculate_dialog import CalculateDialog
 from anova_dialog import AnovaDialog
+from ttest_dialog import TTestDialog
 from fitting_dialog import FittingDialog
 from contingency_dialog import ContingencyDialog
 
@@ -505,39 +506,65 @@ class MainWindow(QMainWindow):
 
     def perform_t_test(self):
         """
-        テーブルで選択された2つの列に対して独立t検定を実行し、結果をダイアログで表示する。
+        Tidy Data形式に対応した独立t検定を実行する。
         """
         if not hasattr(self, 'model'):
             QMessageBox.warning(self, "Warning", "Please load data first.")
             return
 
-        selected_columns = sorted(list(set(index.column() for index in self.table_view.selectionModel().selectedIndexes())))
-
-        if len(selected_columns) != 2:
-            QMessageBox.warning(self, "Warning", "Please select exactly two columns.")
-            return
-
         df = self.model._data
-        col1_index, col2_index = selected_columns
-        col1_data = df.iloc[:, col1_index].dropna()
-        col2_data = df.iloc[:, col2_index].dropna()
+        dialog = TTestDialog(df.columns, df, self)
 
-        t_stat, p_value = ttest_ind(col1_data, col2_data)
+        if dialog.exec():
+            settings = dialog.get_settings()
+            value_col = settings['value_col']
+            group_col = settings['group_col']
+            group1_name = settings['group1']
+            group2_name = settings['group2']
 
-        result_text = (
-            f"Independent t-test results:"
-            f"Comparing:- {df.columns[col1_index]} (Mean: {col1_data.mean():.3f})"
-            f"- {df.columns[col2_index]} (Mean: {col2_data.mean():.3f})"
-            f"t-statistic: {t_stat:.4f}"
-            f"p-value: {p_value:.4f}"
-        )
+            # --- 入力値のバリデーション ---
+            if not all([value_col, group_col, group1_name, group2_name]):
+                QMessageBox.warning(self, "Warning", "Please select all fields.")
+                return
+            if value_col == group_col:
+                QMessageBox.warning(self, "Warning", "Value and group columns cannot be the same.")
+                return
+            if group1_name == group2_name:
+                QMessageBox.warning(self, "Warning", "Please select two different groups.")
+                return
 
-        if p_value < 0.05:
-            result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
-        else:
-            result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
+            try:
+                # --- 2群のデータを抽出 ---
+                group1_data = df[df[group_col] == group1_name][value_col].dropna()
+                group2_data = df[df[group_col] == group2_name][value_col].dropna()
 
-        self.show_results_dialog("t-test Result", result_text)
+                if group1_data.empty or group2_data.empty:
+                    QMessageBox.warning(self, "Warning", "One or both selected groups have no data.")
+                    return
+
+                # --- t検定の実行 ---
+                t_stat, p_value = ttest_ind(group1_data, group2_data)
+
+                result_text = (
+                    f"Independent t-test results:\n"
+                    f"===========================\n\n"
+                    f"Comparing '{value_col}' between:\n"
+                    f"- Group 1: '{group1_name}' (Mean: {group1_data.mean():.3f})\n"
+                    f"- Group 2: '{group2_name}' (Mean: {group2_data.mean():.3f})\n\n"
+                    f"---\n"
+                    f"t-statistic: {t_stat:.4f}\n"
+                    f"p-value: {p_value:.4f}\n\n"
+                )
+
+                if p_value < 0.05:
+                    result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
+                else:
+                    result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
+
+                self.show_results_dialog("t-test Result", result_text)
+
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to perform t-test: {e}")
 
     def perform_linear_regression(self):
         if not hasattr(self, 'model'):
