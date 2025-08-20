@@ -35,6 +35,8 @@ from ttest_dialog import TTestDialog
 from paired_ttest_dialog import PairedTTestDialog
 from fitting_dialog import FittingDialog
 from contingency_dialog import ContingencyDialog
+from pivot_dialog import PivotDialog
+from paired_plot_dialog import PairedPlotDialog
 
 class MainWindow(QMainWindow):
     """
@@ -208,7 +210,7 @@ class MainWindow(QMainWindow):
         
         paired_scatter_action = QAction("Paired Scatter", self)
         paired_scatter_action.setCheckable(True)
-        paired_scatter_action.triggered.connect(lambda: self.set_graph_type('paired_scatter'))
+        paired_scatter_action.triggered.connect(self.show_paired_plot_dialog)
         toolbar.addAction(paired_scatter_action)
         action_group.addAction(paired_scatter_action)
 
@@ -249,6 +251,11 @@ class MainWindow(QMainWindow):
         restructure_action = QAction("&Restructure (Wide to Long)...", self)
         restructure_action.triggered.connect(self.show_restructure_dialog)
         data_menu.addAction(restructure_action)
+        
+        # Pivot (Long to Wide)
+        pivot_action = QAction("Pivot (Long to Wide)...", self)
+        pivot_action.triggered.connect(self.show_pivot_dialog)
+        data_menu.addAction(pivot_action)
         
         calculate_action = QAction("&Calculate New Column...", self)
         calculate_action.triggered.connect(self.show_calculate_dialog)
@@ -408,6 +415,55 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to restructure data: {e}")
+            
+    # ★--- ロング形式からワイド形式へデータを変換するメソッドを追加 ---★
+    def show_pivot_dialog(self):
+        """ロングからワイドへのデータ変換ダイアログを表示する。"""
+        if not hasattr(self, 'model'):
+            QMessageBox.warning(self, "Warning", "Please load data first.")
+            return
+
+        df = self.model._data
+        dialog = PivotDialog(df.columns, self)
+        
+        if dialog.exec():
+            settings = dialog.get_settings()
+            if not all(settings.values()):
+                QMessageBox.warning(self, "Warning", "Please select all three columns.")
+                return
+            self.pivot_data(settings)
+
+    def pivot_data(self, settings):
+        """
+        pd.pivot_tableを使用してデータをロングからワイドフォーマットに変換し、
+        新しいウィンドウで結果を表示する。
+        """
+        try:
+            df = self.model._data
+            # pivot_tableを使用してデータを変換
+            new_df = pd.pivot_table(
+                df,
+                index=settings['id_vars'],
+                columns=settings['var_name'],
+                values=settings['value_name']
+            ).reset_index()
+
+            # 新しいウィンドウインスタンスを作成して表示
+            new_window = MainWindow()
+            new_window.model = PandasModel(new_df)
+            new_window.table_view.setModel(new_window.model)
+            new_window.properties_panel.set_columns(new_df.columns)
+            new_window.setWindowTitle(self.windowTitle() + " [Pivoted]")
+            new_window.show()
+
+            # アプリケーションのインスタンスに新しいウィンドウを登録（メモリ管理のため）
+            app = QApplication.instance()
+            if not hasattr(app, 'main_windows'):
+                app.main_windows = []
+            app.main_windows.append(new_window)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to pivot data: {e}")
 
     def on_subgroup_column_changed(self, column_name):
         """
@@ -960,9 +1016,17 @@ class MainWindow(QMainWindow):
             # 描画関数からカテゴリ情報を受け取る
             bar_categories, bar_x_indices = self._draw_bar_chart(ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter, properties)
         elif self.current_graph_type == 'paired_scatter':
+            # ★★★ 修正箇所 ★★★
             self.fit_params = None
             self.regression_line_params = None
-            self._draw_paired_plot(ax, df, x_col, y_col, subgroup_col, properties)
+            if hasattr(self, 'paired_plot_cols'):
+                col1 = self.paired_plot_cols['col1']
+                col2 = self.paired_plot_cols['col2']
+                self._draw_paired_plot(ax, df, col1, col2, properties)
+            else:
+                QMessageBox.warning(self, "Warning", "Please select columns for the paired plot from the dialog.")
+                self.set_graph_type('scatter') # デフォルトに戻す
+                return
 
         # 回帰直線とフィッティング曲線を再描画
         linestyle = properties.get('linestyle', '-')
@@ -1094,6 +1158,69 @@ class MainWindow(QMainWindow):
                     ax.scatter(bar_positions[k] + jitter, points, color='black', alpha=0.6, zorder=2)
         
         ax.legend(title=subgroup_col)
+        
+    def show_paired_plot_dialog(self):
+        """ペアード散布図を描画するためのダイアログを表示し、描画を実行する。"""
+        if not hasattr(self, 'model'):
+            QMessageBox.warning(self, "Warning", "Please load data first.")
+            return
+
+        df = self.model._data
+        dialog = PairedPlotDialog(df.columns, self)
+        
+        if dialog.exec():
+            settings = dialog.get_settings()
+            if not all(settings.values()):
+                QMessageBox.warning(self, "Warning", "Please select both columns.")
+                return
+            
+            col1, col2 = settings['col1'], settings['col2']
+
+            # グラフタイプを強制的にペアード散布図に設定
+            self.current_graph_type = 'paired_scatter'
+            
+            # 描画に必要な情報をインスタンス変数に保存
+            self.paired_plot_cols = {
+                'col1': col1,
+                'col2': col2
+            }
+            
+            self.update_graph()
+
+    def _draw_paired_plot(self, ax, df, col1, col2, properties):
+        """
+        ペアデータ（対応のあるデータ）の散布図を描画し、データポイント間を線で結ぶ。
+        """
+        try:
+            # データの準備
+            plot_df = df[[col1, col2]].dropna().copy()
+
+            # X軸のカテゴリとインデックスを定義
+            categories = [col1, col2]
+            x_indices = [0, 1]
+
+            # 各行（ID）ごとにループして線を引く
+            for index, row in plot_df.iterrows():
+                ax.plot(x_indices, [row[col1], row[col2]], 
+                        color='gray', marker='o', linestyle='-', alpha=0.5)
+
+            # 各グループの平均値をプロット
+            mean1 = plot_df[col1].mean()
+            mean2 = plot_df[col2].mean()
+            ax.plot(x_indices, [mean1, mean2], color='red', marker='o', 
+                    linestyle='--', linewidth=2, label="Mean")
+
+            # 軸のラベルを設定
+            ax.set_xlabel(properties.get('xlabel', ''))
+            ax.set_ylabel(properties.get('ylabel', ''))
+            
+            # X軸の目盛りをカテゴリ名に設定
+            ax.set_xticks(x_indices)
+            ax.set_xticklabels(categories)
+            ax.set_xlim(-0.2, 1.2) # 見栄えを良くするため少し余白を設ける
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to draw paired plot: {e}")
 
     def _draw_annotations(self):
         """
