@@ -44,8 +44,8 @@ class MainWindow(QMainWindow):
         MainWindowの初期化。UIのセットアップ、シグナルとスロットの接続を行う。
         """
         super().__init__()
-        self.setWindowTitle("Calcite-テスト中")
-        self.setGeometry(100, 100, 1024, 512)
+        self.setWindowTitle("Calcite")
+        self.setGeometry(100, 100, 1000, 650)
         
         self.current_graph_type = 'scatter'
         self.header_editor = None
@@ -65,12 +65,12 @@ class MainWindow(QMainWindow):
         self.graph_widget = GraphWidget()
         splitter.addWidget(self.graph_widget)
         
-        splitter.setSizes([400, 800])
+        splitter.setSizes([550, 450])
         self.setCentralWidget(splitter)
         
         # --- プロパティパネルのドックウィジェット ---
         self.properties_panel = PropertiesWidget()
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.properties_panel)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.properties_panel)
 
         # --- シグナルとスロットの接続 ---
         self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -715,15 +715,29 @@ class MainWindow(QMainWindow):
         """
         プロパティパネルから受け取った情報でグラフのテキスト要素（タイトル、軸ラベル）を更新する。
         """
+        properties = self.properties_panel.on_properties_changed()
         ax = self.graph_widget.ax
         
-        if 'title' in properties:
-            ax.set_title(properties['title'])
-        if 'xlabel' in properties:
-            ax.set_xlabel(properties['xlabel'])
-        if 'ylabel' in properties:
-            ax.set_ylabel(properties['ylabel'])
-        
+        ax.set_title(properties.get('title', ''))
+        ax.set_xlabel(properties.get('xlabel', ''))
+        ax.set_ylabel(properties.get('ylabel', ''))
+
+        # ★--- 軸範囲を設定するロジックを追加 ---★
+        try:
+            xmin = float(properties['xmin']) if properties['xmin'] else None
+            xmax = float(properties['xmax']) if properties['xmax'] else None
+            # xminとxmaxの両方が指定されている場合のみ範囲を設定
+            if xmin is not None and xmax is not None:
+                ax.set_xlim(xmin, xmax)
+
+            ymin = float(properties['ymin']) if properties['ymin'] else None
+            ymax = float(properties['ymax']) if properties['ymax'] else None
+            if ymin is not None and ymax is not None:
+                ax.set_ylim(ymin, ymax)
+        except (ValueError, TypeError):
+            # 不正な値が入力された場合は何もしない
+            pass
+
         self.graph_widget.fig.tight_layout()
         self.graph_widget.canvas.draw()
 
@@ -786,10 +800,8 @@ class MainWindow(QMainWindow):
              ax.set_xscale('linear') # フィットがない場合は線形スケール
 
         # グラフの再描画
-        ax.set_xscale('linear') # デフォルトは線形スケールに
-        self.update_graph_properties(self.properties_panel.on_properties_changed() or {})
-        self.graph_widget.fig.tight_layout()
-        self.graph_widget.canvas.draw()
+        #ax.set_xscale('linear') # ★ この行は不要になることが多いのでコメントアウト
+        self.update_graph_properties() # 引数なしで呼び出すように変更
 
     def _draw_scatter_plot(self, ax, df, x_col, y_col, marker_style, color):
         """散布図を描画する内部メソッド。"""
