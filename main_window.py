@@ -52,6 +52,7 @@ class MainWindow(QMainWindow):
         self.header_editor = None
         self.regression_line_params = None # 以前の修正で追加
         self.fit_params = None
+        self.statistical_annotations = []
         
         self._create_menu_bar()
         self._create_toolbar()
@@ -230,6 +231,11 @@ class MainWindow(QMainWindow):
         paste_action = QAction("&Paste", self)
         paste_action.triggered.connect(self.paste_from_clipboard)
         edit_menu.addAction(paste_action)
+        
+        edit_menu.addSeparator()
+        clear_annotations_action = QAction("Clear Annotations", self)
+        clear_annotations_action.triggered.connect(self.clear_annotations)
+        edit_menu.addAction(clear_annotations_action)
 
         # Data Menu
         data_menu = menu_bar.addMenu("&Data")
@@ -506,13 +512,15 @@ class MainWindow(QMainWindow):
 
     def perform_t_test(self):
         """
-        Tidy Data形式に対応した独立t検定を実行する。
+        Tidy Data形式に対応した独立t検定を実行し、結果をアノテーションとして保存する。
         """
         if not hasattr(self, 'model'):
             QMessageBox.warning(self, "Warning", "Please load data first.")
             return
 
         df = self.model._data
+        # t検定ダイアログのインポートをここで行う
+        from ttest_dialog import TTestDialog
         dialog = TTestDialog(df.columns, df, self)
 
         if dialog.exec():
@@ -522,7 +530,6 @@ class MainWindow(QMainWindow):
             group1_name = settings['group1']
             group2_name = settings['group2']
 
-            # --- 入力値のバリデーション ---
             if not all([value_col, group_col, group1_name, group2_name]):
                 QMessageBox.warning(self, "Warning", "Please select all fields.")
                 return
@@ -534,7 +541,6 @@ class MainWindow(QMainWindow):
                 return
 
             try:
-                # --- 2群のデータを抽出 ---
                 group1_data = df[df[group_col] == group1_name][value_col].dropna()
                 group2_data = df[df[group_col] == group2_name][value_col].dropna()
 
@@ -542,9 +548,25 @@ class MainWindow(QMainWindow):
                     QMessageBox.warning(self, "Warning", "One or both selected groups have no data.")
                     return
 
-                # --- t検定の実行 ---
                 t_stat, p_value = ttest_ind(group1_data, group2_data)
 
+                # ★--- ここからが追加・変更箇所 ---★
+                # アノテーション情報を辞書として作成
+                annotation = {
+                    "type": "ttest",
+                    "p_value": p_value,
+                    "group_col": group_col,
+                    "value_col": value_col,
+                    "groups": [group1_name, group2_name]
+                }
+                # 既存のアノテーションをクリアして新しいものを追加
+                self.statistical_annotations.append(annotation)
+
+                # グラフを更新してアノテーションを描画
+                self.update_graph()
+                # ★--- ここまで ---★
+
+                # --- 結果表示ダイアログ (変更なし) ---
                 result_text = (
                     f"Independent t-test results:\n"
                     f"===========================\n\n"
@@ -555,12 +577,10 @@ class MainWindow(QMainWindow):
                     f"t-statistic: {t_stat:.4f}\n"
                     f"p-value: {p_value:.4f}\n\n"
                 )
-
                 if p_value < 0.05:
                     result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
                 else:
                     result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
-
                 self.show_results_dialog("t-test Result", result_text)
 
             except Exception as e:
@@ -830,6 +850,9 @@ class MainWindow(QMainWindow):
                       linestyle=linestyle,
                       linewidth=linewidth)
 
+        # ★ アノテーションを描画する
+        self._draw_annotations()
+
         # グラフのプロパティを最後にまとめて適用
         self.update_graph_properties()
 
@@ -929,3 +952,64 @@ class MainWindow(QMainWindow):
                     ax.scatter(bar_positions[k] + jitter, points, color='black', alpha=0.6, zorder=2)
         
         ax.legend(title=subgroup_col)
+
+    # ★ MainWindowクラスの一番最後に、このメソッドを丸ごと追加してください ★
+    def _draw_annotations(self):
+        """
+        保存されている統計解析結果に基づいて、グラフにアノテーションを描画する。
+        """
+        if self.current_graph_type != 'bar' or not hasattr(self, 'model'):
+            return
+
+        ax = self.graph_widget.ax
+        df = self.model._data
+
+        for annotation in self.statistical_annotations:
+            if annotation['type'] == 'ttest':
+                group_col = annotation['group_col']
+                value_col = annotation['value_col']
+                group1_name, group2_name = annotation['groups']
+                p_value = annotation['p_value']
+
+                # グラフに表示されているカテゴリのリストと、そのX座標を取得
+                categories = sorted(df[group_col].unique())
+                try:
+                    x1 = categories.index(group1_name)
+                    x2 = categories.index(group2_name)
+                except ValueError:
+                    continue # 比較対象のグループが現在のグラフにない場合はスキップ
+
+                # 2つの棒の最大高さを計算 (エラーバー含む)
+                y1_mean = df[df[group_col] == group1_name][value_col].mean()
+                y1_std = df[df[group_col] == group1_name][value_col].std()
+                y2_mean = df[df[group_col] == group2_name][value_col].mean()
+                y2_std = df[df[group_col] == group2_name][value_col].std()
+                
+                max_y = max(y1_mean + y1_std, y2_mean + y2_std)
+                
+                # ブラケットの高さを決定
+                bracket_height = max_y * 1.05 # 棒の最大値より5%高い位置
+                text_height = max_y * 1.08    # テキストはさらにその少し上
+
+                # p値からアスタリスクに変換
+                if p_value < 0.001:
+                    significance = '***'
+                elif p_value < 0.01:
+                    significance = '**'
+                elif p_value < 0.05:
+                    significance = '*'
+                else:
+                    significance = 'ns' # Not Significant
+
+                # ブラケットを描画
+                ax.plot([x1, x1, x2, x2], [bracket_height, text_height, text_height, bracket_height], lw=1.5, c='black')
+                # テキスト(アスタリスク)を描画
+                ax.text((x1 + x2) * 0.5, text_height, significance, ha='center', va='bottom', fontsize=14)
+                
+    def clear_annotations(self):
+        """
+        グラフ上のすべてのアノテーションをクリアする。
+        """
+        if hasattr(self, 'statistical_annotations'):
+            self.statistical_annotations.clear()
+            self.update_graph()
