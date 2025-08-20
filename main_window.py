@@ -21,7 +21,7 @@ from PySide6.QtCore import Qt
 from scipy.stats import ttest_ind, f_oneway, linregress
 import io
 
-from scipy.stats import ttest_ind, f_oneway, linregress
+from scipy.stats import ttest_ind, f_oneway, linregress, chi2_contingency
 from scipy.optimize import curve_fit
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 
@@ -32,6 +32,7 @@ from restructure_dialog import RestructureDialog
 from calculate_dialog import CalculateDialog
 from anova_dialog import AnovaDialog
 from fitting_dialog import FittingDialog
+from contingency_dialog import ContingencyDialog
 
 class MainWindow(QMainWindow):
     """
@@ -238,7 +239,11 @@ class MainWindow(QMainWindow):
         anova_action = QAction("&One-way ANOVA...", self)
         anova_action.triggered.connect(self.perform_one_way_anova)
         analysis_menu.addAction(anova_action)
-        
+        analysis_menu.addSeparator()
+
+        chi_squared_action = QAction("&Chi-squared Test...", self)
+        chi_squared_action.triggered.connect(self.perform_chi_squared_test)
+        analysis_menu.addAction(chi_squared_action)
         analysis_menu.addSeparator()
 
         linreg_action = QAction("&Linear Regression...", self)
@@ -631,6 +636,60 @@ class MainWindow(QMainWindow):
 
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to perform ANOVA: {e}")
+
+    # ★--- カイ二乗検定を実行するメソッドを追加 ---★
+    def perform_chi_squared_test(self):
+        if not hasattr(self, 'model'):
+            QMessageBox.warning(self, "Warning", "Please load data first.")
+            return
+
+        df = self.model._data
+        dialog = ContingencyDialog(df.columns, self)
+
+        if dialog.exec():
+            settings = dialog.get_settings()
+            rows_col = settings['rows_col']
+            cols_col = settings['cols_col']
+
+            if not rows_col or not cols_col:
+                QMessageBox.warning(self, "Warning", "Please select both rows and columns.")
+                return
+            if rows_col == cols_col:
+                QMessageBox.warning(self, "Warning", "Row and column selections cannot be the same.")
+                return
+
+            try:
+                # pandas.crosstabで分割表（観測度数表）を作成
+                contingency_table = pd.crosstab(df[rows_col], df[cols_col])
+
+                # SciPyでカイ二乗検定を実行
+                chi2, p, dof, expected = chi2_contingency(contingency_table)
+
+                # 期待度数表をDataFrameに変換
+                expected_table = pd.DataFrame(expected, index=contingency_table.index, columns=contingency_table.columns)
+
+                # 結果をフォーマット
+                result_text = "Chi-squared Test Results\n"
+                result_text += "==========================\n\n"
+                result_text += "Observed Frequencies:\n"
+                result_text += f"{contingency_table.to_string()}\n\n"
+                result_text += "Expected Frequencies:\n"
+                result_text += f"{expected_table.round(2).to_string()}\n\n"
+                result_text += "---\n"
+                result_text += f"Chi-squared statistic: {chi2:.4f}\n"
+                result_text += f"Degrees of Freedom: {dof}\n"
+                result_text += f"p-value: {p:.4f}\n\n"
+
+                if p < 0.05:
+                    result_text += f"Conclusion: There is a statistically significant association between '{rows_col}' and '{cols_col}' (p < 0.05)."
+                else:
+                    result_text += f"Conclusion: There is no statistically significant association between '{rows_col}' and '{cols_col}' (p >= 0.05)."
+
+                self.show_results_dialog("Chi-squared Test Result", result_text)
+
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to perform Chi-squared test: {e}")
+
 
     def show_results_dialog(self, title, text):
         """
