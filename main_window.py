@@ -983,7 +983,7 @@ class MainWindow(QMainWindow):
     def _draw_annotations(self):
         """
         保存されている統計解析結果に基づき、重なりを回避しながら
-        グラフにアノテーションを描画する。
+        グラフにアノテーションを描画する。Y軸の範囲も自動調整する。
         """
         if self.current_graph_type != 'bar' or not hasattr(self, 'model'):
             return
@@ -998,11 +998,13 @@ class MainWindow(QMainWindow):
         if not base_group_col or base_group_col not in df.columns:
             return
             
-        categories = sorted(df[base_group_col].unique())
+        categories = sorted([str(c) for c in df[base_group_col].unique()])
         
+        # 各カテゴリのX軸位置における、アノテーションの最大Y値を記録する
         occupied_levels = {cat: 0 for cat in categories}
 
-        sorted_annotations = sorted(self.statistical_annotations, key=lambda x: x['p_value'])
+        # アノテーションをp値の昇順（有意差が大きい順）でソート
+        sorted_annotations = sorted(self.statistical_annotations, key=lambda x: x.get('p_value', 1))
 
         for annotation in sorted_annotations:
             if annotation.get('type') != 'ttest':
@@ -1023,10 +1025,11 @@ class MainWindow(QMainWindow):
                 x1, x2 = min(idx1, idx2), max(idx1, idx2)
             except ValueError:
                 continue
-
-            df[group_col] = df[group_col].astype(str)
-            group1_data = df[df[group_col] == g1_str][value_col].dropna()
-            group2_data = df[df[group_col] == g2_str][value_col].dropna()
+            
+            df_str_group = df.copy()
+            df_str_group[group_col] = df_str_group[group_col].astype(str)
+            group1_data = df_str_group[df_str_group[group_col] == g1_str][value_col].dropna()
+            group2_data = df_str_group[df_str_group[group_col] == g2_str][value_col].dropna()
             
             if group1_data.empty or group2_data.empty:
                 continue
@@ -1037,38 +1040,45 @@ class MainWindow(QMainWindow):
             y2_std = y2_std if pd.notna(y2_std) else 0
             bar_max_y = max(y1_mean + y1_std, y2_mean + y2_std)
 
+            # このアノテーションがまたがる範囲で、一番高い障害物のY座標を見つける
             level_check_range = categories[x1:x2+1]
-            max_occupied_y = max(occupied_levels[cat] for cat in level_check_range) if level_check_range else 0
+            max_occupied_y_in_span = max(occupied_levels[cat] for cat in level_check_range) if level_check_range else 0
             
-            # --- ★★★ 高さ計算ロジック最終版 ★★★ ---
-            # 描画の基準となる最高点を決定
-            highest_point_below = max(bar_max_y, max_occupied_y)
+            # 障害物は「エラーバーの先端」か「既存のアノテーション」のどちらか高い方
+            highest_point_below = max(bar_max_y, max_occupied_y_in_span)
             
             # Y軸の全体範囲を基準に、アノテーションに必要な各パーツの高さを定義
             y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
-            # 重要なのはこの「最初の隙間」
-            initial_gap = y_range * 0.04 
-            vertical_tick_height = y_range * 0.03
-            gap_from_bracket_to_text = y_range * 0.01
+            gap = y_range * 0.05                  # 障害物との隙間
+            tick_height = y_range * 0.02          # ブラケットの縦線の長さ
 
             # 新しいアノテーションの各Y座標を計算
-            base_y = highest_point_below + initial_gap # 最高点から、まず隙間を空ける
-            bracket_y = base_y + vertical_tick_height   # そこからブラケットの縦棒を伸ばす
-            text_y = bracket_y + gap_from_bracket_to_text     # さらに隙間を空けてテキストを配置
-            # --- ★★★ ここまで ★★★ ---
+            base_y = highest_point_below + gap           # 障害物の上 + 隙間
+            bracket_y = base_y + tick_height             # そこからブラケットの縦棒を伸ばす
+            text_y = bracket_y + (gap * 0.1)             # ブラケットの上に少し隙間を空けてテキスト
 
             if p_value < 0.001: significance = '***'
             elif p_value < 0.01: significance = '**'
             elif p_value < 0.05: significance = '*'
             else: significance = 'ns'
 
-            # 新しい座標で描画
+            # 描画
             ax.plot([x1, x1, x2, x2], [base_y, bracket_y, bracket_y, base_y], lw=1.5, c='black')
             ax.text((x1 + x2) * 0.5, text_y, significance, ha='center', va='bottom', fontsize=14)
 
-            # このアノテーションが占有した高さを記録
+            # このアノテーションが占有した高さを、またがる範囲すべてに記録
             for cat in level_check_range:
                 occupied_levels[cat] = text_y
+
+        # 全アノテーションの最高点を取得
+        if occupied_levels:
+            max_annotation_y = max(occupied_levels.values())
+            current_ylim = ax.get_ylim()
+            
+            # 最高点が現在のY軸上限を超えている場合、Y軸を拡大する
+            if max_annotation_y > current_ylim[1]:
+                new_ylim_top = max_annotation_y * 1.05
+                ax.set_ylim(current_ylim[0], new_ylim_top)
                 
     def clear_annotations(self):
         """
