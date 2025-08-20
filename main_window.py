@@ -797,8 +797,14 @@ class MainWindow(QMainWindow):
         # Y軸のスケールは常にプロパティパネルの設定に従う
         ax.set_yscale('log' if properties.get('y_log_scale') else 'linear')
         
-        # --- ★★★ ここまで ★★★ ---
-        
+        # 上と右の枠線（Spine）の表示を切り替える
+        if properties.get('hide_top_right_spines', True):
+            ax.spines['right'].set_visible(False)
+            ax.spines['top'].set_visible(False)
+        else:
+            ax.spines['right'].set_visible(True)
+            ax.spines['top'].set_visible(True)
+
         # 凡例が必要な場合のみ表示
         if ax.get_legend_handles_labels()[1]:
             ax.legend()

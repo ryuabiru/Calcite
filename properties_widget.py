@@ -75,8 +75,8 @@ class PropertiesWidget(QWidget):
         # edgecolor
         self.marker_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
         self.bar_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-
-
+        # Spine
+        self.spines_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
 
     def create_data_tab(self):
         widget = QWidget()
@@ -96,6 +96,13 @@ class PropertiesWidget(QWidget):
         scroll_area.setWidgetResizable(True)
         scroll_area.setWidget(widget)
         layout = QFormLayout(widget)
+        
+        # Spine設定
+        layout.addRow(QLabel("<b>Graph Style Settings</b>"))
+        self.spines_check = QCheckBox("Remove Top/Right Axis Lines")
+        self.spines_check.setChecked(True) # デフォルトでONにする
+        layout.addRow(self.spines_check)
+        layout.addRow(QLabel("---")) # 区切り線
         
         # マーカのシンボル
         self.scatter_overlay_check = QCheckBox()
@@ -250,6 +257,7 @@ class PropertiesWidget(QWidget):
             'marker_edgewidth': self.marker_edgewidth_spin.value(),
             'bar_edgecolor': self.current_bar_edgecolor,
             'bar_edgewidth': self.bar_edgewidth_spin.value(),
+            'hide_top_right_spines': self.spines_check.isChecked(),
         }
 
     def open_single_color_dialog(self):
