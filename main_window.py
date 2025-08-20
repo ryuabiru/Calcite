@@ -754,17 +754,11 @@ class MainWindow(QMainWindow):
         ax.set_ylabel(properties.get('ylabel', ''), fontsize=properties.get('ylabel_fontsize', 12))
         ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
 
+        # --- ★★★ ここからが修正箇所です ★★★ ---
+
         # 軸範囲を設定
+        # Y軸の範囲設定は常に有効
         try:
-            xmin = float(properties['xmin']) if properties['xmin'] else None
-            xmax = float(properties['xmax']) if properties['xmax'] else None
-            if xmin is not None and xmax is not None:
-                ax.set_xlim(xmin, xmax)
-            else:
-                # 片方でも空なら自動スケールに戻す
-                ax.autoscale(enable=True, axis='x')
-
-
             ymin = float(properties['ymin']) if properties['ymin'] else None
             ymax = float(properties['ymax']) if properties['ymax'] else None
             if ymin is not None and ymax is not None:
@@ -774,17 +768,36 @@ class MainWindow(QMainWindow):
         except (ValueError, TypeError):
             pass
         
+        # X軸の範囲設定は、棒グラフ以外のときのみ有効にする
+        if self.current_graph_type != 'bar':
+            try:
+                xmin = float(properties['xmin']) if properties['xmin'] else None
+                xmax = float(properties['xmax']) if properties['xmax'] else None
+                if xmin is not None and xmax is not None:
+                    ax.set_xlim(xmin, xmax)
+                else:
+                    ax.autoscale(enable=True, axis='x')
+            except (ValueError, TypeError):
+                pass
+        
         # グリッドの表示/非表示
         ax.grid(properties.get('show_grid', False))
         
-        # ★--- スケール設定ロジックをここに集約 ---★
+        # スケール設定ロジックを修正
+        # 棒グラフの場合、X軸は必ず'linear'（カテゴリ表示）にする
+        if self.current_graph_type == 'bar':
+            ax.set_xscale('linear')
         # 非線形フィット中はX軸を強制的に対数スケールにする
-        if self.fit_params and self.fit_params['x_col'] == self.properties_panel.x_axis_combo.currentText():
+        elif self.fit_params and self.fit_params['x_col'] == self.properties_panel.x_axis_combo.currentText():
             ax.set_xscale('log')
+        # それ以外はプロパティパネルの設定に従う
         else:
             ax.set_xscale('log' if properties.get('x_log_scale') else 'linear')
         
+        # Y軸のスケールは常にプロパティパネルの設定に従う
         ax.set_yscale('log' if properties.get('y_log_scale') else 'linear')
+        
+        # --- ★★★ ここまで ★★★ ---
         
         # 凡例が必要な場合のみ表示
         if ax.get_legend_handles_labels()[1]:
@@ -818,28 +831,27 @@ class MainWindow(QMainWindow):
         if not y_col or not x_col:
             self.graph_widget.canvas.draw()
             return
+
+        # 棒グラフのカテゴリ情報を保持する変数を初期化
+        bar_categories, bar_x_indices = None, None
             
         if self.current_graph_type == 'scatter':
             self._draw_scatter_plot(ax, df, x_col, y_col, marker_style, single_color, properties)
         elif self.current_graph_type == 'bar':
-            # 棒グラフに切り替えたらフィット情報はクリア
             self.fit_params = None 
             self.regression_line_params = None
-            self._draw_bar_chart(ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter, properties)
+            # 描画関数からカテゴリ情報を受け取る
+            bar_categories, bar_x_indices = self._draw_bar_chart(ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter, properties)
 
-        # ここで回帰直線とフィッティング曲線を再描画
+        # 回帰直線とフィッティング曲線を再描画
         linestyle = properties.get('linestyle', '-')
         linewidth = properties.get('linewidth', 1.5)
-
-        # 線形回帰直線が存在する場合に再描画
         if hasattr(self, 'regression_line_params') and self.regression_line_params:
             params = self.regression_line_params
             ax.plot(params["x_line"], params["y_line"], color='red', 
                     label=f'R² = {params["r_squared"]:.4f}',
                     linestyle=linestyle,
                     linewidth=linewidth)
-
-        # 非線形フィッティング曲線が存在する場合に再描画
         if self.fit_params and self.fit_params['x_col'] == x_col and self.fit_params['y_col'] == y_col:
             x_data = self.fit_params['log_x_data']
             x_fit = np.linspace(x_data.min(), x_data.max(), 200)
@@ -850,11 +862,20 @@ class MainWindow(QMainWindow):
                       linestyle=linestyle,
                       linewidth=linewidth)
 
-        # ★ アノテーションを描画する
+        # アノテーションを描画
         self._draw_annotations()
 
-        # グラフのプロパティを最後にまとめて適用
+        # グラフのプロパティを適用
         self.update_graph_properties()
+
+        # ★★★ すべてのプロパティ設定が終わった後で、X軸のラベルを最終設定 ★★★
+        if self.current_graph_type == 'bar' and bar_categories is not None:
+            ax.set_xticks(bar_x_indices)
+            ax.set_xticklabels(bar_categories, rotation=0)
+
+        # 最終的な再描画命令
+        self.graph_widget.fig.tight_layout()
+        self.graph_widget.canvas.draw()
 
     def _draw_scatter_plot(self, ax, df, x_col, y_col, marker_style, color, properties):
         """散布図を描画する内部メソッド。"""
@@ -870,25 +891,25 @@ class MainWindow(QMainWindow):
             ax.set_ylabel(y_col)
 
     def _draw_bar_chart(self, ax, df, x_col, y_col, subgroup_col, single_color, subgroup_colors_map, show_scatter, properties):
-        """棒グラフを描画する内部メソッド。サブグループ化と実測値の重ね描きに対応。"""
+        """棒グラフを描画する内部メソッド。カテゴリとインデックスを返す。"""
         try:
             categories = sorted(df[x_col].unique())
             x_indices = np.arange(len(categories))
             
             if subgroup_col:
-                # サブグループあり
-                                self._draw_grouped_bar_chart(ax, df, x_col, y_col, subgroup_col, categories, x_indices, subgroup_colors_map, show_scatter, properties)
+                self._draw_grouped_bar_chart(ax, df, x_col, y_col, subgroup_col, categories, x_indices, subgroup_colors_map, show_scatter, properties)
             else:
-                # サブグループなし
                 self._draw_simple_bar_chart(ax, df, x_col, y_col, categories, x_indices, single_color, show_scatter, properties)
             
-            ax.set_xticks(x_indices)
-            ax.set_xticklabels(categories, rotation=0)
-            ax.set_xlabel(x_col)
-            ax.set_ylabel(f"Mean of {y_col}")
+            # X軸のラベル設定は update_graph に移動
+            ax.set_xlabel(properties.get('xlabel') or x_col)
+            ax.set_ylabel(properties.get('ylabel') or f"Mean of {y_col}")
+
+            return categories, x_indices # 計算したカテゴリとX軸の位置を返す
 
         except Exception as e:
             print(f"Could not generate bar chart: {e}")
+            return None, None
 
     def _draw_simple_bar_chart(self, ax, df, x_col, y_col, categories, x_indices, color, show_scatter, properties):
         """サブグループのない単純な棒グラフを描画する。"""
