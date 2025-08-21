@@ -9,6 +9,7 @@ from scipy.optimize import curve_fit
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 
 from pandas_model import PandasModel
+# --- Dialogs ---
 from dialogs.restructure_dialog import RestructureDialog
 from dialogs.calculate_dialog import CalculateDialog
 from dialogs.anova_dialog import AnovaDialog
@@ -31,9 +32,12 @@ class ActionHandler:
                 self.main.model = PandasModel(df)
                 self.main.table_view.setModel(self.main.model)
                 self.main.properties_panel.set_columns(df.columns)
+
+                # GraphManagerのupdate_graphに接続する
                 self.main.table_view.selectionModel().selectionChanged.connect(self.main.graph_manager.update_graph)
                 self.main.model.dataChanged.connect(self.main.graph_manager.update_graph)
                 self.main.model.headerDataChanged.connect(self.main.graph_manager.update_graph)
+
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Error opening file: {e}")
 
@@ -44,22 +48,28 @@ class ActionHandler:
             text = clipboard.text()
             if not text:
                 return
+
             df = pd.read_csv(io.StringIO(text), sep='\t')
             self.main.model = PandasModel(df)
             self.main.table_view.setModel(self.main.model)
             self.main.properties_panel.set_columns(df.columns)
+            
             self.main.table_view.selectionModel().selectionChanged.connect(self.main.graph_manager.update_graph)
             self.main.model.dataChanged.connect(self.main.graph_manager.update_graph)
             self.main.model.headerDataChanged.connect(self.main.graph_manager.update_graph)
+
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to paste from clipboard: {e}")
 
     def show_calculate_dialog(self):
+        """新しい列を計算するためのダイアログを表示し、設定に基づいて計算を実行する。"""
         if not hasattr(self.main, 'model'):
             QMessageBox.warning(self.main, "Warning", "Please load data first.")
             return
+
         df = self.main.model._data
         dialog = CalculateDialog(df.columns, self.main)
+        
         if dialog.exec():
             settings = dialog.get_settings()
             if not settings['new_column_name'] or not settings['formula']:
@@ -68,22 +78,29 @@ class ActionHandler:
             self.calculate_new_column(settings)
 
     def calculate_new_column(self, settings):
+        """指定された計算式に基づいて新しい列を計算し、テーブルを更新する。"""
         try:
             df = self.main.model._data
             new_col_name = settings['new_column_name']
             formula = settings['formula']
+
             df[new_col_name] = df.eval(formula, engine='python')
+
             self.main.model.refresh_model()
             self.main.properties_panel.set_columns(df.columns)
+
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to calculate column: {e}")
 
     def show_restructure_dialog(self):
+        """ワイドフォーマットからロングフォーマットへデータを変換するためのダイアログを表示する。"""
         if not hasattr(self.main, 'model'):
             QMessageBox.warning(self.main, "Warning", "Please load data first.")
             return
+
         df = self.main.model._data
         dialog = RestructureDialog(df.columns, self.main)
+        
         if dialog.exec():
             settings = dialog.get_settings()
             if not settings['id_vars'] or not settings['value_vars']:
@@ -92,6 +109,7 @@ class ActionHandler:
             self.restructure_data(settings)
             
     def restructure_data(self, settings):
+        """pd.meltを使用してデータをワイドからロングフォーマットに変換し、新しいウィンドウで結果を表示する。"""
         try:
             df = self.main.model._data
             new_df = pd.melt(
@@ -101,25 +119,36 @@ class ActionHandler:
                 var_name=settings['var_name'],
                 value_name=settings['value_name']
             )
+            
+            # self.main.__class__() を使って新しいウィンドウを生成
             new_window = self.main.__class__()
             new_window.model = PandasModel(new_df)
             new_window.table_view.setModel(new_window.model)
             new_window.properties_panel.set_columns(new_df.columns)
             new_window.setWindowTitle(self.main.windowTitle() + " [Restructured]")
             new_window.show()
+            
+            new_window.table_view.selectionModel().selectionChanged.connect(new_window.graph_manager.update_graph)
+            new_window.model.dataChanged.connect(new_window.graph_manager.update_graph)
+            new_window.model.headerDataChanged.connect(new_window.graph_manager.update_graph)
+            
             app = QApplication.instance()
             if not hasattr(app, 'main_windows'):
                 app.main_windows = []
             app.main_windows.append(new_window)
+
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to restructure data: {e}")
             
     def show_pivot_dialog(self):
+        """ロングからワイドへのデータ変換ダイアログを表示する。"""
         if not hasattr(self.main, 'model'):
             QMessageBox.warning(self.main, "Warning", "Please load data first.")
             return
+
         df = self.main.model._data
         dialog = PivotDialog(df.columns, self.main)
+        
         if dialog.exec():
             settings = dialog.get_settings()
             if not all(settings.values()):
@@ -128,6 +157,7 @@ class ActionHandler:
             self.pivot_data(settings)
 
     def pivot_data(self, settings):
+        """pd.pivot_tableを使用してデータをロングからワイドフォーマットに変換し、新しいウィンドウで結果を表示する。"""
         try:
             df = self.main.model._data
             new_df = pd.pivot_table(
@@ -136,16 +166,23 @@ class ActionHandler:
                 columns=settings['var_name'],
                 values=settings['value_name']
             ).reset_index()
+
             new_window = self.main.__class__()
             new_window.model = PandasModel(new_df)
             new_window.table_view.setModel(new_window.model)
             new_window.properties_panel.set_columns(new_df.columns)
             new_window.setWindowTitle(self.main.windowTitle() + " [Pivoted]")
             new_window.show()
+            
+            new_window.table_view.selectionModel().selectionChanged.connect(new_window.graph_manager.update_graph)
+            new_window.model.dataChanged.connect(new_window.graph_manager.update_graph)
+            new_window.model.headerDataChanged.connect(new_window.graph_manager.update_graph)
+
             app = QApplication.instance()
             if not hasattr(app, 'main_windows'):
                 app.main_windows = []
             app.main_windows.append(new_window)
+
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to pivot data: {e}")
 
@@ -156,6 +193,7 @@ class ActionHandler:
         if not hasattr(self.main, 'model'): return
         df = self.main.model._data
         dialog = TTestDialog(df.columns, df, self.main)
+
         if dialog.exec():
             settings = dialog.get_settings()
             value_col = settings['value_col']
@@ -183,6 +221,7 @@ class ActionHandler:
                 
                 t_stat, p_value = ttest_ind(group1_values, group2_values)
 
+                # どの列の値が違うのかを特定する
                 diff_key = None
                 diff_values = []
                 all_keys = set(g1_filters.keys()) | set(g2_filters.keys())
@@ -192,6 +231,7 @@ class ActionHandler:
                         diff_values = [g1_filters.get(key), g2_filters.get(key)]
                         break
                 
+                # p値が有意な場合のみアノテーション情報を追加
                 if diff_key and p_value < 0.05:
                     annotation = {
                         "value_col": value_col,
@@ -200,21 +240,27 @@ class ActionHandler:
                     }
                     if annotation not in self.main.statistical_annotations:
                         self.main.statistical_annotations.append(annotation)
+                    
                     self.main.graph_manager.update_graph()
 
                 g1_name = " & ".join([f"{k}='{v}'" for k, v in g1_filters.items()])
                 g2_name = " & ".join([f"{k}='{v}'" for k, v in g2_filters.items()])
                 result_text = (
-                    f"Independent t-test results:\n===========================\n\n"
-                    f"Comparing '{value_col}' between:\n- Group 1: {g1_name} (Mean: {group1_values.mean():.3f})\n"
-                    f"- Group 2: {g2_name} (Mean: {group2_values.mean():.3f})\n\n---\n"
-                    f"t-statistic: {t_stat:.4f}\np-value: {p_value:.4f}\n\n"
+                    f"Independent t-test results:\n"
+                    f"===========================\n\n"
+                    f"Comparing '{value_col}' between:\n"
+                    f"- Group 1: {g1_name} (Mean: {group1_values.mean():.3f})\n"
+                    f"- Group 2: {g2_name} (Mean: {group2_values.mean():.3f})\n\n"
+                    f"---\n"
+                    f"t-statistic: {t_stat:.4f}\n"
+                    f"p-value: {p_value:.4f}\n\n"
                 )
                 if p_value < 0.05:
                     result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
                 else:
                     result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
                 self.show_results_dialog("t-test Result", result_text)
+
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform t-test: {e}")
 
@@ -223,6 +269,7 @@ class ActionHandler:
         if not hasattr(self.main, 'model'): return
         df = self.main.model._data
         dialog = AnovaDialog(df.columns, self.main)
+
         if dialog.exec():
             settings = dialog.get_settings()
             value_col, group_col = settings['value_col'], settings['group_col']
@@ -268,6 +315,7 @@ class ActionHandler:
         if not hasattr(self.main, 'model'): return
         df = self.main.model._data
         dialog = PairedTTestDialog(df.columns, self.main)
+
         if dialog.exec():
             settings = dialog.get_settings()
             col1, col2 = settings['col1'], settings['col2']
@@ -283,6 +331,7 @@ class ActionHandler:
                      return
                 
                 t_stat, p_value = ttest_rel(data1[:min_len], data2[:min_len])
+
                 result_text = (
                     f"Paired t-test results:\n=====================\n\nComparing:\n- Column 1: '{col1}' (Mean: {data1.mean():.3f})\n"
                     f"- Column 2: '{col2}' (Mean: {data2.mean():.3f})\n\n---\n"
@@ -293,6 +342,7 @@ class ActionHandler:
                 else:
                     result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
                 self.show_results_dialog("Paired t-test Result", result_text)
+
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform paired t-test: {e}")
 
@@ -319,6 +369,7 @@ class ActionHandler:
                 else:
                     result_text += f"Conclusion: There is no statistically significant association between '{rows_col}' and '{cols_col}' (p >= 0.05)."
                 self.show_results_dialog("Chi-squared Test Result", result_text)
+                
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform Chi-squared test: {e}")
 
@@ -331,10 +382,13 @@ class ActionHandler:
         if len(selected_columns) != 2: 
             QMessageBox.warning(self.main, "Warning", "Please select exactly two columns.")
             return
+
         df = self.main.model._data
         x_col_index, y_col_index = selected_columns
         x_data, y_data = df.iloc[:, x_col_index].dropna(), df.iloc[:, y_col_index].dropna()
+        
         slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data)
+
         self.main.regression_line_params = {
             "x_line": np.array([x_data.min(), x_data.max()]),
             "y_line": slope * np.array([x_data.min(), x_data.max()]) + intercept,
@@ -361,35 +415,51 @@ class ActionHandler:
                 if (fit_df[x_col] <= 0).any():
                     QMessageBox.warning(self.main, "Warning", "X-axis column for fitting contains non-positive values.")
                     return
+                
                 fit_df['log_x'] = np.log10(fit_df[x_col])
                 x_data, y_data = fit_df['log_x'], fit_df[y_col]
+
                 p0 = [y_data.min(), y_data.max(), 1.0, np.log10(np.median(fit_df[x_col]))]
+                
                 params, _ = curve_fit(self.sigmoid_4pl, x_data, y_data, p0=p0, maxfev=10000)
+                
                 bottom, top, hill_slope, log_ec50 = params
                 ec50 = 10**log_ec50
+                
                 y_pred = self.sigmoid_4pl(x_data, *params)
                 r_squared = 1 - (np.sum((y_data - y_pred) ** 2) / np.sum((y_data - np.mean(y_data)) ** 2))
+
                 self.main.fit_params = {"params": params, "r_squared": r_squared, "x_col": x_col, "y_col": y_col, "log_x_data": x_data}
                 self.main.regression_line_params = None
                 self.main.graph_manager.update_graph()
+
                 result_text = "Non-linear Regression Results (Sigmoidal 4PL)\n"
                 result_text += "==============================================\n\n"
-                result_text += f"Top: {top:.4f}\nBottom: {bottom:.4f}\nHill Slope: {hill_slope:.4f}\nEC50: {ec50:.4f}\n\nR-squared: {r_squared:.4f}\n"
+                result_text += f"Top: {top:.4f}\n"
+                result_text += f"Bottom: {bottom:.4f}\n"
+                result_text += f"Hill Slope: {hill_slope:.4f}\n"
+                result_text += f"EC50: {ec50:.4f}\n\n"
+                result_text += f"R-squared: {r_squared:.4f}\n"
                 self.show_results_dialog("Fitting Result", result_text)
+
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform fitting: {e}")
     
+    # --- Helper Methods ---
     def show_results_dialog(self, title, text):
         """解析結果などを表示するための汎用的なダイアログを表示する。"""
         dialog = QDialog(self.main)
         dialog.setWindowTitle(title)
         dialog.setMinimumSize(400, 300)
+        
         layout = QVBoxLayout(dialog)
         text_edit = QTextEdit()
         text_edit.setReadOnly(True)
         text_edit.setText(text)
+        
         font = text_edit.font()
         font.setFamily("Courier New")
         text_edit.setFont(font)
+        
         layout.addWidget(text_edit)
         dialog.exec()

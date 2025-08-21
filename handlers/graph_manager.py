@@ -20,7 +20,7 @@ class GraphManager:
         if not hasattr(self.main, 'model') or self.main.model is None:
             return
 
-        df = self.main.model._data
+        df = self.main.model._data.copy() # ★★★ 変更：dfをコピーして使用
         ax = self.main.graph_widget.ax
         ax.clear()
         
@@ -30,36 +30,40 @@ class GraphManager:
         plot_params = {}
         current_x = data_settings.get('x_col')
         current_y = data_settings.get('y_col')
+        subgroup_col = data_settings.get('subgroup_col')
         
+        # サブグループ列が存在する場合、データ型を文字列に変換
+        if subgroup_col and subgroup_col in df.columns:
+            df[subgroup_col] = df[subgroup_col].astype(str)
+
         if self.main.current_graph_type == 'scatter':
             if not current_y or not current_x:
                 self.main.graph_widget.canvas.draw()
                 return
-            self._draw_scatter_plot(ax, df, current_x, current_y, 
-                                    properties.get('marker_style', 'o'), 
-                                    properties.get('single_color'), 
-                                    properties)
+            
+            sns.scatterplot(
+                data=df, x=current_x, y=current_y, ax=ax,
+                hue=subgroup_col if subgroup_col else None,
+                palette=self.main.properties_panel.format_tab.subgroup_colors if subgroup_col else None,
+                color=properties.get('single_color') if not subgroup_col else None,
+                marker=properties.get('marker_style', 'o'),
+                edgecolor=properties.get('marker_edgecolor', 'black'),
+                linewidth=properties.get('marker_edgewidth', 1.0)
+            )
 
         elif self.main.current_graph_type == 'bar':
             if not current_y or not current_x:
                 self.main.graph_widget.canvas.draw()
                 return
             
-            subgroup_col = data_settings.get('subgroup_col')
-            
-            # ★★★ ここから修正 ★★★
-            # サブグループの色設定（palette）のキーを文字列に変換する
             palette = None
             if subgroup_col:
-                subgroup_colors = self.main.properties_panel.format_tab.subgroup_colors
-                # キーを文字列に変換した新しい辞書を作成
-                palette = {str(k): v for k, v in subgroup_colors.items()}
-            # ★★★ ここまで修正 ★★★
+                palette = {str(k): v for k, v in self.main.properties_panel.format_tab.subgroup_colors.items()}
 
             sns.barplot(
-                x=current_x, y=current_y, data=df, ax=ax,
+                data=df, x=current_x, y=current_y, ax=ax,
                 hue=subgroup_col if subgroup_col else None,
-                palette=palette, # 修正したpaletteを使用
+                palette=palette,
                 color=properties.get('single_color', '#1f77b4') if not subgroup_col else None,
                 capsize=properties.get('capsize', 4) * 0.01,
                 errwidth=properties.get('bar_edgewidth', 1.0),
@@ -72,7 +76,7 @@ class GraphManager:
             col1 = data_settings.get('col1')
             col2 = data_settings.get('col2')
             if col1 and col2 and col1 != col2:
-                self._draw_paired_plot(ax, df, col1, col2, properties)
+                self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
             plot_params = None
 
         if plot_params and self.main.statistical_annotations:
@@ -98,12 +102,14 @@ class GraphManager:
         if not hasattr(self.main, 'graph_widget'): return
         properties = self.main.properties_panel.get_properties()
         ax = self.main.graph_widget.ax
-        
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
         
         ax.set_title(properties.get('title', ''), fontsize=properties.get('title_fontsize', 16))
-        ax.set_xlabel(properties.get('xlabel') or data_settings.get('x_col', ''))
-        ax.set_ylabel(properties.get('ylabel') or data_settings.get('y_col', ''))
+        
+        xlabel = properties.get('xlabel') or (data_settings.get('x_col') if data_settings else '')
+        ylabel = properties.get('ylabel') or (data_settings.get('y_col') if data_settings else '')
+        ax.set_xlabel(xlabel, fontsize=properties.get('xlabel_fontsize', 12))
+        ax.set_ylabel(ylabel, fontsize=properties.get('ylabel_fontsize', 12))
 
         ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
 
@@ -150,39 +156,34 @@ class GraphManager:
             self.main.statistical_annotations.clear()
             self.update_graph()
 
-    def _draw_scatter_plot(self, ax, df, x_col, y_col, marker_style, color, properties):
-        color_to_plot = color if color else '#1f77b4'
-        edgecolor = properties.get('marker_edgecolor', 'black')
-        linewidth = properties.get('marker_edgewidth', 1.0)
-        if pd.api.types.is_numeric_dtype(df[y_col]) and pd.api.types.is_numeric_dtype(df[x_col]):
-            ax.scatter(df[x_col], df[y_col], marker=marker_style, color=color_to_plot, edgecolors=edgecolor, linewidths=linewidth)
-
-    def _draw_paired_plot(self, ax, df, col1, col2, properties):
+    def _draw_paired_plot_seaborn(self, ax, df, col1, col2, properties):
+        """ペアデータの散布図を Seaborn を使って描画する。"""
         try:
             plot_df = df[[col1, col2]].dropna().copy()
-            if plot_df.empty: return None, None
+            if plot_df.empty: return
+
+            plot_df['ID'] = range(len(plot_df))
+            plot_df_long = pd.melt(plot_df, id_vars='ID', value_vars=[col1, col2], var_name='Condition', value_name='Value')
 
             label1 = properties.get('paired_label1') or col1
             label2 = properties.get('paired_label2') or col2
-            categories = [label1, label2]
-            x_indices = [0, 1]
-
-            marker_style = properties.get('marker_style', 'o')
-            marker_edgecolor = properties.get('marker_edgecolor', 'black')
-            marker_edgewidth = properties.get('marker_edgewidth', 1.0)
             
-            mean_linestyle = properties.get('linestyle', '--')
-            mean_linewidth = properties.get('linewidth', 2)
+            sns.lineplot(data=plot_df_long, x='Condition', y='Value', units='ID',
+                         estimator=None, color='gray', alpha=0.5, ax=ax)
+            sns.scatterplot(data=plot_df_long, x='Condition', y='Value',
+                            color=properties.get('single_color', 'black'), 
+                            marker=properties.get('marker_style', 'o'),
+                            edgecolor=properties.get('marker_edgecolor', 'black'),
+                            linewidth=properties.get('marker_edgewidth', 1.0),
+                            ax=ax, legend=False)
+            
+            mean_df = plot_df_long.groupby('Condition')['Value'].mean().reindex([col1, col2])
+            ax.plot(mean_df.index, mean_df.values,
+                    color='red', marker='_', markersize=20, mew=2.5, linestyle='None', label='Mean')
 
-            for index, row in plot_df.iterrows():
-                ax.plot(x_indices, [row[col1], row[col2]], color='gray', marker=marker_style, linestyle='-', alpha=0.5, markeredgecolor=marker_edgecolor, markeredgewidth=marker_edgewidth)
-
-            mean1 = plot_df[col1].mean()
-            mean2 = plot_df[col2].mean()
-            ax.plot(x_indices, [mean1, mean2], color='red', marker=marker_style, linestyle=mean_linestyle, linewidth=mean_linewidth, label="Mean", markeredgecolor=marker_edgecolor, markeredgewidth=marker_edgewidth)
+            ax.set_xticklabels([label1, label2])
+            ax.set_xlim(-0.5, 1.5)
             ax.legend()
-            
-            return categories, x_indices
+
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
-            return None, None

@@ -7,7 +7,7 @@ from main_window import MainWindow
 
 if __name__ == "__main__":
     
-    # 高DPI対応 (近年のバージョンでは自動のため、この行は不要になることが多い)
+    # 高DPI対応の古い設定をコメントアウト
     # QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling)
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     
