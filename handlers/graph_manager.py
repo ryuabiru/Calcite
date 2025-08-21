@@ -29,11 +29,11 @@ class GraphManager:
         ax.clear()
         
         properties = self.main.properties_panel.get_properties()
-        # DataTabから現在表示中のUIの設定を取得
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
         
         bar_categories, bar_x_indices = None, None
-            
+        paired_categories, paired_x_indices = None, None
+        
         if self.main.current_graph_type == 'scatter':
             y_col = data_settings.get('y_col')
             x_col = data_settings.get('x_col')
@@ -64,11 +64,11 @@ class GraphManager:
         elif self.main.current_graph_type == 'paired_scatter':
             self.main.fit_params = None
             self.main.regression_line_params = None
-            # MainWindowの変数ではなく、DataTabから直接設定値を取得する
             col1 = data_settings.get('col1')
             col2 = data_settings.get('col2')
             if col1 and col2 and col1 != col2:
-                self._draw_paired_plot(ax, df, col1, col2, properties)
+                # _draw_paired_plot から返り値を受け取る
+                paired_categories, paired_x_indices = self._draw_paired_plot(ax, df, col1, col2, properties)
 
         # 回帰直線とフィッティング曲線
         linestyle = properties.get('linestyle', '-')
@@ -86,12 +86,15 @@ class GraphManager:
                 r_squared = self.main.fit_params['r_squared']
                 ax.plot(10**x_fit, y_fit, color='blue', label=f'4PL Fit (R²={r_squared:.3f})', linestyle=linestyle, linewidth=linewidth)
 
-        self._draw_annotations()
-        self.update_graph_properties()
-
         if self.main.current_graph_type == 'bar' and bar_categories is not None:
             ax.set_xticks(bar_x_indices)
             ax.set_xticklabels(bar_categories, rotation=0)
+        # paired_scatter のための条件分岐を追加
+        elif self.main.current_graph_type == 'paired_scatter' and paired_categories is not None:
+            ax.set_xticks(paired_x_indices)
+            ax.set_xticklabels(paired_categories)
+            # xlimの設定もこちらに移動
+            ax.set_xlim(-0.5, 1.5)
 
         self.main.graph_widget.fig.tight_layout()
         self.main.graph_widget.canvas.draw()
@@ -268,13 +271,13 @@ class GraphManager:
             ax.set_xlabel(properties.get('xlabel', 'Condition'))
             ax.set_ylabel(properties.get('ylabel', 'Value'))
             
-            ax.set_xticks(x_indices)
-            ax.set_xticklabels(categories)
-            ax.set_xlim(-0.2, 1.2)
             ax.legend()
+            
+            return categories, x_indices
 
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
+            return None, None
         
     def _draw_annotations(self):
         """統計的有意差のアノテーションを描画する。"""
