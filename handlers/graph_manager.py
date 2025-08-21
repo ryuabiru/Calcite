@@ -21,7 +21,7 @@ class GraphManager:
         """
         現在の設定に基づいてグラフ全体を再描画する。
         """
-        if not hasattr(self.main, 'model'):
+        if not hasattr(self.main, 'model') or self.main.model is None:
             return
 
         df = self.main.model._data
@@ -29,31 +29,30 @@ class GraphManager:
         ax.clear()
         
         properties = self.main.properties_panel.get_properties()
+        # DataTabから現在表示中のUIの設定を取得
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
         
         bar_categories, bar_x_indices = None, None
             
-        # properties_panelから直接ではなく、data_tabを経由してアクセスする
         if self.main.current_graph_type == 'scatter':
-            y_col = self.main.properties_panel.data_tab.y_axis_combo.currentText()
-            x_col = self.main.properties_panel.data_tab.x_axis_combo.currentText()
+            y_col = data_settings.get('y_col')
+            x_col = data_settings.get('x_col')
             if not y_col or not x_col:
                 self.main.graph_widget.canvas.draw()
                 return
                 
-            # format_tabから設定値を取得
             marker_style = properties.get('marker_style', 'o')
             single_color = self.main.properties_panel.format_tab.current_color
             self._draw_scatter_plot(ax, df, x_col, y_col, marker_style, single_color, properties)
 
         elif self.main.current_graph_type == 'bar':
-            y_col = self.main.properties_panel.data_tab.y_axis_combo.currentText()
-            x_col = self.main.properties_panel.data_tab.x_axis_combo.currentText()
+            y_col = data_settings.get('y_col')
+            x_col = data_settings.get('x_col')
+            subgroup_col = data_settings.get('subgroup_col')
             if not y_col or not x_col:
                 self.main.graph_widget.canvas.draw()
                 return
 
-            subgroup_col = self.main.properties_panel.data_tab.subgroup_combo.currentText()
-            # format_tabから設定値を取得
             single_color = self.main.properties_panel.format_tab.current_color
             subgroup_colors_map = self.main.properties_panel.format_tab.subgroup_colors
             show_scatter = self.main.properties_panel.format_tab.scatter_overlay_check.isChecked()
@@ -65,9 +64,10 @@ class GraphManager:
         elif self.main.current_graph_type == 'paired_scatter':
             self.main.fit_params = None
             self.main.regression_line_params = None
-            if hasattr(self.main, 'paired_plot_cols'):
-                col1 = self.main.paired_plot_cols['col1']
-                col2 = self.main.paired_plot_cols['col2']
+            # MainWindowの変数ではなく、DataTabから直接設定値を取得する
+            col1 = data_settings.get('col1')
+            col2 = data_settings.get('col2')
+            if col1 and col2 and col1 != col2:
                 self._draw_paired_plot(ax, df, col1, col2, properties)
 
         # 回帰直線とフィッティング曲線
@@ -77,8 +77,8 @@ class GraphManager:
             params = self.main.regression_line_params
             ax.plot(params["x_line"], params["y_line"], color='red', label=f'R² = {params["r_squared"]:.4f}', linestyle=linestyle, linewidth=linewidth)
         
-        current_x_col = self.main.properties_panel.data_tab.x_axis_combo.currentText()
-        current_y_col = self.main.properties_panel.data_tab.y_axis_combo.currentText()
+        current_x_col = self.main.properties_panel.data_tab.tidy_tab.x_axis_combo.currentText()
+        current_y_col = self.main.properties_panel.data_tab.tidy_tab.y_axis_combo.currentText()
         if self.main.fit_params and self.main.fit_params['x_col'] == current_x_col and self.main.fit_params['y_col'] == current_y_col:
             x_data = self.main.fit_params['log_x_data']
             x_fit = np.linspace(x_data.min(), x_data.max(), 200)
@@ -98,6 +98,8 @@ class GraphManager:
 
     def update_graph_properties(self):
         """プロパティパネルから現在の全設定を取得し、グラフに適用する。"""
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            return
         properties = self.main.properties_panel.get_properties()
         ax = self.main.graph_widget.ax
         
@@ -130,7 +132,7 @@ class GraphManager:
         # スケール
         if self.main.current_graph_type in ['bar', 'paired_scatter']:
             ax.set_xscale('linear')
-        elif self.main.fit_params and self.main.fit_params['x_col'] == self.main.properties_panel.data_tab.x_axis_combo.currentText():
+        if self.main.fit_params and self.main.fit_params['x_col'] == self.main.properties_panel.data_tab.tidy_tab.x_axis_combo.currentText():
             ax.set_xscale('log')
         else:
             ax.set_xscale('log' if properties.get('x_log_scale') else 'linear')

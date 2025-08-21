@@ -1,52 +1,55 @@
 # tabs/data_tab.py
 
-from PySide6.QtWidgets import QWidget, QFormLayout, QLabel, QComboBox
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QStackedWidget
 from PySide6.QtCore import Signal
 
+# 作成済みの2つのUI部品をインポート
+from .data_tab_tidy import TidyDataTab
+from .data_tab_paired import PairedDataTab
+
 class DataTab(QWidget):
-    """データ選択タブのUIとロジック"""
+    """
+    グラフタイプに応じてデータ選択UIを切り替えるコンテナウィジェット。
+    """
+    # TidyDataTabからのシグナルを中継するためのシグナル
     subgroupColumnChanged = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        layout = QFormLayout(self)
-        
-        self.y_axis_combo = QComboBox()
-        self.x_axis_combo = QComboBox()
-        self.subgroup_combo = QComboBox()
-        
-        self.subgroup_combo.currentTextChanged.connect(self.subgroupColumnChanged.emit)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0) # 余白をなくす
 
-        layout.addRow(QLabel("Y-Axis (Value):"), self.y_axis_combo)
-        layout.addRow(QLabel("X-Axis (Group):"), self.x_axis_combo)
-        layout.addRow(QLabel("Sub-group (Color):"), self.subgroup_combo)
+        # UIを切り替えるためのQStackedWidgetを作成
+        self.stacked_widget = QStackedWidget()
+        
+        # 2種類のUIウィジェットをインスタンス化
+        self.tidy_tab = TidyDataTab()
+        self.paired_tab = PairedDataTab()
+        
+        # StackedWidgetに2つのUIを追加
+        self.stacked_widget.addWidget(self.tidy_tab)
+        self.stacked_widget.addWidget(self.paired_tab)
+        
+        layout.addWidget(self.stacked_widget)
+        
+        # TidyDataTabのシグナルを、このクラスのシグナルに接続して中継
+        self.tidy_tab.subgroupColumnChanged.connect(self.subgroupColumnChanged.emit)
+
+    def set_graph_type(self, graph_type):
+        """表示するUIをグラフタイプに応じて切り替える"""
+        if graph_type in ['scatter', 'bar']:
+            self.stacked_widget.setCurrentWidget(self.tidy_tab)
+        elif graph_type == 'paired_scatter':
+            self.stacked_widget.setCurrentWidget(self.paired_tab)
 
     def set_columns(self, columns):
-        """コンボボックスにデータフレームの列名を設定する"""
-        current_y = self.y_axis_combo.currentText()
-        current_x = self.x_axis_combo.currentText()
-        current_sub = self.subgroup_combo.currentText()
+        """両方のタブのコンボボックスの選択肢を更新する"""
+        self.tidy_tab.set_columns(columns)
+        self.paired_tab.set_columns(columns)
 
-        self.y_axis_combo.clear()
-        self.x_axis_combo.clear()
-        self.subgroup_combo.clear()
-        
-        self.y_axis_combo.addItem("") 
-        self.x_axis_combo.addItem("")
-        self.subgroup_combo.addItem("")
-        
-        self.y_axis_combo.addItems(columns)
-        self.x_axis_combo.addItems(columns)
-        self.subgroup_combo.addItems(columns)
-
-        self.y_axis_combo.setCurrentText(current_y)
-        self.x_axis_combo.setCurrentText(current_x)
-        self.subgroup_combo.setCurrentText(current_sub)
-
-    def get_properties(self):
-        """このタブの設定値を取得する"""
-        return {
-            'y_col': self.y_axis_combo.currentText(),
-            'x_col': self.x_axis_combo.currentText(),
-            'subgroup_col': self.subgroup_combo.currentText()
-        }
+    def get_current_settings(self):
+        """現在表示されているタブの設定値を取得する"""
+        current_widget = self.stacked_widget.currentWidget()
+        if hasattr(current_widget, 'get_settings'):
+            return current_widget.get_settings()
+        return {}

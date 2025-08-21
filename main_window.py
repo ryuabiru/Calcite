@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt
 # --- Local Imports ---
 from graph_widget import GraphWidget
 from properties_widget import PropertiesWidget
-from dialogs.paired_plot_dialog import PairedPlotDialog
+
 # --- Handlers ---
 from handlers.action_handler import ActionHandler
 from handlers.graph_manager import GraphManager
@@ -124,34 +124,27 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         action_group = QActionGroup(self)
         action_group.setExclusive(True)
+        
         scatter_action = QAction("Scatter Plot", self)
         scatter_action.setCheckable(True); scatter_action.setChecked(True)
         scatter_action.triggered.connect(lambda: self.set_graph_type('scatter'))
         toolbar.addAction(scatter_action); action_group.addAction(scatter_action)
+        
         bar_action = QAction("Bar Chart", self)
         bar_action.setCheckable(True)
         bar_action.triggered.connect(lambda: self.set_graph_type('bar'))
         toolbar.addAction(bar_action); action_group.addAction(bar_action)
+        
         paired_scatter_action = QAction("Paired Scatter", self)
         paired_scatter_action.setCheckable(True)
-        paired_scatter_action.triggered.connect(self.show_paired_plot_dialog)
+        # ダイアログを呼び出す代わりに、直接グラフタイプを設定する
+        paired_scatter_action.triggered.connect(lambda: self.set_graph_type('paired_scatter'))
         toolbar.addAction(paired_scatter_action); action_group.addAction(paired_scatter_action)
 
     def set_graph_type(self, graph_type):
         self.current_graph_type = graph_type
         self.graph_manager.update_graph()
 
-    def show_paired_plot_dialog(self):
-        if not hasattr(self, 'model'): return
-        dialog = PairedPlotDialog(self.model._data.columns, self)
-        if dialog.exec():
-            settings = dialog.get_settings()
-            if not all(settings.values()): return
-            self.current_graph_type = 'paired_scatter'
-            self.paired_plot_cols = {'col1': settings['col1'], 'col2': settings['col2']}
-            self.graph_manager.update_graph()
-
-    # --- ★★★ ここからが修正箇所です (メソッドを復元) ★★★ ---
     def edit_header(self, logicalIndex):
         if self.header_editor: self.header_editor.close()
         header = self.table_view.horizontalHeader()
@@ -212,4 +205,3 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'model'):
             selected_cols = sorted(list(set(index.column() for index in self.table_view.selectionModel().selectedColumns())))
             for col in reversed(selected_cols): self.model.removeColumns(col, 1)
-    # --- ★★★ ここまで ★★★ ---
