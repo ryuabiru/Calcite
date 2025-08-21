@@ -236,7 +236,8 @@ class ActionHandler:
                     annotation = {
                         "value_col": value_col,
                         "group_col": diff_key,
-                        "box_pair": (str(diff_values[0]), str(diff_values[1]))
+                        "box_pair": (str(diff_values[0]), str(diff_values[1])),
+                        "p_value": p_value
                     }
                     if annotation not in self.main.statistical_annotations:
                         self.main.statistical_annotations.append(annotation)
@@ -259,6 +260,12 @@ class ActionHandler:
                     result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
                 else:
                     result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
+                
+                # 解析した列を自動的にUIに反映させる
+                if diff_key: # 比較したグループの列が存在する場合
+                    self.main.properties_panel.data_tab.tidy_tab.y_axis_combo.setCurrentText(value_col)
+                    self.main.properties_panel.data_tab.tidy_tab.x_axis_combo.setCurrentText(diff_key)
+                
                 self.show_results_dialog("t-test Result", result_text)
 
             except Exception as e:
@@ -297,14 +304,22 @@ class ActionHandler:
                             annotation = {
                                 "value_col": value_col,
                                 "group_col": group_col,
-                                "box_pair": (str(row['group1']), str(row['group2']))
+                                "box_pair": (str(row['group1']), str(row['group2'])),
+                                "p_value": row['p-adj'] 
                             }
                             if annotation not in self.main.statistical_annotations:
                                 self.main.statistical_annotations.append(annotation)
-                    
+
+                    print("--- action_handler.py デバッグ ---")
+                    print(f"追加されたアノテーション情報: {self.main.statistical_annotations}")
+                    print("---------------------------------")
+
                     result_text += "Post-hoc test (Tukey's HSD):\n"
                     result_text += str(tukey_result)
                     self.main.graph_manager.update_graph()
+
+                self.main.properties_panel.data_tab.tidy_tab.y_axis_combo.setCurrentText(value_col)
+                self.main.properties_panel.data_tab.tidy_tab.x_axis_combo.setCurrentText(group_col)
                 
                 self.show_results_dialog("ANOVA Result", result_text)
             except Exception as e:

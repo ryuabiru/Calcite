@@ -6,6 +6,8 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 import seaborn as sns
 from statannotations.Annotator import Annotator
 
+import traceback
+
 class GraphManager:
     def __init__(self, main_window):
         self.main = main_window
@@ -25,6 +27,9 @@ class GraphManager:
         current_x = data_settings.get('x_col')
         current_y = data_settings.get('y_col')
         subgroup_col = data_settings.get('subgroup_col')
+        
+        if not subgroup_col:
+            subgroup_col = None
         
         if subgroup_col and subgroup_col in df.columns:
             df[subgroup_col] = df[subgroup_col].astype(str)
@@ -68,7 +73,7 @@ class GraphManager:
                 edgecolor=properties.get('bar_edgecolor', 'black'),
                 linewidth=properties.get('bar_edgewidth', 1.0)
             )
-            plot_params = {'x': current_x, 'y': current_y, 'hue': subgroup_col, 'data': df}
+            plot_params = {'x': current_x, 'y': current_y, 'hue': subgroup_col}
 
         elif self.main.current_graph_type == 'paired_scatter':
             col1 = data_settings.get('col1')
@@ -101,19 +106,33 @@ class GraphManager:
                         linestyle=linestyle, linewidth=linewidth)
         # ★★★ ここまで修正 ★★★
 
-        if plot_params and self.main.statistical_annotations:
-            box_pairs = [
-                ann['box_pair'] for ann in self.main.statistical_annotations
+        if plot_params and self.main.statistical_annotations and self.main.current_graph_type == 'bar':
+            # 現在のグラフ表示に一致するアノテーション情報だけを抽出
+            current_annotations = [
+                ann for ann in self.main.statistical_annotations
                 if ann.get('value_col') == current_y and ann.get('group_col') == current_x
             ]
             
-            if box_pairs:
+            if current_annotations:
+                # 比較するグループのペアと、対応するp値のリストをそれぞれ作成
+                box_pairs = [ann['box_pair'] for ann in current_annotations]
+                p_values = [ann['p_value'] for ann in current_annotations]
+                
                 try:
-                    annotator = Annotator(ax, box_pairs, **plot_params)
-                    annotator.configure(test=None, text_format='star', loc='inside', verbose=0)
-                    annotator.apply_and_annotate()
+                    # Annotatorを初期化
+                    annotator = Annotator(ax, box_pairs, data=df, **plot_params)
+                    # p値に基づいて星(*)の数を決めるように設定
+                    annotator.configure(text_format='star', loc='inside', verbose=0)
+                    # 事前に計算したp値をライブラリに渡す
+                    annotator.set_pvalues(p_values)
+                    # アノテーション（ブラケットと星）を描画する
+                    annotator.annotate()
+
                 except Exception as e:
                     print(f"Statannotations error: {e}")
+                    print("--- Full Traceback ---")
+                    traceback.print_exc()
+                    print("----------------------")
 
         self.update_graph_properties()
         self.main.graph_widget.fig.tight_layout()
