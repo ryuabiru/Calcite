@@ -51,19 +51,21 @@ class PropertiesWidget(QWidget):
         self.text_tab.title_edit.editingFinished.connect(self.propertiesChanged.emit)
         self.text_tab.xaxis_edit.editingFinished.connect(self.propertiesChanged.emit)
         self.text_tab.yaxis_edit.editingFinished.connect(self.propertiesChanged.emit)
-        self.text_tab.title_fontsize_spin.valueChanged.connect(self.propertiesChanged.emit)
-        self.text_tab.xlabel_fontsize_spin.valueChanged.connect(self.propertiesChanged.emit)
-        self.text_tab.ylabel_fontsize_spin.valueChanged.connect(self.propertiesChanged.emit)
-        self.text_tab.ticks_fontsize_spin.valueChanged.connect(self.propertiesChanged.emit)
+        # valueChangedシグナルをlambdaでラップする
+        self.text_tab.title_fontsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        self.text_tab.xlabel_fontsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        self.text_tab.ylabel_fontsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        self.text_tab.ticks_fontsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
 
         # AxesTab
         self.axes_tab.xmin_edit.editingFinished.connect(self.propertiesChanged.emit)
         self.axes_tab.xmax_edit.editingFinished.connect(self.propertiesChanged.emit)
         self.axes_tab.ymin_edit.editingFinished.connect(self.propertiesChanged.emit)
         self.axes_tab.ymax_edit.editingFinished.connect(self.propertiesChanged.emit)
-        self.axes_tab.grid_check.stateChanged.connect(self.propertiesChanged.emit)
-        self.axes_tab.x_log_scale_check.stateChanged.connect(self.propertiesChanged.emit)
-        self.axes_tab.y_log_scale_check.stateChanged.connect(self.propertiesChanged.emit)
+        # stateChangedシグナルをlambdaでラップする
+        self.axes_tab.grid_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
+        self.axes_tab.x_log_scale_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
+        self.axes_tab.y_log_scale_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
 
     def get_properties(self):
         """全てのタブから設定値を取得し、一つの辞書に統合して返す"""

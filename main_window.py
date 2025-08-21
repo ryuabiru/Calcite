@@ -21,14 +21,10 @@ class MainWindow(QMainWindow):
     UIの配置と、各ハンドラーへの処理の委譲を担当する。
     """
     def __init__(self):
-        """
-        MainWindowの初期化。UIのセットアップ、ハンドラーの初期化、シグナルとスロットの接続を行う。
-        """
         super().__init__()
         self.setWindowTitle("Calcite")
         self.setGeometry(100, 100, 1000, 650)
         
-        # モデルやグラフの状態を保持する変数
         self.model = None
         self.current_graph_type = 'scatter'
         self.header_editor = None
@@ -36,22 +32,15 @@ class MainWindow(QMainWindow):
         self.fit_params = None
         self.statistical_annotations = []
         
-        # ハンドラークラスを初期化
         self.action_handler = ActionHandler(self)
         self.graph_manager = GraphManager(self)
 
-        # UIウィジェットの作成と配置
         self._setup_ui()
-
-        # メニューバーとツールバーの作成
         self._create_menu_bar()
         self._create_toolbar()
-        
-        # シグナルとスロットの接続
         self._connect_signals()
 
     def _setup_ui(self):
-        """メインウィンドウのUIウィジェットを作成し、レイアウトする。"""
         main_splitter = QSplitter(Qt.Orientation.Vertical)
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
         
@@ -62,80 +51,91 @@ class MainWindow(QMainWindow):
         top_splitter.addWidget(self.graph_widget)
         
         top_splitter.setSizes([550, 450])
-
         self.properties_panel = PropertiesWidget()
 
         main_splitter.addWidget(top_splitter)
         main_splitter.addWidget(self.properties_panel)
         main_splitter.setSizes([550, 250])
-
         self.setCentralWidget(main_splitter)
 
     def _connect_signals(self):
-        """UIウィジェットのシグナルを適切なハンドラーのスロットに接続する。"""
         self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self.show_table_context_menu)
         self.table_view.horizontalHeader().sectionDoubleClicked.connect(self.edit_header)
         
-        # PropertiesPanelの変更はGraphManagerに通知
         self.properties_panel.propertiesChanged.connect(self.graph_manager.update_graph)
         self.properties_panel.graphUpdateRequest.connect(self.graph_manager.update_graph)
         self.properties_panel.subgroupColumnChanged.connect(self.on_subgroup_column_changed)
 
     def _create_menu_bar(self):
-        """メニューバーを作成し、各アクションを適切なハンドラーに接続する。"""
         menu_bar = self.menuBar()
-
         # File Menu
         file_menu = menu_bar.addMenu("&File")
         open_action = QAction("&Open CSV...", self)
         open_action.triggered.connect(self.action_handler.open_csv_file)
         file_menu.addAction(open_action)
-        
         save_graph_action = QAction("&Save Graph As...", self)
         save_graph_action.triggered.connect(self.graph_manager.save_graph)
         file_menu.addAction(save_graph_action)
-
         # Edit Menu
         edit_menu = menu_bar.addMenu("&Edit")
         paste_action = QAction("&Paste", self)
         paste_action.triggered.connect(self.action_handler.paste_from_clipboard)
         edit_menu.addAction(paste_action)
-        
         clear_annotations_action = QAction("Clear Annotations", self)
         clear_annotations_action.triggered.connect(self.graph_manager.clear_annotations)
         edit_menu.addAction(clear_annotations_action)
-
-        # Data & Analysis Menus (ActionHandlerに接続)
+        # Data Menu
         data_menu = menu_bar.addMenu("&Data")
         restructure_action = QAction("&Restructure (Wide to Long)...", self)
         restructure_action.triggered.connect(self.action_handler.show_restructure_dialog)
         data_menu.addAction(restructure_action)
-        # ... 他のData, Analysisメニューも同様にaction_handlerに接続 ...
+        pivot_action = QAction("Pivot (Long to Wide)...", self)
+        pivot_action.triggered.connect(self.action_handler.show_pivot_dialog)
+        data_menu.addAction(pivot_action)
+        calculate_action = QAction("&Calculate New Column...", self)
+        calculate_action.triggered.connect(self.action_handler.show_calculate_dialog)
+        data_menu.addAction(calculate_action)
+        # Analysis Menu
+        analysis_menu = menu_bar.addMenu("&Analysis")
+        ttest_action = QAction("&Independent t-test...", self)
+        ttest_action.triggered.connect(self.action_handler.perform_t_test)
+        analysis_menu.addAction(ttest_action)
+        paired_ttest_action = QAction("&Paired t-test...", self)
+        paired_ttest_action.triggered.connect(self.action_handler.perform_paired_t_test)
+        analysis_menu.addAction(paired_ttest_action)
+        anova_action = QAction("&One-way ANOVA...", self)
+        anova_action.triggered.connect(self.action_handler.perform_one_way_anova)
+        analysis_menu.addAction(anova_action)
+        analysis_menu.addSeparator()
+        chi_squared_action = QAction("&Chi-squared Test...", self)
+        chi_squared_action.triggered.connect(self.action_handler.perform_chi_squared_test)
+        analysis_menu.addAction(chi_squared_action)
+        analysis_menu.addSeparator()
+        linreg_action = QAction("&Linear Regression...", self)
+        linreg_action.triggered.connect(self.action_handler.perform_linear_regression)
+        analysis_menu.addAction(linreg_action)
+        fitting_action = QAction("&Non-linear Regression...", self)
+        fitting_action.triggered.connect(self.action_handler.perform_fitting)
+        analysis_menu.addAction(fitting_action)
 
     def _create_toolbar(self):
-        """グラフタイプを選択するためのツールバーを作成する。"""
         toolbar = QToolBar("Graph Type")
         self.addToolBar(toolbar)
         action_group = QActionGroup(self)
         action_group.setExclusive(True)
-
         scatter_action = QAction("Scatter Plot", self)
         scatter_action.setCheckable(True); scatter_action.setChecked(True)
         scatter_action.triggered.connect(lambda: self.set_graph_type('scatter'))
         toolbar.addAction(scatter_action); action_group.addAction(scatter_action)
-
         bar_action = QAction("Bar Chart", self)
         bar_action.setCheckable(True)
         bar_action.triggered.connect(lambda: self.set_graph_type('bar'))
         toolbar.addAction(bar_action); action_group.addAction(bar_action)
-        
         paired_scatter_action = QAction("Paired Scatter", self)
         paired_scatter_action.setCheckable(True)
         paired_scatter_action.triggered.connect(self.show_paired_plot_dialog)
         toolbar.addAction(paired_scatter_action); action_group.addAction(paired_scatter_action)
-
-    # --- MainWindowに残るUI関連のメソッド ---
 
     def set_graph_type(self, graph_type):
         self.current_graph_type = graph_type
@@ -151,31 +151,65 @@ class MainWindow(QMainWindow):
             self.paired_plot_cols = {'col1': settings['col1'], 'col2': settings['col2']}
             self.graph_manager.update_graph()
 
+    # --- ★★★ ここからが修正箇所です (メソッドを復元) ★★★ ---
     def edit_header(self, logicalIndex):
-        # ... (変更なし) ...
-        pass
+        if self.header_editor: self.header_editor.close()
+        header = self.table_view.horizontalHeader()
+        model = self.table_view.model()
+        self.header_editor = QLineEdit(parent=header)
+        self.header_editor.setText(model.headerData(logicalIndex, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole))
+        self.header_editor.setGeometry(header.sectionViewportPosition(logicalIndex), 0, header.sectionSize(logicalIndex), header.height())
+        self.header_editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.header_editor.editingFinished.connect(lambda: self.finish_header_edit(logicalIndex))
+        self.header_editor.show(); self.header_editor.setFocus()
 
     def finish_header_edit(self, logicalIndex):
-        # ... (変更なし) ...
-        pass
+        if self.header_editor:
+            new_text = self.header_editor.text()
+            self.table_view.model().setHeaderData(logicalIndex, Qt.Orientation.Horizontal, new_text, Qt.ItemDataRole.EditRole)
+            self.header_editor.close(); self.header_editor = None
         
     def show_table_context_menu(self, position):
-        # ... (変更なし) ...
-        pass
+        if not hasattr(self, 'model'): return
+        menu = QMenu()
+        insert_row_action = QAction("Insert Row Above", self); insert_row_action.triggered.connect(self.insert_row)
+        remove_row_action = QAction("Remove Selected Row(s)", self); remove_row_action.triggered.connect(self.remove_row)
+        insert_col_action = QAction("Insert Column Left", self); insert_col_action.triggered.connect(self.insert_col)
+        remove_col_action = QAction("Remove Selected Column(s)", self); remove_col_action.triggered.connect(self.remove_col)
+        menu.addAction(insert_row_action); menu.addAction(remove_row_action)
+        menu.addSeparator()
+        menu.addAction(insert_col_action); menu.addAction(remove_col_action)
+        menu.exec(self.table_view.viewport().mapToGlobal(position))
 
     def on_subgroup_column_changed(self, column_name):
         if not hasattr(self, 'model') or not column_name:
-            self.properties_panel.update_subgroup_color_ui([])
+            self.properties_panel.format_tab.update_subgroup_color_ui([])
             return
         try:
             unique_categories = self.model._data[column_name].unique()
-            self.properties_panel.update_subgroup_color_ui(sorted(unique_categories))
+            self.properties_panel.format_tab.update_subgroup_color_ui(sorted(unique_categories))
         except KeyError:
-            self.properties_panel.update_subgroup_color_ui([])
+            self.properties_panel.format_tab.update_subgroup_color_ui([])
             
-    # --- PandasModelの行・列操作メソッド ---
     def insert_row(self):
         if hasattr(self, 'model'):
-            # ... (変更なし) ...
-            pass
-    # ... (remove_row, insert_col, remove_colも同様) ...
+            selected_index = self.table_view.currentIndex()
+            row = selected_index.row() if selected_index.isValid() else self.model.rowCount()
+            self.model.insertRows(row, 1)
+
+    def remove_row(self):
+        if hasattr(self, 'model'):
+            selected_rows = sorted(list(set(index.row() for index in self.table_view.selectionModel().selectedRows())))
+            for row in reversed(selected_rows): self.model.removeRows(row, 1)
+
+    def insert_col(self):
+        if hasattr(self, 'model'):
+            selected_index = self.table_view.currentIndex()
+            col = selected_index.column() if selected_index.isValid() else self.model.columnCount()
+            self.model.insertColumns(col, 1)
+
+    def remove_col(self):
+        if hasattr(self, 'model'):
+            selected_cols = sorted(list(set(index.column() for index in self.table_view.selectionModel().selectedColumns())))
+            for col in reversed(selected_cols): self.model.removeColumns(col, 1)
+    # --- ★★★ ここまで ★★★ ---

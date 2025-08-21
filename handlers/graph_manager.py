@@ -32,28 +32,31 @@ class GraphManager:
         
         bar_categories, bar_x_indices = None, None
             
+        # properties_panelから直接ではなく、data_tabを経由してアクセスする
         if self.main.current_graph_type == 'scatter':
-            y_col = self.main.properties_panel.y_axis_combo.currentText()
-            x_col = self.main.properties_panel.x_axis_combo.currentText()
+            y_col = self.main.properties_panel.data_tab.y_axis_combo.currentText()
+            x_col = self.main.properties_panel.data_tab.x_axis_combo.currentText()
             if not y_col or not x_col:
                 self.main.graph_widget.canvas.draw()
                 return
                 
+            # format_tabから設定値を取得
             marker_style = properties.get('marker_style', 'o')
-            single_color = self.main.properties_panel.current_color
+            single_color = self.main.properties_panel.format_tab.current_color
             self._draw_scatter_plot(ax, df, x_col, y_col, marker_style, single_color, properties)
 
         elif self.main.current_graph_type == 'bar':
-            y_col = self.main.properties_panel.y_axis_combo.currentText()
-            x_col = self.main.properties_panel.x_axis_combo.currentText()
+            y_col = self.main.properties_panel.data_tab.y_axis_combo.currentText()
+            x_col = self.main.properties_panel.data_tab.x_axis_combo.currentText()
             if not y_col or not x_col:
                 self.main.graph_widget.canvas.draw()
                 return
 
-            subgroup_col = self.main.properties_panel.subgroup_combo.currentText()
-            single_color = self.main.properties_panel.current_color
-            subgroup_colors_map = self.main.properties_panel.subgroup_colors
-            show_scatter = self.main.properties_panel.scatter_overlay_check.isChecked()
+            subgroup_col = self.main.properties_panel.data_tab.subgroup_combo.currentText()
+            # format_tabから設定値を取得
+            single_color = self.main.properties_panel.format_tab.current_color
+            subgroup_colors_map = self.main.properties_panel.format_tab.subgroup_colors
+            show_scatter = self.main.properties_panel.format_tab.scatter_overlay_check.isChecked()
             
             self.main.fit_params = None 
             self.main.regression_line_params = None
@@ -74,12 +77,11 @@ class GraphManager:
             params = self.main.regression_line_params
             ax.plot(params["x_line"], params["y_line"], color='red', label=f'R² = {params["r_squared"]:.4f}', linestyle=linestyle, linewidth=linewidth)
         
-        current_x_col = self.main.properties_panel.x_axis_combo.currentText()
-        current_y_col = self.main.properties_panel.y_axis_combo.currentText()
+        current_x_col = self.main.properties_panel.data_tab.x_axis_combo.currentText()
+        current_y_col = self.main.properties_panel.data_tab.y_axis_combo.currentText()
         if self.main.fit_params and self.main.fit_params['x_col'] == current_x_col and self.main.fit_params['y_col'] == current_y_col:
             x_data = self.main.fit_params['log_x_data']
             x_fit = np.linspace(x_data.min(), x_data.max(), 200)
-            # sigmoid_4plはActionHandlerが持っているのでそこから呼び出す
             y_fit = self.main.action_handler.sigmoid_4pl(x_fit, *self.main.fit_params['params'])
             r_squared = self.main.fit_params['r_squared']
             ax.plot(10**x_fit, y_fit, color='blue', label=f'4PL Fit (R²={r_squared:.3f})', linestyle=linestyle, linewidth=linewidth)
@@ -104,36 +106,37 @@ class GraphManager:
         ax.set_ylabel(properties.get('ylabel', ''), fontsize=properties.get('ylabel_fontsize', 12))
         ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
 
-        # Y軸の範囲
+        # ユーザーが値を入力した場合のみ、軸の範囲を設定する。
+        # elseブロックのautoscale呼び出しを削除し、Matplotlibのデフォルトに任せる。
         try:
             ymin = float(properties['ymin']) if properties['ymin'] else None
             ymax = float(properties['ymax']) if properties['ymax'] else None
-            ax.set_ylim(ymin, ymax)
+            if ymin is not None and ymax is not None:
+                ax.set_ylim(ymin, ymax)
         except (ValueError, TypeError):
-            ax.autoscale(enable=True, axis='y')
+            pass # 不正な入力は無視
         
-        # X軸の範囲 (棒グラフなどを除く)
         if self.main.current_graph_type not in ['bar', 'paired_scatter']:
             try:
                 xmin = float(properties['xmin']) if properties['xmin'] else None
                 xmax = float(properties['xmax']) if properties['xmax'] else None
-                ax.set_xlim(xmin, xmax)
+                if xmin is not None and xmax is not None:
+                    ax.set_xlim(xmin, xmax)
             except (ValueError, TypeError):
-                ax.autoscale(enable=True, axis='x')
+                pass
         
         ax.grid(properties.get('show_grid', False))
         
         # スケール
         if self.main.current_graph_type in ['bar', 'paired_scatter']:
             ax.set_xscale('linear')
-        elif self.main.fit_params and self.main.fit_params['x_col'] == self.main.properties_panel.x_axis_combo.currentText():
+        elif self.main.fit_params and self.main.fit_params['x_col'] == self.main.properties_panel.data_tab.x_axis_combo.currentText():
             ax.set_xscale('log')
         else:
             ax.set_xscale('log' if properties.get('x_log_scale') else 'linear')
         
         ax.set_yscale('log' if properties.get('y_log_scale') else 'linear')
         
-        # 枠線
         if properties.get('hide_top_right_spines', True):
             ax.spines['right'].set_visible(False)
             ax.spines['top'].set_visible(False)
@@ -206,13 +209,141 @@ class GraphManager:
                 ax.scatter(i + jitter, points, color='black', alpha=0.6, zorder=2)
 
     def _draw_grouped_bar_chart(self, ax, df, x_col, y_col, subgroup_col, categories, x_indices, subgroup_colors_map, show_scatter, properties):
-        # ... (ロジックはmain_window.pyからそのまま移動) ...
-        pass
+        """サブグループ化された棒グラフを描画する。"""
+        subcategories = sorted(df[subgroup_col].unique())
+        n_subgroups = len(subcategories)
+        bar_width = 0.8
+        sub_bar_width = bar_width / n_subgroups
+
+        capsize = properties.get('capsize', 4)
+        edgecolor = properties.get('bar_edgecolor', 'black')
+        linewidth = properties.get('bar_edgewidth', 1.0)
+       
+        for i, subcat in enumerate(subcategories):
+            offsets = (i - (n_subgroups - 1) / 2.) * sub_bar_width
+            bar_positions = x_indices + offsets
+
+            means = []
+            stds = []
+            for cat in categories:
+                subset = df[(df[x_col] == cat) & (df[subgroup_col] == subcat)][y_col]
+                means.append(subset.mean())
+                stds.append(subset.std())
+            
+            color = subgroup_colors_map.get(subcat)
+            ax.bar(bar_positions, means, width=sub_bar_width * 0.9, yerr=stds, 
+                   label=subcat, capsize=capsize, color=color,
+                   edgecolor=edgecolor, linewidth=linewidth)
+            if show_scatter:
+                for k, cat in enumerate(categories):
+                    points = df[(df[x_col] == cat) & (df[subgroup_col] == subcat)][y_col]
+                    jitter_width = sub_bar_width * 0.4
+                    jitter = np.random.uniform(-jitter_width / 2, jitter_width / 2, len(points))
+                    ax.scatter(bar_positions[k] + jitter, points, color='black', alpha=0.6, zorder=2)
+        
+        ax.legend(title=subgroup_col)
 
     def _draw_paired_plot(self, ax, df, col1, col2, properties):
-        # ... (ロジックはmain_window.pyからそのまま移動) ...
-        pass
+        """ペアデータの散布図を描画する。"""
+        try:
+            plot_df = df[[col1, col2]].dropna().copy()
+            if plot_df.empty:
+                QMessageBox.warning(self.main, "Warning", "No valid paired data to plot.")
+                return
+
+            categories = [col1, col2]
+            x_indices = [0, 1]
+
+            for index, row in plot_df.iterrows():
+                ax.plot(x_indices, [row[col1], row[col2]], color='gray', marker='o', linestyle='-', alpha=0.5)
+
+            mean1 = plot_df[col1].mean()
+            mean2 = plot_df[col2].mean()
+            ax.plot(x_indices, [mean1, mean2], color='red', marker='o', linestyle='--', linewidth=2, label="Mean")
+
+            ax.set_xlabel(properties.get('xlabel', 'Condition'))
+            ax.set_ylabel(properties.get('ylabel', 'Value'))
+            
+            ax.set_xticks(x_indices)
+            ax.set_xticklabels(categories)
+            ax.set_xlim(-0.2, 1.2)
+            ax.legend()
+
+        except Exception as e:
+            QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
         
     def _draw_annotations(self):
-        # ... (ロジックはmain_window.pyからそのまま移動) ...
-        pass
+        """統計的有意差のアノテーションを描画する。"""
+        if self.main.current_graph_type != 'bar' or not hasattr(self.main, 'model') or not self.main.statistical_annotations:
+            return
+
+        ax = self.main.graph_widget.ax
+        df = self.main.model._data
+        
+        base_group_col = self.main.statistical_annotations[0].get('group_col')
+        if not base_group_col or base_group_col not in df.columns: return
+            
+        categories = sorted([str(c) for c in df[base_group_col].unique()])
+        occupied_levels = {cat: -1 for cat in categories}
+
+        def get_span(annotation):
+            try:
+                g1, g2 = annotation['groups']
+                idx1, idx2 = categories.index(str(g1)), categories.index(str(g2))
+                return abs(idx1 - idx2)
+            except (ValueError, KeyError):
+                return float('inf')
+        sorted_annotations = sorted(self.main.statistical_annotations, key=get_span)
+
+        max_bar_y = 0
+        df_str_group = df.copy()
+        df_str_group[base_group_col] = df_str_group[base_group_col].astype(str)
+        value_col_for_max = self.main.statistical_annotations[0]['value_col']
+        for cat in categories:
+            cat_data = df_str_group[df_str_group[base_group_col] == cat][value_col_for_max].dropna()
+            if not cat_data.empty:
+                mean = cat_data.mean()
+                std = cat_data.std() if pd.notna(cat_data.std()) else 0
+                max_bar_y = max(max_bar_y, mean + std)
+
+        y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
+        level_height = y_range * 0.15
+        highest_annotation_y = 0
+
+        for annotation in sorted_annotations:
+            group_col, value_col = annotation['group_col'], annotation['value_col']
+            group1_name, group2_name = annotation['groups']
+            p_value = annotation['p_value']
+            if group_col != base_group_col: continue
+            try:
+                g1_str, g2_str = str(group1_name), str(group2_name)
+                idx1, idx2 = categories.index(g1_str), categories.index(g2_str)
+                x1, x2 = min(idx1, idx2), max(idx1, idx2)
+            except ValueError: continue
+
+            level_check_range = categories[x1:x2+1]
+            max_level_in_span = max(occupied_levels[cat] for cat in level_check_range)
+            new_level = max_level_in_span + 1
+            
+            initial_gap_from_bar = level_height * 0.3
+            base_y = max_bar_y + initial_gap_from_bar + (new_level * level_height)
+            bracket_y = base_y + (level_height * 0.2)
+            text_y = bracket_y + (level_height * 0.05)
+            highest_annotation_y = max(highest_annotation_y, text_y)
+
+            if p_value < 0.001: significance = '***'
+            elif p_value < 0.01: significance = '**'
+            elif p_value < 0.05: significance = '*'
+            else: significance = 'ns'
+
+            ax.plot([x1, x1, x2, x2], [base_y, bracket_y, bracket_y, base_y], lw=1.5, c='black')
+            ax.text((x1 + x2) * 0.5, text_y, significance, ha='center', va='bottom', fontsize=14)
+
+            for i in range(x1, x2 + 1):
+                occupied_levels[categories[i]] = new_level
+
+        if highest_annotation_y > 0:
+            current_ylim = ax.get_ylim()
+            if highest_annotation_y > current_ylim[1]:
+                new_ylim_top = highest_annotation_y + (level_height * 0.2)
+                ax.set_ylim(current_ylim[0], new_ylim_top)
