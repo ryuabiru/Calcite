@@ -77,14 +77,14 @@ class GraphManager:
             params = self.main.regression_line_params
             ax.plot(params["x_line"], params["y_line"], color='red', label=f'R² = {params["r_squared"]:.4f}', linestyle=linestyle, linewidth=linewidth)
         
-        current_x_col = self.main.properties_panel.data_tab.tidy_tab.x_axis_combo.currentText()
-        current_y_col = self.main.properties_panel.data_tab.tidy_tab.y_axis_combo.currentText()
-        if self.main.fit_params and self.main.fit_params['x_col'] == current_x_col and self.main.fit_params['y_col'] == current_y_col:
-            x_data = self.main.fit_params['log_x_data']
-            x_fit = np.linspace(x_data.min(), x_data.max(), 200)
-            y_fit = self.main.action_handler.sigmoid_4pl(x_fit, *self.main.fit_params['params'])
-            r_squared = self.main.fit_params['r_squared']
-            ax.plot(10**x_fit, y_fit, color='blue', label=f'4PL Fit (R²={r_squared:.3f})', linestyle=linestyle, linewidth=linewidth)
+            current_x_col = self.main.properties_panel.data_tab.tidy_tab.x_axis_combo.currentText()
+            current_y_col = self.main.properties_panel.data_tab.tidy_tab.y_axis_combo.currentText()
+            if self.main.fit_params and self.main.fit_params['x_col'] == current_x_col and self.main.fit_params['y_col'] == current_y_col:
+                x_data = self.main.fit_params['log_x_data']
+                x_fit = np.linspace(x_data.min(), x_data.max(), 200)
+                y_fit = self.main.action_handler.sigmoid_4pl(x_fit, *self.main.fit_params['params'])
+                r_squared = self.main.fit_params['r_squared']
+                ax.plot(10**x_fit, y_fit, color='blue', label=f'4PL Fit (R²={r_squared:.3f})', linestyle=linestyle, linewidth=linewidth)
 
         self._draw_annotations()
         self.update_graph_properties()
@@ -132,7 +132,7 @@ class GraphManager:
         # スケール
         if self.main.current_graph_type in ['bar', 'paired_scatter']:
             ax.set_xscale('linear')
-        if self.main.fit_params and self.main.fit_params['x_col'] == self.main.properties_panel.data_tab.tidy_tab.x_axis_combo.currentText():
+        elif self.main.fit_params and self.main.fit_params['x_col'] == self.main.properties_panel.data_tab.tidy_tab.x_axis_combo.currentText():
             ax.set_xscale('log')
         else:
             ax.set_xscale('log' if properties.get('x_log_scale') else 'linear')
