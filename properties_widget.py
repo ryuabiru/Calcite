@@ -1,319 +1,82 @@
 # properties_widget.py
 
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QLineEdit,
-    QComboBox, QFormLayout, QPushButton, QColorDialog, QHBoxLayout,
-    QScrollArea, QCheckBox, QTabWidget, QSpinBox, QDoubleSpinBox
-)
-from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QColor, QDoubleValidator
-from functools import partial
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QTabWidget
+from PySide6.QtCore import Signal
+
+from tabs.data_tab import DataTab
+from tabs.format_tab import FormatTab
+from tabs.text_tab import TextTab
+from tabs.axes_tab import AxesTab
 
 class PropertiesWidget(QWidget):
     propertiesChanged = Signal()
     graphUpdateRequest = Signal()
+    # DataTabのシグナルを中継する
     subgroupColumnChanged = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-
-        self.current_color = None
-        self.current_marker_edgecolor = 'black'
-        self.current_bar_edgecolor = 'black'
-        self.subgroup_colors = {}
-        self.subgroup_widgets = {}
-
-        # ★★★ ここからが修正箇所です ★★★
-        # レイアウトを中間ウィジェットではなく、self (PropertiesWidget自身) に直接適用します
         main_layout = QVBoxLayout(self)
-        
         tab_widget = QTabWidget()
 
-        data_tab = self.create_data_tab()
-        format_tab = self.create_format_tab()
-        text_tab = self.create_text_tab()
-        axes_tab = self.create_axes_tab()
+        self.data_tab = DataTab()
+        self.format_tab = FormatTab()
+        self.text_tab = TextTab()
+        self.axes_tab = AxesTab()
 
-        tab_widget.addTab(data_tab, "データ")
-        tab_widget.addTab(format_tab, "フォーマット")
-        tab_widget.addTab(text_tab, "テキスト")
-        tab_widget.addTab(axes_tab, "軸")
+        tab_widget.addTab(self.data_tab, "データ")
+        tab_widget.addTab(self.format_tab, "フォーマット")
+        tab_widget.addTab(self.text_tab, "テキスト")
+        tab_widget.addTab(self.axes_tab, "軸")
 
         update_button = QPushButton("Update Graph")
-        update_button.clicked.connect(self.graphUpdateRequest.emit)
         
         main_layout.addWidget(tab_widget)
         main_layout.addWidget(update_button)
 
-        # self.setWidget(main_widget) の行は不要なので削除しました
-
         self.connect_signals()
+        update_button.clicked.connect(self.graphUpdateRequest.emit)
 
     def connect_signals(self):
-        """全てのUI要素の変更をpropertiesChangedシグナルに接続する"""
-        # ★--- TypeErrorを解決するため、lambda式でラップ ---★
-        # テキストタブ
-        self.title_edit.editingFinished.connect(self.propertiesChanged.emit)
-        self.xaxis_edit.editingFinished.connect(self.propertiesChanged.emit)
-        self.yaxis_edit.editingFinished.connect(self.propertiesChanged.emit)
-        self.title_fontsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-        self.xlabel_fontsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-        self.ylabel_fontsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-        self.ticks_fontsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-        # 軸タブ
-        self.xmin_edit.editingFinished.connect(self.propertiesChanged.emit)
-        self.xmax_edit.editingFinished.connect(self.propertiesChanged.emit)
-        self.ymin_edit.editingFinished.connect(self.propertiesChanged.emit)
-        self.ymax_edit.editingFinished.connect(self.propertiesChanged.emit)
-        self.grid_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
-        self.x_log_scale_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
-        self.y_log_scale_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
-        # 線のスタイル
-        self.linestyle_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
-        self.linewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-        self.capsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-        # edgecolor
-        self.marker_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-        self.bar_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-        # Spine
-        self.spines_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
+        """各タブからのシグナルを接続する"""
+        # DataTab -> FormatTab (サブグループUI更新のため)
+        self.data_tab.subgroupColumnChanged.connect(self.format_tab.update_subgroup_color_ui)
+        # DataTab -> MainWindow (グラフ更新のトリガーのため)
+        self.data_tab.subgroupColumnChanged.connect(self.subgroupColumnChanged.emit)
 
-    def create_data_tab(self):
-        widget = QWidget()
-        layout = QFormLayout(widget)
-        self.y_axis_combo = QComboBox()
-        self.x_axis_combo = QComboBox()
-        self.subgroup_combo = QComboBox()
-        self.subgroup_combo.currentTextChanged.connect(self.subgroupColumnChanged.emit)
-        layout.addRow(QLabel("Y-Axis (Value):"), self.y_axis_combo)
-        layout.addRow(QLabel("X-Axis (Group):"), self.x_axis_combo)
-        layout.addRow(QLabel("Sub-group (Color):"), self.subgroup_combo)
-        return widget
-
-    def create_format_tab(self):
-        widget = QWidget()
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setWidget(widget)
-        layout = QFormLayout(widget)
+        # 各タブの変更をpropertiesChangedシグナルとして中継
+        self.format_tab.propertiesChanged.connect(self.propertiesChanged.emit)
         
-        # Spine設定
-        layout.addRow(QLabel("<b>Graph Style Settings</b>"))
-        self.spines_check = QCheckBox("Remove Top/Right Axis Lines")
-        self.spines_check.setChecked(True) # デフォルトでONにする
-        layout.addRow(self.spines_check)
-        layout.addRow(QLabel("---")) # 区切り線
-        
-        # マーカのシンボル
-        self.scatter_overlay_check = QCheckBox()
-        layout.addRow(QLabel("Overlay Individual Points:"), self.scatter_overlay_check)
-        self.marker_combo = QComboBox()
-        markers = {'Circle': 'o', 'Square': 's', 'Triangle': '^', 'Diamond': 'D', 'None': 'None'}
-        for name, style in markers.items():
-            self.marker_combo.addItem(name, style)
-        layout.addRow(QLabel("Marker Style:"), self.marker_combo)
-        
-        # ★ マーカーの枠線の色
-        self.marker_edgecolor_button = QPushButton("Select Color")
-        self.marker_edgecolor_button.setStyleSheet(f"background-color: {self.current_marker_edgecolor};")
-        self.marker_edgecolor_button.clicked.connect(self.open_marker_edgecolor_dialog)
-        layout.addRow(QLabel("Marker Edge Color:"), self.marker_edgecolor_button)
+        # TextTab
+        self.text_tab.title_edit.editingFinished.connect(self.propertiesChanged.emit)
+        self.text_tab.xaxis_edit.editingFinished.connect(self.propertiesChanged.emit)
+        self.text_tab.yaxis_edit.editingFinished.connect(self.propertiesChanged.emit)
+        self.text_tab.title_fontsize_spin.valueChanged.connect(self.propertiesChanged.emit)
+        self.text_tab.xlabel_fontsize_spin.valueChanged.connect(self.propertiesChanged.emit)
+        self.text_tab.ylabel_fontsize_spin.valueChanged.connect(self.propertiesChanged.emit)
+        self.text_tab.ticks_fontsize_spin.valueChanged.connect(self.propertiesChanged.emit)
 
-        # ★ マーカーの枠線の太さ
-        self.marker_edgewidth_spin = QDoubleSpinBox()
-        self.marker_edgewidth_spin.setRange(0, 10)
-        self.marker_edgewidth_spin.setSingleStep(0.5)
-        self.marker_edgewidth_spin.setValue(1.0)
-        layout.addRow(QLabel("Marker Edge Width:"), self.marker_edgewidth_spin)
-        
-        layout.addRow(QLabel("---")) # 区切り線
-        
-        # --- 棒グラフ設定 ---
-        layout.addRow(QLabel("<b>Bar Chart Settings</b>"))
-        self.scatter_overlay_check = QCheckBox()
-        layout.addRow(QLabel("Overlay Individual Points:"), self.scatter_overlay_check)
-        
-        # 棒グラフの枠線の色
-        self.bar_edgecolor_button = QPushButton("Select Color")
-        self.bar_edgecolor_button.setStyleSheet(f"background-color: {self.current_bar_edgecolor};")
-        self.bar_edgecolor_button.clicked.connect(self.open_bar_edgecolor_dialog)
-        layout.addRow(QLabel("Bar Edge Color:"), self.bar_edgecolor_button)
+        # AxesTab
+        self.axes_tab.xmin_edit.editingFinished.connect(self.propertiesChanged.emit)
+        self.axes_tab.xmax_edit.editingFinished.connect(self.propertiesChanged.emit)
+        self.axes_tab.ymin_edit.editingFinished.connect(self.propertiesChanged.emit)
+        self.axes_tab.ymax_edit.editingFinished.connect(self.propertiesChanged.emit)
+        self.axes_tab.grid_check.stateChanged.connect(self.propertiesChanged.emit)
+        self.axes_tab.x_log_scale_check.stateChanged.connect(self.propertiesChanged.emit)
+        self.axes_tab.y_log_scale_check.stateChanged.connect(self.propertiesChanged.emit)
 
-        # 棒グラフの枠線の太さ
-        self.bar_edgewidth_spin = QDoubleSpinBox()
-        self.bar_edgewidth_spin.setRange(0, 10)
-        self.bar_edgewidth_spin.setSingleStep(0.5)
-        self.bar_edgewidth_spin.setValue(1.0)
-        layout.addRow(QLabel("Bar Edge Width:"), self.bar_edgewidth_spin)
-
-        self.capsize_spin = QSpinBox()
-        self.capsize_spin.setRange(0, 20)
-        self.capsize_spin.setValue(4)
-        layout.addRow(QLabel("Error Bar Cap Size:"), self.capsize_spin)
-
-        layout.addRow(QLabel("---")) # 区切り線
-
-        # --- 回帰直線設定 ---
-        layout.addRow(QLabel("<b>Regression Line Settings</b>"))
-        self.linestyle_combo = QComboBox()
-        linestyles = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'Dash-Dot': '-.'}
-        for name, style in linestyles.items():
-            self.linestyle_combo.addItem(name, style)
-        layout.addRow(QLabel("Line Style:"), self.linestyle_combo)
-
-        self.linewidth_spin = QDoubleSpinBox()
-        self.linewidth_spin.setRange(0.5, 10.0)
-        self.linewidth_spin.setSingleStep(0.5)
-        self.linewidth_spin.setValue(1.5)
-        layout.addRow(QLabel("Line Width:"), self.linewidth_spin)
-        
-        layout.addRow(QLabel("---")) # 区切り線
-
-        # --- 色設定 ---
-        layout.addRow(QLabel("<b>Color Settings</b>"))
-        self.single_color_button = QPushButton("Select Color")
-        self.single_color_button.clicked.connect(self.open_single_color_dialog)
-        layout.addRow(QLabel("Graph Color (Single):"), self.single_color_button)
-        self.subgroup_color_layout = QFormLayout()
-        layout.addRow(QLabel("Graph Color (Sub-group):"))
-        layout.addRow(self.subgroup_color_layout)
-
-        return scroll_area
-
-    def create_text_tab(self):
-        widget = QWidget()
-        layout = QFormLayout(widget)
-        self.title_edit = QLineEdit()
-        self.xaxis_edit = QLineEdit()
-        self.yaxis_edit = QLineEdit()
-        layout.addRow(QLabel("Title:"), self.title_edit)
-        layout.addRow(QLabel("X-Axis Label:"), self.xaxis_edit)
-        layout.addRow(QLabel("Y-Axis Label:"), self.yaxis_edit)
-        layout.addRow(QLabel("---"))
-        self.title_fontsize_spin = QSpinBox()
-        self.title_fontsize_spin.setRange(6, 48); self.title_fontsize_spin.setValue(16)
-        self.xlabel_fontsize_spin = QSpinBox()
-        self.xlabel_fontsize_spin.setRange(6, 48); self.xlabel_fontsize_spin.setValue(12)
-        self.ylabel_fontsize_spin = QSpinBox()
-        self.ylabel_fontsize_spin.setRange(6, 48); self.ylabel_fontsize_spin.setValue(12)
-        self.ticks_fontsize_spin = QSpinBox()
-        self.ticks_fontsize_spin.setRange(6, 48); self.ticks_fontsize_spin.setValue(10)
-        layout.addRow(QLabel("Title Font Size:"), self.title_fontsize_spin)
-        layout.addRow(QLabel("X-Label Font Size:"), self.xlabel_fontsize_spin)
-        layout.addRow(QLabel("Y-Label Font Size:"), self.ylabel_fontsize_spin)
-        layout.addRow(QLabel("Ticks Font Size:"), self.ticks_fontsize_spin)
-        return widget
-
-    def create_axes_tab(self):
-        widget = QWidget()
-        layout = QFormLayout(widget)
-        validator = QDoubleValidator()
-        self.xmin_edit = QLineEdit(); self.xmin_edit.setValidator(validator)
-        self.xmax_edit = QLineEdit(); self.xmax_edit.setValidator(validator)
-        self.ymin_edit = QLineEdit(); self.ymin_edit.setValidator(validator)
-        self.ymax_edit = QLineEdit(); self.ymax_edit.setValidator(validator)
-        x_range_layout = QHBoxLayout()
-        x_range_layout.addWidget(self.xmin_edit); x_range_layout.addWidget(QLabel("to")); x_range_layout.addWidget(self.xmax_edit)
-        y_range_layout = QHBoxLayout()
-        y_range_layout.addWidget(self.ymin_edit); y_range_layout.addWidget(QLabel("to")); y_range_layout.addWidget(self.ymax_edit)
-        layout.addRow(QLabel("X-Axis Range:"), x_range_layout)
-        layout.addRow(QLabel("Y-Axis Range:"), y_range_layout)
-        layout.addRow(QLabel("---"))
-        self.grid_check = QCheckBox("Show Grid")
-        layout.addRow(self.grid_check)
-        layout.addRow(QLabel("---"))
-        self.x_log_scale_check = QCheckBox("Logarithmic Scale")
-        self.y_log_scale_check = QCheckBox("Logarithmic Scale")
-        layout.addRow(QLabel("X-Axis Scale:"), self.x_log_scale_check)
-        layout.addRow(QLabel("Y-Axis Scale:"), self.y_log_scale_check)
-        return widget
-    
     def get_properties(self):
-        """UIから現在の設定値をすべて集めて辞書として返す。"""
-        # ★--- KeyErrorを解決するため、抜けていたキーを追加 ---★
-        return {
-            'title': self.title_edit.text(),
-            'xlabel': self.xaxis_edit.text(),
-            'ylabel': self.yaxis_edit.text(),
-            'title_fontsize': self.title_fontsize_spin.value(),
-            'xlabel_fontsize': self.xlabel_fontsize_spin.value(),
-            'ylabel_fontsize': self.ylabel_fontsize_spin.value(),
-            'ticks_fontsize': self.ticks_fontsize_spin.value(),
-            'xmin': self.xmin_edit.text(),
-            'xmax': self.xmax_edit.text(),
-            'ymin': self.ymin_edit.text(),
-            'ymax': self.ymax_edit.text(),
-            'show_grid': self.grid_check.isChecked(),
-            'x_log_scale': self.x_log_scale_check.isChecked(),
-            'y_log_scale': self.y_log_scale_check.isChecked(),
-            'show_grid': self.grid_check.isChecked(),
-            'x_log_scale': self.x_log_scale_check.isChecked(),
-            'y_log_scale': self.y_log_scale_check.isChecked(),
-            'marker_style': self.marker_combo.currentData(),
-            'linestyle': self.linestyle_combo.currentData(),
-            'linewidth': self.linewidth_spin.value(),
-            'capsize': self.capsize_spin.value(),
-            'marker_edgecolor': self.current_marker_edgecolor,
-            'marker_edgewidth': self.marker_edgewidth_spin.value(),
-            'bar_edgecolor': self.current_bar_edgecolor,
-            'bar_edgewidth': self.bar_edgewidth_spin.value(),
-            'hide_top_right_spines': self.spines_check.isChecked(),
-        }
-
-    def open_single_color_dialog(self):
-        color = QColorDialog.getColor()
-        if color.isValid():
-            self.current_color = color.name()
-            self.single_color_button.setStyleSheet(f"background-color: {self.current_color};")
-            self.propertiesChanged.emit()
-            
-    def open_marker_edgecolor_dialog(self):
-        """マーカーの枠線の色を選択するダイアログを開く"""
-        color = QColorDialog.getColor()
-        if color.isValid():
-            self.current_marker_edgecolor = color.name()
-            self.marker_edgecolor_button.setStyleSheet(f"background-color: {self.current_marker_edgecolor};")
-            self.propertiesChanged.emit()
-
-    def open_bar_edgecolor_dialog(self):
-        """棒グラフの枠線の色を選択するダイアログを開く"""
-        color = QColorDialog.getColor()
-        if color.isValid():
-            self.current_bar_edgecolor = color.name()
-            self.bar_edgecolor_button.setStyleSheet(f"background-color: {self.current_bar_edgecolor};")
-            self.propertiesChanged.emit()
-
-    def open_subgroup_color_dialog(self, category):
-        color = QColorDialog.getColor()
-        if color.isValid():
-            color_name = color.name()
-            self.subgroup_colors[category] = color_name
-            if category in self.subgroup_widgets:
-                self.subgroup_widgets[category].setStyleSheet(f"background-color: {color_name};")
-            self.propertiesChanged.emit()
-
-    def update_subgroup_color_ui(self, categories):
-        while self.subgroup_color_layout.count():
-            item = self.subgroup_color_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        self.subgroup_widgets.clear()
-        self.subgroup_colors.clear()
-        for category in categories:
-            label = QLabel(f"{category}:")
-            button = QPushButton("Select Color")
-            button.clicked.connect(partial(self.open_subgroup_color_dialog, category))
-            self.subgroup_color_layout.addRow(label, button)
-            self.subgroup_widgets[category] = button
+        """全てのタブから設定値を取得し、一つの辞書に統合して返す"""
+        props = {}
+        # データ選択タブの値は、GraphManagerが直接参照する
+        # props.update(self.data_tab.get_properties())
+        
+        # 他のタブから設定値を取得
+        props.update(self.format_tab.get_properties())
+        props.update(self.text_tab.get_properties())
+        props.update(self.axes_tab.get_properties())
+        return props
 
     def set_columns(self, columns):
-        self.y_axis_combo.clear()
-        self.x_axis_combo.clear()
-        self.subgroup_combo.clear()
-        self.y_axis_combo.addItem("") 
-        self.x_axis_combo.addItem("")
-        self.subgroup_combo.addItem("")
-        self.y_axis_combo.addItems(columns)
-        self.x_axis_combo.addItems(columns)
-        self.subgroup_combo.addItems(columns)
+        """DataTabに列名リストを渡す"""
+        self.data_tab.set_columns(columns)
