@@ -3,7 +3,6 @@
 import numpy as np
 import pandas as pd
 from PySide6.QtWidgets import QFileDialog, QMessageBox
-# ★★★ ライブラリをインポート ★★★
 import seaborn as sns
 from statannotations.Annotator import Annotator
 
@@ -32,13 +31,10 @@ class GraphManager:
         current_x = data_settings.get('x_col')
         current_y = data_settings.get('y_col')
         
-        # --- グラフ描画を Seaborn ベースに変更 ---
         if self.main.current_graph_type == 'scatter':
             if not current_y or not current_x:
                 self.main.graph_widget.canvas.draw()
                 return
-            
-            # 散布図はこれまで通り Matplotlib で描画（Seabornでも可）
             self._draw_scatter_plot(ax, df, current_x, current_y, 
                                     properties.get('marker_style', 'o'), 
                                     properties.get('single_color'), 
@@ -51,13 +47,21 @@ class GraphManager:
             
             subgroup_col = data_settings.get('subgroup_col')
             
-            # Seaborn の barplot を使用
+            # ★★★ ここから修正 ★★★
+            # サブグループの色設定（palette）のキーを文字列に変換する
+            palette = None
+            if subgroup_col:
+                subgroup_colors = self.main.properties_panel.format_tab.subgroup_colors
+                # キーを文字列に変換した新しい辞書を作成
+                palette = {str(k): v for k, v in subgroup_colors.items()}
+            # ★★★ ここまで修正 ★★★
+
             sns.barplot(
                 x=current_x, y=current_y, data=df, ax=ax,
                 hue=subgroup_col if subgroup_col else None,
-                palette=self.main.properties_panel.format_tab.subgroup_colors if subgroup_col else None,
+                palette=palette, # 修正したpaletteを使用
                 color=properties.get('single_color', '#1f77b4') if not subgroup_col else None,
-                capsize=properties.get('capsize', 4) * 0.01, # スケール調整
+                capsize=properties.get('capsize', 4) * 0.01,
                 errwidth=properties.get('bar_edgewidth', 1.0),
                 edgecolor=properties.get('bar_edgecolor', 'black'),
                 linewidth=properties.get('bar_edgewidth', 1.0)
@@ -69,9 +73,8 @@ class GraphManager:
             col2 = data_settings.get('col2')
             if col1 and col2 and col1 != col2:
                 self._draw_paired_plot(ax, df, col1, col2, properties)
-            plot_params = None # statannotationsは対象外
+            plot_params = None
 
-        # --- アノテーション描画を statannotations に任せる ---
         if plot_params and self.main.statistical_annotations:
             box_pairs = [
                 ann['box_pair'] for ann in self.main.statistical_annotations
@@ -86,56 +89,47 @@ class GraphManager:
                 except Exception as e:
                     print(f"Statannotations error: {e}")
 
-
-        # グラフの見た目を整える
         self.update_graph_properties()
         self.main.graph_widget.fig.tight_layout()
         self.main.graph_widget.canvas.draw()
 
     def update_graph_properties(self):
         """プロパティパネルから現在の全設定を取得し、グラフに適用する。"""
-        if not hasattr(self.main, 'ax'):
-             return
+        if not hasattr(self.main, 'graph_widget'): return
         properties = self.main.properties_panel.get_properties()
         ax = self.main.graph_widget.ax
         
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        
         ax.set_title(properties.get('title', ''), fontsize=properties.get('title_fontsize', 16))
-        ax.set_xlabel(properties.get('xlabel', ''), fontsize=properties.get('xlabel_fontsize', 12))
-        ax.set_ylabel(properties.get('ylabel', ''), fontsize=properties.get('ylabel_fontsize', 12))
+        ax.set_xlabel(properties.get('xlabel') or data_settings.get('x_col', ''))
+        ax.set_ylabel(properties.get('ylabel') or data_settings.get('y_col', ''))
+
         ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
 
         try:
             ymin = float(properties['ymin']) if properties['ymin'] else None
             ymax = float(properties['ymax']) if properties['ymax'] else None
-            if ymin is not None and ymax is not None:
-                ax.set_ylim(ymin, ymax)
-        except (ValueError, TypeError):
-            pass
+            if ymin is not None and ymax is not None: ax.set_ylim(ymin, ymax)
+        except (ValueError, TypeError): pass
         
         if self.main.current_graph_type not in ['bar', 'paired_scatter']:
             try:
                 xmin = float(properties['xmin']) if properties['xmin'] else None
                 xmax = float(properties['xmax']) if properties['xmax'] else None
-                if xmin is not None and xmax is not None:
-                    ax.set_xlim(xmin, xmax)
-            except (ValueError, TypeError):
-                pass
+                if xmin is not None and xmax is not None: ax.set_xlim(xmin, xmax)
+            except (ValueError, TypeError): pass
         
         ax.grid(properties.get('show_grid', False))
         ax.set_xscale('log' if properties.get('x_log_scale') else 'linear')
         ax.set_yscale('log' if properties.get('y_log_scale') else 'linear')
         
         if properties.get('hide_top_right_spines', True):
-            ax.spines['right'].set_visible(False)
-            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False); ax.spines['top'].set_visible(False)
         else:
-            ax.spines['right'].set_visible(True)
-            ax.spines['top'].set_visible(True)
+            ax.spines['right'].set_visible(True); ax.spines['top'].set_visible(True)
 
-        if ax.get_legend_handles_labels()[1]:
-            ax.legend()
-        
-        # _draw_annotations()の呼び出しは不要
+        if ax.get_legend(): ax.legend()
 
     def save_graph(self):
         """現在のグラフを画像ファイルとして保存する。"""
@@ -156,8 +150,6 @@ class GraphManager:
             self.main.statistical_annotations.clear()
             self.update_graph()
 
-    # --- Private Drawing Helpers (これらは残す) ---
-
     def _draw_scatter_plot(self, ax, df, x_col, y_col, marker_style, color, properties):
         color_to_plot = color if color else '#1f77b4'
         edgecolor = properties.get('marker_edgecolor', 'black')
@@ -166,7 +158,6 @@ class GraphManager:
             ax.scatter(df[x_col], df[y_col], marker=marker_style, color=color_to_plot, edgecolors=edgecolor, linewidths=linewidth)
 
     def _draw_paired_plot(self, ax, df, col1, col2, properties):
-        """ペアデータの散布図を描画する。"""
         try:
             plot_df = df[[col1, col2]].dropna().copy()
             if plot_df.empty: return None, None
