@@ -7,20 +7,14 @@ import seaborn as sns
 from statannotations.Annotator import Annotator
 
 class GraphManager:
-    """
-    グラフの描画と更新に関する全てのロジックを担当するクラス。
-    """
     def __init__(self, main_window):
         self.main = main_window
 
     def update_graph(self):
-        """
-        現在の設定に基づいてグラフ全体を再描画する。
-        """
         if not hasattr(self.main, 'model') or self.main.model is None:
             return
 
-        df = self.main.model._data.copy() # ★★★ 変更：dfをコピーして使用
+        df = self.main.model._data.copy()
         ax = self.main.graph_widget.ax
         ax.clear()
         
@@ -32,7 +26,6 @@ class GraphManager:
         current_y = data_settings.get('y_col')
         subgroup_col = data_settings.get('subgroup_col')
         
-        # サブグループ列が存在する場合、データ型を文字列に変換
         if subgroup_col and subgroup_col in df.columns:
             df[subgroup_col] = df[subgroup_col].astype(str)
 
@@ -41,10 +34,15 @@ class GraphManager:
                 self.main.graph_widget.canvas.draw()
                 return
             
+            palette = None
+            if subgroup_col:
+                subgroup_colors = self.main.properties_panel.format_tab.subgroup_colors
+                palette = {str(k): v for k, v in subgroup_colors.items()}
+            
             sns.scatterplot(
                 data=df, x=current_x, y=current_y, ax=ax,
                 hue=subgroup_col if subgroup_col else None,
-                palette=self.main.properties_panel.format_tab.subgroup_colors if subgroup_col else None,
+                palette=palette,
                 color=properties.get('single_color') if not subgroup_col else None,
                 marker=properties.get('marker_style', 'o'),
                 edgecolor=properties.get('marker_edgecolor', 'black'),
@@ -78,6 +76,30 @@ class GraphManager:
             if col1 and col2 and col1 != col2:
                 self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
             plot_params = None
+
+        # ★★★ ここから修正 (削除されていたコードを復活) ★★★
+        linestyle = properties.get('linestyle', '-')
+        linewidth = properties.get('linewidth', 1.5)
+
+        # 線形回帰直線の描画
+        if self.main.regression_line_params:
+            params = self.main.regression_line_params
+            ax.plot(params["x_line"], params["y_line"], color='red', 
+                    label=f'R² = {params["r_squared"]:.4f}', 
+                    linestyle=linestyle, linewidth=linewidth)
+        
+        # 非線形フィット曲線の描画
+        if self.main.fit_params:
+            if (self.main.fit_params['x_col'] == current_x and 
+                self.main.fit_params['y_col'] == current_y):
+                x_data = self.main.fit_params['log_x_data']
+                x_fit = np.linspace(x_data.min(), x_data.max(), 200)
+                y_fit = self.main.action_handler.sigmoid_4pl(x_fit, *self.main.fit_params['params'])
+                r_squared = self.main.fit_params['r_squared']
+                ax.plot(10**x_fit, y_fit, color='blue', 
+                        label=f'4PL Fit (R²={r_squared:.3f})', 
+                        linestyle=linestyle, linewidth=linewidth)
+        # ★★★ ここまで修正 ★★★
 
         if plot_params and self.main.statistical_annotations:
             box_pairs = [
@@ -127,7 +149,12 @@ class GraphManager:
             except (ValueError, TypeError): pass
         
         ax.grid(properties.get('show_grid', False))
-        ax.set_xscale('log' if properties.get('x_log_scale') else 'linear')
+        
+        # 散布図でフィット曲線を描画した場合は、X軸を対数スケールにする
+        if self.main.fit_params and self.main.current_graph_type == 'scatter':
+            ax.set_xscale('log')
+        else:
+            ax.set_xscale('log' if properties.get('x_log_scale') else 'linear')
         ax.set_yscale('log' if properties.get('y_log_scale') else 'linear')
         
         if properties.get('hide_top_right_spines', True):
@@ -135,7 +162,10 @@ class GraphManager:
         else:
             ax.spines['right'].set_visible(True); ax.spines['top'].set_visible(True)
 
-        if ax.get_legend(): ax.legend()
+        # 凡例が空でない場合のみ表示する
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend()
 
     def save_graph(self):
         """現在のグラフを画像ファイルとして保存する。"""
@@ -154,7 +184,10 @@ class GraphManager:
         """グラフ上のすべてのアノテーションをクリアする。"""
         if hasattr(self.main, 'statistical_annotations'):
             self.main.statistical_annotations.clear()
-            self.update_graph()
+        # 回帰分析の結果もクリアする
+        self.main.regression_line_params = None
+        self.main.fit_params = None
+        self.update_graph()
 
     def _draw_paired_plot_seaborn(self, ax, df, col1, col2, properties):
         """ペアデータの散布図を Seaborn を使って描画する。"""
