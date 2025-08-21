@@ -189,7 +189,7 @@ class ActionHandler:
     # --- Statistical Analysis ---
     
     def perform_t_test(self):
-        """独立t検定を実行する。"""
+        """独立t検定を実行する。複数条件でのフィルタリングに対応。"""
         if not hasattr(self.main, 'model'): return
         df = self.main.model._data
         dialog = TTestDialog(df.columns, df, self.main)
@@ -197,40 +197,54 @@ class ActionHandler:
         if dialog.exec():
             settings = dialog.get_settings()
             value_col = settings['value_col']
-            group_col = settings['group_col']
-            group1_name = settings['group1']
-            group2_name = settings['group2']
+            g1_filters = settings['group1_filters']
+            g2_filters = settings['group2_filters']
 
-            if not all([value_col, group_col, group1_name, group2_name]):
-                QMessageBox.warning(self.main, "Warning", "Please select all fields.")
-                return
-            if value_col == group_col:
-                QMessageBox.warning(self.main, "Warning", "Value and group columns cannot be the same.")
-                return
-            if group1_name == group2_name:
-                QMessageBox.warning(self.main, "Warning", "Please select two different groups.")
+            if not value_col or not g1_filters or not g2_filters:
+                QMessageBox.warning(self.main, "Warning", "Please define both groups and select a value column.")
                 return
 
             try:
-                group1_data = df[df[group_col] == group1_name][value_col].dropna()
-                group2_data = df[df[group_col] == group2_name][value_col].dropna()
+                # --- フィルターを適用してデータを抽出 ---
+                group1_data = df.copy()
+                for col, val in g1_filters.items():
+                    # データ型を合わせて比較するために、両方を文字列に変換する
+                    group1_data = group1_data[group1_data[col].astype(str) == str(val)]
+                
+                group2_data = df.copy()
+                for col, val in g2_filters.items():
+                    group2_data = group2_data[group2_data[col].astype(str) == str(val)]
 
-                if group1_data.empty or group2_data.empty:
-                    QMessageBox.warning(self.main, "Warning", "One or both selected groups have no data.")
+                group1_values = group1_data[value_col].dropna()
+                group2_values = group2_data[value_col].dropna()
+
+                if group1_values.empty or group2_values.empty:
+                    QMessageBox.warning(self.main, "Warning", "One or both selected groups have no data after filtering.")
                     return
 
-                t_stat, p_value = ttest_ind(group1_data, group2_data)
+                t_stat, p_value = ttest_ind(group1_values, group2_values)
 
-                annotation = {"type": "ttest", "p_value": p_value, "group_col": group_col, "value_col": value_col, "groups": [group1_name, group2_name]}
-                self.main.statistical_annotations.append(annotation)
-                self.main.graph_manager.update_graph()
+                # --- アノテーションと結果表示 ---
+                # グループ名をフィルター条件から生成
+                g1_name = " & ".join([f"{k}='{v}'" for k, v in g1_filters.items()])
+                g2_name = " & ".join([f"{k}='{v}'" for k, v in g2_filters.items()])
+                
+                # アノテーション描画のために、どのカテゴリ列を基準にするか決定する
+                # （ここではグループ1の最初のフィルター列を代表として使用）
+                group_col_for_annotation = list(g1_filters.keys())[0]
+
+                # ★★★ アノテーション描画ロジックは、まだこの新しい形式に対応していません ★★★
+                # ★★★ 現状では正しく表示されない可能性があります ★★★
+                # annotation = {"type": "ttest", "p_value": p_value, "group_col": group_col_for_annotation, "value_col": value_col, "groups": [g1_name, g2_name]}
+                # self.main.statistical_annotations.append(annotation)
+                # self.main.graph_manager.update_graph()
 
                 result_text = (
                     f"Independent t-test results:\n"
                     f"===========================\n\n"
                     f"Comparing '{value_col}' between:\n"
-                    f"- Group 1: '{group1_name}' (Mean: {group1_data.mean():.3f})\n"
-                    f"- Group 2: '{group2_name}' (Mean: {group2_data.mean():.3f})\n\n"
+                    f"- Group 1: {g1_name} (Mean: {group1_values.mean():.3f})\n"
+                    f"- Group 2: {g2_name} (Mean: {group2_values.mean():.3f})\n\n"
                     f"---\n"
                     f"t-statistic: {t_stat:.4f}\n"
                     f"p-value: {p_value:.4f}\n\n"
@@ -253,7 +267,9 @@ class ActionHandler:
         if dialog.exec():
             settings = dialog.get_settings()
             col1, col2 = settings['col1'], settings['col2']
-            if not col1 or not col2 or col1 == col2: return
+            if not col1 or not col2 or col1 == col2:
+                QMessageBox.warning(self.main, "Warning", "Please select two different columns.")
+                return
             try:
                 data1 = df[col1].dropna()
                 data2 = df[col2].dropna()
