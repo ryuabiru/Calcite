@@ -261,12 +261,34 @@ class GraphManager:
             categories = [label1, label2]
             x_indices = [0, 1]
 
+            # フォーマットタブからプロパティを取得
+            marker_style = properties.get('marker_style', 'o')
+            marker_edgecolor = properties.get('marker_edgecolor', 'black')
+            marker_edgewidth = properties.get('marker_edgewidth', 1.0)
+            
+            mean_linestyle = properties.get('linestyle', '--')
+            mean_linewidth = properties.get('linewidth', 2)
+
+            # 取得したプロパティを描画に適用
             for index, row in plot_df.iterrows():
-                ax.plot(x_indices, [row[col1], row[col2]], color='gray', marker='o', linestyle='-', alpha=0.5)
+                ax.plot(x_indices, [row[col1], row[col2]], 
+                        color='gray', 
+                        marker=marker_style, 
+                        linestyle='-', 
+                        alpha=0.5,
+                        markeredgecolor=marker_edgecolor,
+                        markeredgewidth=marker_edgewidth)
 
             mean1 = plot_df[col1].mean()
             mean2 = plot_df[col2].mean()
-            ax.plot(x_indices, [mean1, mean2], color='red', marker='o', linestyle='--', linewidth=2, label="Mean")
+            ax.plot(x_indices, [mean1, mean2], 
+                    color='red', 
+                    marker=marker_style, 
+                    linestyle=mean_linestyle, 
+                    linewidth=mean_linewidth, 
+                    label="Mean",
+                    markeredgecolor=marker_edgecolor,
+                    markeredgewidth=marker_edgewidth)
 
             ax.set_xlabel(properties.get('xlabel', 'Condition'))
             ax.set_ylabel(properties.get('ylabel', 'Value'))

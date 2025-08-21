@@ -163,7 +163,9 @@ class MainWindow(QMainWindow):
     def finish_header_edit(self, logicalIndex):
         if self.header_editor:
             new_text = self.header_editor.text()
-            self.table_view.model().setHeaderData(logicalIndex, Qt.Orientation.Horizontal, new_text, Qt.ItemDataRole.EditRole)
+            model = self.table_view.model()
+            model.setHeaderData(logicalIndex, Qt.Orientation.Horizontal, new_text, Qt.ItemDataRole.EditRole)
+            self.properties_panel.set_columns(model._data.columns)
             self.header_editor.close(); self.header_editor = None
         
     def show_table_context_menu(self, position):
