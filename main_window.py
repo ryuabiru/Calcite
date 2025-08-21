@@ -143,6 +143,8 @@ class MainWindow(QMainWindow):
 
     def set_graph_type(self, graph_type):
         self.current_graph_type = graph_type
+        # DataTabにグラフタイプを伝達して、UIを切り替える
+        self.properties_panel.data_tab.set_graph_type(graph_type)
         self.graph_manager.update_graph()
 
     def edit_header(self, logicalIndex):
