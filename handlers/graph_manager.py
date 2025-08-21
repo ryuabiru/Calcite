@@ -253,7 +253,9 @@ class GraphManager:
                 QMessageBox.warning(self.main, "Warning", "No valid paired data to plot.")
                 return
 
-            categories = [col1, col2]
+            label1 = properties.get('paired_label1') or col1
+            label2 = properties.get('paired_label2') or col2
+            categories = [label1, label2]
             x_indices = [0, 1]
 
             for index, row in plot_df.iterrows():

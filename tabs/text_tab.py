@@ -15,8 +15,19 @@ class TextTab(QWidget):
         layout.addRow(QLabel("Title:"), self.title_edit)
         layout.addRow(QLabel("X-Axis Label:"), self.xaxis_edit)
         layout.addRow(QLabel("Y-Axis Label:"), self.yaxis_edit)
-        layout.addRow(QLabel("---"))
         
+        # Paired scatter labels
+        self.paired_label1_label = QLabel("Paired Label 1:")
+        self.paired_label1_edit = QLineEdit()
+        self.paired_label2_label = QLabel("Paired Label 2:")
+        self.paired_label2_edit = QLineEdit()
+        layout.addRow(self.paired_label1_label, self.paired_label1_edit)
+        layout.addRow(self.paired_label2_label, self.paired_label2_edit)
+        self.paired_widgets = [self.paired_label1_label, self.paired_label1_edit, self.paired_label2_label, self.paired_label2_edit]
+        self.update_paired_labels_visibility(False) # Initially hidden
+        
+        layout.addRow(QLabel("---"))
+
         self.title_fontsize_spin = QSpinBox()
         self.title_fontsize_spin.setRange(6, 48); self.title_fontsize_spin.setValue(16)
         self.xlabel_fontsize_spin = QSpinBox()
@@ -37,8 +48,15 @@ class TextTab(QWidget):
             'title': self.title_edit.text(),
             'xlabel': self.xaxis_edit.text(),
             'ylabel': self.yaxis_edit.text(),
+            'paired_label1': self.paired_label1_edit.text(),
+            'paired_label2': self.paired_label2_edit.text(),
             'title_fontsize': self.title_fontsize_spin.value(),
             'xlabel_fontsize': self.xlabel_fontsize_spin.value(),
             'ylabel_fontsize': self.ylabel_fontsize_spin.value(),
             'ticks_fontsize': self.ticks_fontsize_spin.value(),
         }
+
+    def update_paired_labels_visibility(self, visible):
+        """Show or hide the paired scatter labels"""
+        for widget in self.paired_widgets:
+            widget.setVisible(visible)

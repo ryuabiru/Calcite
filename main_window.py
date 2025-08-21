@@ -145,6 +145,8 @@ class MainWindow(QMainWindow):
         self.current_graph_type = graph_type
         # DataTabにグラフタイプを伝達して、UIを切り替える
         self.properties_panel.data_tab.set_graph_type(graph_type)
+        # TextTabのペアラベル入力欄の表示を切り替える
+        self.properties_panel.text_tab.update_paired_labels_visibility(graph_type == 'paired_scatter')
         self.graph_manager.update_graph()
 
     def edit_header(self, logicalIndex):
