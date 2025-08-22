@@ -14,11 +14,7 @@ class GraphManager:
         self.main = main_window
 
     def update_graph(self):
-        print("\n--- [ graph_manager.py DEBUG ] ---")
-        print("1. update_graph が呼び出されました。")
-
         if not hasattr(self.main, 'model') or self.main.model is None:
-            print("→ モデルが存在しないため、処理を中断します。")
             self.clear_canvas()
             return
 
@@ -26,14 +22,10 @@ class GraphManager:
         properties = self.main.properties_panel.get_properties()
         
         if self.main.statistical_annotations:
-            print("2. [分析フィルタービュー] の描画を開始します。")
             context = self.main.statistical_annotations[0]
-            
             y = context.get('value_col')
             x = context.get('group_col')
             filters = context.get('common_filters', {})
-            
-            print(f"→ 分析コンテキスト: y={y}, x={x}, filters={filters}")
             
             plot_data = df.copy()
             if filters:
@@ -41,10 +33,8 @@ class GraphManager:
                     plot_data = plot_data[plot_data[col].astype(str) == str(val)]
             
             hue = list(filters.keys())[0] if filters else None
-            
             self.draw_catplot_and_annotate(plot_data, properties, y, x, hue, context)
         else:
-            print("2. [基本ビュー] の描画を開始します。")
             if self.main.current_graph_type == 'paired_scatter':
                 self.draw_paired_scatter(df, properties)
             else:
@@ -54,14 +44,12 @@ class GraphManager:
                 hue = data_settings.get('subgroup_col')
                 
                 if not x or not y:
-                    print("→ Y軸またはX軸が選択されていないため、描画を中断します。")
                     self.clear_canvas()
                     return
                 
                 self.draw_catplot_and_annotate(df, properties, y, x, hue, None)
 
     def draw_catplot_and_annotate(self, df, properties, y, x, hue, context):
-        print("3. draw_catplot_and_annotate が呼び出されました。")
         if hue and hue in df.columns:
             df[hue] = df[hue].astype(str)
 
@@ -78,12 +66,12 @@ class GraphManager:
             plot_kwargs['edgecolor'] = properties.get('marker_edgecolor', 'black')
             plot_kwargs['linewidth'] = properties.get('marker_edgewidth', 1.0)
         
+        ui_subgroup_col = self.main.properties_panel.data_tab.get_current_settings().get('subgroup_col')
         if hue:
-            plot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()}
+            if hue == ui_subgroup_col:
+                plot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()}
         else:
             plot_kwargs['color'] = properties.get('single_color')
-        
-        print(f"→ seaborn.catplot に渡す引数: kind={plot_kind}, kwargs={plot_kwargs}")
 
         try:
             g = sns.catplot(
@@ -91,7 +79,6 @@ class GraphManager:
                 height=4, aspect=1.2, sharex=False, sharey=False,
                 **plot_kwargs
             )
-            print("4. seaborn.catplot によるグラフオブジェクトの生成に成功しました。")
 
             if context:
                 self.apply_annotations(g, df, y, x, hue, context)
@@ -100,16 +87,13 @@ class GraphManager:
             self.update_graph_properties(g.fig, properties)
 
         except Exception as e:
-            print(f"!!! グラフ描画中にエラーが発生しました: {e}")
+            print(f"Graph drawing error: {e}")
             traceback.print_exc()
-
-    def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
-        print("5. apply_annotations が呼び出されました。")
-        context = self.main.statistical_annotations[0]
+    
+    # ★★★ ここを修正 ★★★
+    def apply_annotations(self, g, df, current_y, current_x, subgroup_col, context):
         annotations_data = context.get("annotations")
-        
         if not annotations_data:
-            print("→ アノテーションデータがないため、処理を終了します。")
             return
 
         plot_data = df.copy()
@@ -119,23 +103,20 @@ class GraphManager:
                 plot_data = plot_data[plot_data[col].astype(str) == str(val)]
         
         use_hue = subgroup_col and plot_data[subgroup_col].nunique() > 1
-        print(f"→ サブグループ(hue)を実際に使用するか？: {use_hue}")
-
+        
         original_pairs = [ann['box_pair'] for ann in annotations_data]
         p_values = [ann['p_value'] for ann in annotations_data]
 
         if use_hue:
             hue_values = plot_data[subgroup_col].unique()
-            box_pairs = []
-            for hue_val in hue_values:
-                for pair in original_pairs:
-                    box_pairs.append(((pair[0], str(hue_val)), (pair[1], str(hue_val))))
+            box_pairs = [((pair[0], str(hv)), (pair[1], str(hv))) for hv in hue_values for pair in original_pairs]
             p_values = np.tile(p_values, len(hue_values))
         else:
             box_pairs = original_pairs
         
-        print(f"→ statannotationsに渡すbox_pairs: {box_pairs}")
-        
+        if not box_pairs:
+            return
+            
         try:
             for ax_facet in g.axes.flat:
                 annotator = Annotator(ax_facet, box_pairs, data=plot_data, x=current_x, y=current_y, 
@@ -143,12 +124,10 @@ class GraphManager:
                 annotator.configure(text_format='star', loc='inside', verbose=0)
                 annotator.set_pvalues(p_values)
                 annotator.annotate()
-            print("6. アノテーションの描画に成功しました。")
         except Exception as e:
-            print(f"!!! アノテーション描画中にエラーが発生しました: {e}")
+            print(f"Annotation Error during plotting: {e}")
             traceback.print_exc()
 
-    # (以降のヘルパー関数は変更なし)
     def replace_canvas(self, new_fig):
         if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:
             self.main.graph_widget.canvas.setParent(None)
