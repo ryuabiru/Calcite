@@ -24,8 +24,10 @@ class GraphManager:
 
         if self.main.current_graph_type == 'paired_scatter':
             self.draw_paired_scatter(df, properties, data_settings)
-            return
-        
+        else:
+            self.draw_categorical_plot(df, properties, data_settings)
+
+    def draw_categorical_plot(self, df, properties, data_settings):
         current_x = data_settings.get('x_col')
         current_y = data_settings.get('y_col')
         
@@ -57,7 +59,7 @@ class GraphManager:
             plot_kwargs['edgecolor'] = properties.get('marker_edgecolor', 'black')
             plot_kwargs['linewidth'] = properties.get('marker_edgewidth', 1.0)
         
-        ui_subgroup_col = self.main.properties_panel.data_tab.get_current_settings().get('subgroup_col')
+        ui_subgroup_col = data_settings.get('subgroup_col')
         if subgroup_col:
             if subgroup_col == ui_subgroup_col:
                 plot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()}
@@ -80,46 +82,36 @@ class GraphManager:
             print(f"Graph drawing error: {e}")
             traceback.print_exc()
     
-def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
-    """グラフに統計アノテーションを適用する"""
-    current_annotations = [
-        ann for ann in self.main.statistical_annotations 
-        if ann.get('value_col') == current_y and ann.get('group_col') == current_x
-    ]
-    if not current_annotations:
-        return
-
-    use_hue = subgroup_col and df[subgroup_col].nunique() > 1
-    original_pairs = [ann['box_pair'] for ann in current_annotations]
-    p_values = [ann['p_value'] for ann in current_annotations]
-
-    if use_hue:
-        hue_values = df[subgroup_col].unique()
-        box_pairs = [((pair[0], str(hv)), (pair[1], str(hv))) for hv in hue_values for pair in original_pairs]
-        p_values = np.tile(p_values, len(hue_values))
-    else:
-        box_pairs = original_pairs
-    
-    if not box_pairs:
-        return
+    def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
+        """グラフに統計アノテーションを適用する"""
         
-    try:
-        for ax_facet in g.axes.flat:
-            annotator = Annotator(ax_facet, box_pairs, data=df, x=current_x, y=current_y, 
-                                  hue=subgroup_col if use_hue else None)
+        # ★★★ ここのロジックを修正 ★★★
+        current_annotations = [
+            ann for ann in self.main.statistical_annotations 
+            if ann.get('value_col') == current_y and 
+               ann.get('group_col') == current_x and
+               ann.get('hue_col') == subgroup_col
+        ]
+        
+        if not current_annotations:
+            return
+
+        box_pairs = [ann['box_pair'] for ann in current_annotations]
+        p_values = [ann['p_value'] for ann in current_annotations]
+
+        if not box_pairs:
+            return
             
-            # ★★★ p値の表示ルールを追加 ★★★
-            pvalue_thresholds = [
-                [1e-4, "****"], [1e-3, "***"], [1e-2, "**"], [0.05, "*"], [1.0, "n.s."]
-            ]
-            annotator.configure(text_format='star', loc='inside', verbose=0,
-                                  pvalue_thresholds=pvalue_thresholds)
-            
-            annotator.set_pvalues(p_values)
-            annotator.annotate()
-    except Exception as e:
-        print(f"Annotation Error during plotting: {e}")
-        traceback.print_exc()
+        try:
+            for ax_facet in g.axes.flat:
+                annotator = Annotator(ax_facet, box_pairs, data=df, x=current_x, y=current_y, hue=subgroup_col)
+                pvalue_thresholds = [[1e-4, "****"], [1e-3, "***"], [1e-2, "**"], [0.05, "*"], [1.0, "n.s."]]
+                annotator.configure(text_format='star', loc='inside', verbose=0, pvalue_thresholds=pvalue_thresholds)
+                annotator.set_pvalues(p_values)
+                annotator.annotate()
+        except Exception as e:
+            print(f"Annotation Error during plotting: {e}")
+            traceback.print_exc()
 
     def replace_canvas(self, new_fig):
         if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:
@@ -152,24 +144,25 @@ def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
         col1 = data_settings.get('col1')
         col2 = data_settings.get('col2')
         if not (col1 and col2 and col1 != col2):
-            self.main.graph_widget.canvas.draw()
+            if hasattr(self.main.graph_widget, 'canvas'):
+                self.main.graph_widget.canvas.draw()
             return
             
         self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
         self.update_graph_properties(self.main.graph_widget.fig, properties)
-        self.main.graph_widget.canvas.draw()
+        if hasattr(self.main.graph_widget, 'canvas'):
+            self.main.graph_widget.canvas.draw()
         
     def clear_canvas(self):
         if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:
             self.main.graph_widget.canvas.figure.clear()
             self.main.graph_widget.canvas.draw()
 
-    # ★★★ ここから、元々あった関数を復元 ★★★
     def save_graph(self):
-        """現在のグラフを画像ファイルとして保存する。"""
         if not hasattr(self.main.graph_widget, 'fig'):
-            QMessageBox.warning(self.main, "Warning", "No data to save.")
+            QMessageBox.warning(self.main, "Warning", "No graph to save.")
             return
+        
         file_path, _ = QFileDialog.getSaveFileName(self.main, "Save Graph", "", "PNG (*.png);;JPEG (*.jpg);;SVG (*.svg);;PDF (*.pdf)")
         if file_path:
             try:
@@ -179,20 +172,17 @@ def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
                 QMessageBox.critical(self.main, "Error", f"Failed to save graph: {e}")
 
     def clear_annotations(self):
-        """グラフ上のすべてのアノテーションをクリアする。"""
         if hasattr(self.main, 'statistical_annotations'):
             self.main.statistical_annotations.clear()
         
-        #  regression_line_params や fit_params もクリア
         if hasattr(self.main, 'regression_line_params'):
             self.main.regression_line_params = None
         if hasattr(self.main, 'fit_params'):
             self.main.fit_params = None
 
         self.update_graph()
-    
+
     def _draw_paired_plot_seaborn(self, ax, df, col1, col2, properties):
-        """ペアデータの散布図を Seaborn を使って描画する。"""
         try:
             plot_df = df[[col1, col2]].dropna().copy()
             if plot_df.empty: return
