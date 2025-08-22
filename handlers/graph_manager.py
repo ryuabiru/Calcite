@@ -5,8 +5,9 @@ import pandas as pd
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 import seaborn as sns
 from statannotations.Annotator import Annotator
-
 import traceback
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 class GraphManager:
     def __init__(self, main_window):
@@ -17,174 +18,113 @@ class GraphManager:
             return
 
         df = self.main.model._data.copy()
-        ax = self.main.graph_widget.ax
-        ax.clear()
         
+        # --- 描画設定の取得 ---
         properties = self.main.properties_panel.get_properties()
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
         
-        plot_params = {}
         current_x = data_settings.get('x_col')
         current_y = data_settings.get('y_col')
+        
+        # 必須項目が選択されていなければ描画しない
+        if not current_x or not current_y:
+            # 念のためキャンバスをクリア
+            if self.main.graph_widget.layout() is not None:
+                 old_canvas = self.main.graph_widget.canvas
+                 if old_canvas:
+                     old_canvas.figure.clear()
+                     old_canvas.draw()
+            return
+        
         subgroup_col = data_settings.get('subgroup_col')
-        
-        if not subgroup_col:
-            subgroup_col = None
-        
-        if subgroup_col and subgroup_col in df.columns:
-            df[subgroup_col] = df[subgroup_col].astype(str)
+        facet_col = data_settings.get('facet_col')
+        facet_row = data_settings.get('facet_row')
 
-        if self.main.current_graph_type == 'scatter':
-            if not current_y or not current_x:
-                self.main.graph_widget.canvas.draw()
-                return
-            
-            palette = None
-            if subgroup_col:
-                subgroup_colors = self.main.properties_panel.format_tab.subgroup_colors
-                palette = {str(k): v for k, v in subgroup_colors.items()}
-            
-            sns.scatterplot(
-                data=df, x=current_x, y=current_y, ax=ax,
-                hue=subgroup_col if subgroup_col else None,
-                palette=palette,
-                color=properties.get('single_color') if not subgroup_col else None,
-                marker=properties.get('marker_style', 'o'),
-                edgecolor=properties.get('marker_edgecolor', 'black'),
-                linewidth=properties.get('marker_edgewidth', 1.0)
+        # 空文字列をNoneに変換
+        if not subgroup_col: subgroup_col = None
+        if not facet_col: facet_col = None
+        if not facet_row: facet_row = None
+        
+        # --- グラフ描画 ---
+        try:
+            # seaborn.catplotでグラフオブジェクト(FacetGrid)を生成
+            g = sns.catplot(
+                data=df,
+                x=current_x,
+                y=current_y,
+                hue=subgroup_col,
+                col=facet_col,
+                row=facet_row,
+                kind=self.main.current_graph_type,
+                height=4, 
+                aspect=1.2,
+                sharex=False, # ファセットごとにX軸を独立させる
+                sharey=False  # ファセットごとにY軸を独立させる
             )
 
-        elif self.main.current_graph_type == 'bar':
-            if not current_y or not current_x:
-                self.main.graph_widget.canvas.draw()
-                return
-            
-            palette = None
-            if subgroup_col:
-                palette = {str(k): v for k, v in self.main.properties_panel.format_tab.subgroup_colors.items()}
-
-            sns.barplot(
-                data=df, x=current_x, y=current_y, ax=ax,
-                hue=subgroup_col if subgroup_col else None,
-                palette=palette,
-                color=properties.get('single_color', '#1f77b4') if not subgroup_col else None,
-                capsize=properties.get('capsize', 4) * 0.01,
-                errwidth=properties.get('bar_edgewidth', 1.0),
-                edgecolor=properties.get('bar_edgecolor', 'black'),
-                linewidth=properties.get('bar_edgewidth', 1.0)
-            )
-            plot_params = {'x': current_x, 'y': current_y, 'hue': subgroup_col}
-
-        elif self.main.current_graph_type == 'paired_scatter':
-            col1 = data_settings.get('col1')
-            col2 = data_settings.get('col2')
-            if col1 and col2 and col1 != col2:
-                self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
-            plot_params = None
-
-        # ★★★ ここから修正 (削除されていたコードを復活) ★★★
-        linestyle = properties.get('linestyle', '-')
-        linewidth = properties.get('linewidth', 1.5)
-
-        # 線形回帰直線の描画
-        if self.main.regression_line_params:
-            params = self.main.regression_line_params
-            ax.plot(params["x_line"], params["y_line"], color='red', 
-                    label=f'R² = {params["r_squared"]:.4f}', 
-                    linestyle=linestyle, linewidth=linewidth)
-        
-        # 非線形フィット曲線の描画
-        if self.main.fit_params:
-            if (self.main.fit_params['x_col'] == current_x and 
-                self.main.fit_params['y_col'] == current_y):
-                x_data = self.main.fit_params['log_x_data']
-                x_fit = np.linspace(x_data.min(), x_data.max(), 200)
-                y_fit = self.main.action_handler.sigmoid_4pl(x_fit, *self.main.fit_params['params'])
-                r_squared = self.main.fit_params['r_squared']
-                ax.plot(10**x_fit, y_fit, color='blue', 
-                        label=f'4PL Fit (R²={r_squared:.3f})', 
-                        linestyle=linestyle, linewidth=linewidth)
-        # ★★★ ここまで修正 ★★★
-
-        if plot_params and self.main.statistical_annotations and self.main.current_graph_type == 'bar':
-            # 現在のグラフ表示に一致するアノテーション情報だけを抽出
-            current_annotations = [
-                ann for ann in self.main.statistical_annotations
-                if ann.get('value_col') == current_y and ann.get('group_col') == current_x
-            ]
-            
+            # --- アノテーションの描画 ---
+            current_annotations = [ann for ann in self.main.statistical_annotations if ann.get('value_col') == current_y and ann.get('group_col') == current_x]
             if current_annotations:
-                # 比較するグループのペアと、対応するp値のリストをそれぞれ作成
                 box_pairs = [ann['box_pair'] for ann in current_annotations]
                 p_values = [ann['p_value'] for ann in current_annotations]
                 
-                try:
-                    # Annotatorを初期化
-                    annotator = Annotator(ax, box_pairs, data=df, **plot_params)
-                    # p値に基づいて星(*)の数を決めるように設定
+                # catplotの各Axes(ax)にアノテーションを適用
+                for ax in g.axes.flat:
+                    annotator = Annotator(ax, box_pairs, data=df, x=current_x, y=current_y, hue=subgroup_col)
                     annotator.configure(text_format='star', loc='inside', verbose=0)
-                    # 事前に計算したp値をライブラリに渡す
                     annotator.set_pvalues(p_values)
-                    # アノテーション（ブラケットと星）を描画する
                     annotator.annotate()
 
-                except Exception as e:
-                    print(f"Statannotations error: {e}")
-                    print("--- Full Traceback ---")
-                    traceback.print_exc()
-                    print("----------------------")
+            # --- 古いキャンバスを削除し、新しいキャンバスをUIに配置 ---
+            if self.main.graph_widget.layout() is not None:
+                old_canvas = self.main.graph_widget.canvas
+                if old_canvas:
+                    old_canvas.setParent(None)
+                    old_canvas.deleteLater()
 
-        self.update_graph_properties()
-        self.main.graph_widget.fig.tight_layout()
-        self.main.graph_widget.canvas.draw()
+            new_canvas = g.fig.canvas
+            self.main.graph_widget.layout().addWidget(new_canvas)
+            self.main.graph_widget.canvas = new_canvas
+            self.main.graph_widget.fig = g.fig
 
-    def update_graph_properties(self):
-        """プロパティパネルから現在の全設定を取得し、グラフに適用する。"""
-        if not hasattr(self.main, 'graph_widget'): return
-        properties = self.main.properties_panel.get_properties()
-        ax = self.main.graph_widget.ax
-        data_settings = self.main.properties_panel.data_tab.get_current_settings()
-        
-        ax.set_title(properties.get('title', ''), fontsize=properties.get('title_fontsize', 16))
-        
-        xlabel = properties.get('xlabel') or (data_settings.get('x_col') if data_settings else '')
-        ylabel = properties.get('ylabel') or (data_settings.get('y_col') if data_settings else '')
-        ax.set_xlabel(xlabel, fontsize=properties.get('xlabel_fontsize', 12))
-        ax.set_ylabel(ylabel, fontsize=properties.get('ylabel_fontsize', 12))
+            # プロパティを適用
+            self.update_graph_properties(g, properties)
 
-        ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
+        except Exception as e:
+            print(f"Graph drawing error: {e}")
+            traceback.print_exc()
 
-        try:
-            ymin = float(properties['ymin']) if properties['ymin'] else None
-            ymax = float(properties['ymax']) if properties['ymax'] else None
-            if ymin is not None and ymax is not None: ax.set_ylim(ymin, ymax)
-        except (ValueError, TypeError): pass
+    def update_graph_properties(self, g, properties):
+        """catplotで生成されたグラフにプロパティを適用する"""
         
-        if self.main.current_graph_type not in ['bar', 'paired_scatter']:
-            try:
-                xmin = float(properties['xmin']) if properties['xmin'] else None
-                xmax = float(properties['xmax']) if properties['xmax'] else None
-                if xmin is not None and xmax is not None: ax.set_xlim(xmin, xmax)
-            except (ValueError, TypeError): pass
+        # Figure全体に適用する設定
+        g.fig.suptitle(properties.get('title', ''), fontsize=properties.get('title_fontsize', 16))
         
-        ax.grid(properties.get('show_grid', False))
-        
-        # 散布図でフィット曲線を描画した場合は、X軸を対数スケールにする
-        if self.main.fit_params and self.main.current_graph_type == 'scatter':
-            ax.set_xscale('log')
-        else:
-            ax.set_xscale('log' if properties.get('x_log_scale') else 'linear')
-        ax.set_yscale('log' if properties.get('y_log_scale') else 'linear')
-        
-        if properties.get('hide_top_right_spines', True):
-            ax.spines['right'].set_visible(False); ax.spines['top'].set_visible(False)
-        else:
-            ax.spines['right'].set_visible(True); ax.spines['top'].set_visible(True)
+        # 各Axes(サブプロット)にプロパティを適用
+        for ax in g.axes.flat:
+            ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
+            
+            # X/Y軸ラベルのフォントサイズ設定
+            ax.xaxis.label.set_fontsize(properties.get('xlabel_fontsize', 12))
+            ax.yaxis.label.set_fontsize(properties.get('ylabel_fontsize', 12))
 
-        # 凡例が空でない場合のみ表示する
-        handles, labels = ax.get_legend_handles_labels()
-        if handles:
-            ax.legend()
+            # 枠線の表示設定
+            if properties.get('hide_top_right_spines', True):
+                ax.spines['right'].set_visible(False)
+                ax.spines['top'].set_visible(False)
+            else:
+                ax.spines['right'].set_visible(True)
+                ax.spines['top'].set_visible(True)
+            
+            # グリッド
+            ax.grid(properties.get('show_grid', False))
+            
+            # 対数スケール
+            if properties.get('x_log_scale'): ax.set_xscale('log')
+            if properties.get('y_log_scale'): ax.set_yscale('log')
+        
+        # レイアウト調整
+        g.fig.tight_layout(rect=[0, 0, 1, 0.96]) # suptitleとの重なりを避ける
 
     def save_graph(self):
         """現在のグラフを画像ファイルとして保存する。"""
@@ -201,9 +141,8 @@ class GraphManager:
 
     def clear_annotations(self):
         """グラフ上のすべてのアノテーションをクリアする。"""
-        if hasattr(self.main, 'statistical_annotations'):
+        if hasattr(self, 'statistical_annotations'):
             self.main.statistical_annotations.clear()
-        # 回帰分析の結果もクリアする
         self.main.regression_line_params = None
         self.main.fit_params = None
         self.update_graph()

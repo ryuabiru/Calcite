@@ -18,6 +18,8 @@ class TidyDataTab(QWidget):
         self.y_axis_combo = QComboBox()
         self.x_axis_combo = QComboBox()
         self.subgroup_combo = QComboBox()
+        self.facet_col_combo = QComboBox() # 列で分割
+        self.facet_row_combo = QComboBox() # 行で分割
         
         # シグナルを接続
         self.subgroup_combo.currentTextChanged.connect(self.subgroupColumnChanged.emit)
@@ -26,6 +28,8 @@ class TidyDataTab(QWidget):
         layout.addRow(QLabel("Y-Axis (Value):"), self.y_axis_combo)
         layout.addRow(QLabel("X-Axis (Group):"), self.x_axis_combo)
         layout.addRow(QLabel("Sub-group (Color):"), self.subgroup_combo)
+        layout.addRow(QLabel("Facet (Columns):"), self.facet_col_combo)
+        layout.addRow(QLabel("Facet (Rows):"), self.facet_row_combo)
 
     def set_columns(self, columns):
         """コンボボックスの選択肢を更新する"""
@@ -33,31 +37,43 @@ class TidyDataTab(QWidget):
         current_y = self.y_axis_combo.currentText()
         current_x = self.x_axis_combo.currentText()
         current_sub = self.subgroup_combo.currentText()
+        current_facet_col = self.facet_col_combo.currentText()
+        current_facet_row = self.facet_row_combo.currentText()
 
         # 一旦クリア
         self.y_axis_combo.clear()
         self.x_axis_combo.clear()
         self.subgroup_combo.clear()
+        self.facet_col_combo.clear()
+        self.facet_row_combo.clear()
         
         # 空の選択肢を追加
         self.y_axis_combo.addItem("") 
         self.x_axis_combo.addItem("")
         self.subgroup_combo.addItem("")
+        self.facet_col_combo.addItem("")
+        self.facet_row_combo.addItem("")
         
         # 新しい列名を追加
         self.y_axis_combo.addItems(columns)
         self.x_axis_combo.addItems(columns)
         self.subgroup_combo.addItems(columns)
+        self.facet_col_combo.addItems(columns)
+        self.facet_row_combo.addItems(columns)
 
         # 以前の選択状態を復元
         self.y_axis_combo.setCurrentText(current_y)
         self.x_axis_combo.setCurrentText(current_x)
         self.subgroup_combo.setCurrentText(current_sub)
+        self.facet_col_combo.setCurrentText(current_facet_col)
+        self.facet_row_combo.setCurrentText(current_facet_row)
 
     def get_settings(self):
         """現在の設定値を辞書として返す"""
         return {
             'y_col': self.y_axis_combo.currentText(),
             'x_col': self.x_axis_combo.currentText(),
-            'subgroup_col': self.subgroup_combo.currentText()
+            'subgroup_col': self.subgroup_combo.currentText(),
+            'facet_col': self.facet_col_combo.currentText(),
+            'facet_row': self.facet_row_combo.currentText()
         }
