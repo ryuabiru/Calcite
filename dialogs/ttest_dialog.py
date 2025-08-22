@@ -1,120 +1,82 @@
 # dialogs/ttest_dialog.py
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QFormLayout, QLabel, QComboBox, 
-    QDialogButtonBox, QWidget, QHBoxLayout, QPushButton, QScrollArea
+    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QComboBox, 
+    QDialogButtonBox, QWidget
 )
-from functools import partial
 
 class TTestDialog(QDialog):
     """
-    独立t検定のための設定を行うダイアログ（Tidy Data形式対応）。
-    複数のフィルタリング条件で2つのグループを定義し、比較させることができる。
+    X軸とサブグループ(hue)の組み合わせで2つのグループを選択し、
+    独立t検定を行うためのダイアログ。
     """
-    def __init__(self, columns, df, parent=None):
+    def __init__(self, x_values, hue_values, x_name, hue_name, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Independent t-test")
-        self.df = df
-        self.columns = [col for col in columns if df[col].dtype == 'object' or df[col].dtype == 'int64']
-        self.value_columns = [col for col in columns if df[col].dtype == 'float64' or df[col].dtype == 'int64']
         
-        self.setMinimumSize(600, 400)
+        self.x_name = x_name
+        self.hue_name = hue_name
 
+        # ★★★ ここからレイアウト構造を修正 ★★★
+        # 全体を縦に並べるメインのレイアウト
         main_layout = QVBoxLayout(self)
-        form_layout = QFormLayout()
 
-        # --- Value Column Selection ---
-        self.value_column_combo = QComboBox()
-        self.value_column_combo.addItems(self.value_columns)
-        form_layout.addRow(QLabel("Value Column (Dependent Variable):"), self.value_column_combo)
+        # グループ選択部分を横に並べるためのレイアウト
+        group_selectors_layout = QHBoxLayout()
+
+        # グループ1とグループ2の選択UIを作成
+        self.group1_widget = self._create_group_selector("Group 1", x_values, hue_values)
+        self.group2_widget = self._create_group_selector("Group 2", x_values, hue_values)
         
-        main_layout.addLayout(form_layout)
-
-        # --- Group Definition Areas ---
-        splitter = QHBoxLayout()
-        self.group1_widget = self._create_group_widget("Group 1")
-        self.group2_widget = self._create_group_widget("Group 2")
-        splitter.addWidget(self.group1_widget)
-        splitter.addWidget(self.group2_widget)
-        main_layout.addLayout(splitter)
-
-        # --- OK/Cancel Buttons ---
+        group_selectors_layout.addWidget(self.group1_widget)
+        group_selectors_layout.addWidget(self.group2_widget)
+        
+        # メインレイアウトにグループ選択部分を追加
+        main_layout.addLayout(group_selectors_layout)
+        
+        # OK/Cancelボタンを追加
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        main_layout.addWidget(button_box)
+        # ★★★ ここまで ★★★
+
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
-        main_layout.addWidget(button_box)
 
-    def _create_group_widget(self, title):
-        """片方のグループを定義するためのUIウィジェットを作成する"""
-        group_box = QWidget()
-        layout = QVBoxLayout(group_box)
-        layout.addWidget(QLabel(f"<b>{title}</b>"))
+    def _create_group_selector(self, title, x_values, hue_values):
+        """片方のグループを選択するためのUIウィジェットを作成する"""
+        widget = QWidget()
+        layout = QFormLayout(widget)
         
-        add_filter_button = QPushButton("Add Filter")
-        
-        # フィルターを追加するためのレイアウト
-        filters_widget = QWidget()
-        filters_layout = QFormLayout(filters_widget)
-        
-        add_filter_button.clicked.connect(partial(self._add_filter, filters_layout))
-        
-        layout.addWidget(add_filter_button)
-        layout.addWidget(filters_widget)
-        
-        # ウィジェットにレイアウトを保持させる
-        group_box.filters_layout = filters_layout
-        
-        # 最初のフィルターを自動で追加
-        self._add_filter(filters_layout)
-        
-        return group_box
+        layout.addRow(QLabel(f"<b>{title}</b>"))
 
-    def _add_filter(self, layout):
-        """フィルター条件を追加する（列と値のコンボボックス）"""
-        col_combo = QComboBox()
-        col_combo.addItems(self.columns)
+        x_combo = QComboBox()
+        x_combo.addItems(x_values)
+        layout.addRow(QLabel(f"{self.x_name}:"), x_combo)
         
-        val_combo = QComboBox()
+        # サブグループ(hue)が存在する場合のみ、その選択肢を追加
+        if self.hue_name and hue_values:
+            hue_combo = QComboBox()
+            hue_combo.addItems(hue_values)
+            layout.addRow(QLabel(f"{self.hue_name}:"), hue_combo)
         
-        # 列コンボボックスの選択が変更されたら、値コンボボックスの中身を更新
-        col_combo.currentTextChanged.connect(partial(self._update_value_combo, col_combo, val_combo))
-        
-        # 初期状態を更新
-        self._update_value_combo(col_combo, val_combo)
+        return widget
 
-        layout.addRow(col_combo, val_combo)
-
-    def _update_value_combo(self, col_combo, val_combo, new_text=None):
-        """列の選択に応じて、値のコンボボックスの選択肢を更新する"""
-        col_name = col_combo.currentText()
-        if col_name and not self.df.empty:
-            try:
-                # 選択された列のユニークな値を取得してリストに追加
-                unique_values = sorted(self.df[col_name].unique().astype(str))
-                current_val = val_combo.currentText() # 以前の選択を保持
-                val_combo.clear()
-                val_combo.addItems(unique_values)
-                val_combo.setCurrentText(current_val) # 可能であれば復元
-            except KeyError:
-                val_combo.clear()
-    
     def get_settings(self):
-        """ダイアログの設定を辞書として取得する"""
-        settings = {
-            "value_col": self.value_column_combo.currentText(),
-            "group1_filters": self._get_filters_from_layout(self.group1_widget.filters_layout),
-            "group2_filters": self._get_filters_from_layout(self.group2_widget.filters_layout)
-        }
-        return settings
+        """ユーザーが選択した2つのグループの条件を返す"""
+        
+        def get_widget_values(group_widget):
+            """指定されたウィジェットから選択値を取得するヘルパー関数"""
+            combos = group_widget.findChildren(QComboBox)
+            x_val = combos[0].currentText()
+            hue_val = combos[1].currentText() if len(combos) > 1 else None
+            return {"x": x_val, "hue": hue_val}
 
-    def _get_filters_from_layout(self, layout):
-        """レイアウトからフィルター条件を辞書として抽出する"""
-        filters = {}
-        for i in range(layout.rowCount()):
-            col_combo = layout.itemAt(i, QFormLayout.ItemRole.LabelRole).widget()
-            val_combo = layout.itemAt(i, QFormLayout.ItemRole.FieldRole).widget()
-            col_name = col_combo.currentText()
-            value = val_combo.currentText()
-            if col_name and value:
-                filters[col_name] = value
-        return filters
+        g1_settings = get_widget_values(self.group1_widget)
+        g2_settings = get_widget_values(self.group2_widget)
+        
+        if not g1_settings["x"] or not g2_settings["x"]:
+            return None
+        if self.hue_name and (not g1_settings["hue"] or not g2_settings["hue"]):
+            return None
+
+        return {"group1": g1_settings, "group2": g2_settings}

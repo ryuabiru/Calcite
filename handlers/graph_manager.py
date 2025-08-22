@@ -20,38 +20,29 @@ class GraphManager:
 
         df = self.main.model._data.copy()
         properties = self.main.properties_panel.get_properties()
-        
-        if self.main.statistical_annotations:
-            context = self.main.statistical_annotations[0]
-            y = context.get('value_col')
-            x = context.get('group_col')
-            filters = context.get('common_filters', {})
-            
-            plot_data = df.copy()
-            if filters:
-                for col, val in filters.items():
-                    plot_data = plot_data[plot_data[col].astype(str) == str(val)]
-            
-            hue = list(filters.keys())[0] if filters else None
-            self.draw_catplot_and_annotate(plot_data, properties, y, x, hue, context)
-        else:
-            if self.main.current_graph_type == 'paired_scatter':
-                self.draw_paired_scatter(df, properties)
-            else:
-                data_settings = self.main.properties_panel.data_tab.get_current_settings()
-                y = data_settings.get('y_col')
-                x = data_settings.get('x_col')
-                hue = data_settings.get('subgroup_col')
-                
-                if not x or not y:
-                    self.clear_canvas()
-                    return
-                
-                self.draw_catplot_and_annotate(df, properties, y, x, hue, None)
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
 
-    def draw_catplot_and_annotate(self, df, properties, y, x, hue, context):
-        if hue and hue in df.columns:
-            df[hue] = df[hue].astype(str)
+        if self.main.current_graph_type == 'paired_scatter':
+            self.draw_paired_scatter(df, properties, data_settings)
+            return
+        
+        current_x = data_settings.get('x_col')
+        current_y = data_settings.get('y_col')
+        
+        if not current_x or not current_y:
+            self.clear_canvas()
+            return
+        
+        subgroup_col = data_settings.get('subgroup_col')
+        facet_col = data_settings.get('facet_col')
+        facet_row = data_settings.get('facet_row')
+
+        if not subgroup_col: subgroup_col = None
+        if not facet_col: facet_col = None
+        if not facet_row: facet_row = None
+        
+        if subgroup_col and subgroup_col in df.columns:
+            df[subgroup_col] = df[subgroup_col].astype(str)
 
         plot_kind = 'strip' if self.main.current_graph_type == 'scatter' else 'bar'
         
@@ -67,22 +58,21 @@ class GraphManager:
             plot_kwargs['linewidth'] = properties.get('marker_edgewidth', 1.0)
         
         ui_subgroup_col = self.main.properties_panel.data_tab.get_current_settings().get('subgroup_col')
-        if hue:
-            if hue == ui_subgroup_col:
+        if subgroup_col:
+            if subgroup_col == ui_subgroup_col:
                 plot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()}
         else:
             plot_kwargs['color'] = properties.get('single_color')
 
         try:
             g = sns.catplot(
-                data=df, x=x, y=y, hue=hue, kind=plot_kind,
+                data=df, x=current_x, y=current_y, hue=subgroup_col,
+                col=facet_col, row=facet_row, kind=plot_kind,
                 height=4, aspect=1.2, sharex=False, sharey=False,
                 **plot_kwargs
             )
 
-            if context:
-                self.apply_annotations(g, df, y, x, hue, context)
-
+            self.apply_annotations(g, df, current_y, current_x, subgroup_col)
             self.replace_canvas(g.fig)
             self.update_graph_properties(g.fig, properties)
 
@@ -90,43 +80,46 @@ class GraphManager:
             print(f"Graph drawing error: {e}")
             traceback.print_exc()
     
-    # ★★★ ここを修正 ★★★
-    def apply_annotations(self, g, df, current_y, current_x, subgroup_col, context):
-        annotations_data = context.get("annotations")
-        if not annotations_data:
-            return
+def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
+    """グラフに統計アノテーションを適用する"""
+    current_annotations = [
+        ann for ann in self.main.statistical_annotations 
+        if ann.get('value_col') == current_y and ann.get('group_col') == current_x
+    ]
+    if not current_annotations:
+        return
 
-        plot_data = df.copy()
-        filters = context.get('common_filters', {})
-        if filters:
-            for col, val in filters.items():
-                plot_data = plot_data[plot_data[col].astype(str) == str(val)]
-        
-        use_hue = subgroup_col and plot_data[subgroup_col].nunique() > 1
-        
-        original_pairs = [ann['box_pair'] for ann in annotations_data]
-        p_values = [ann['p_value'] for ann in annotations_data]
+    use_hue = subgroup_col and df[subgroup_col].nunique() > 1
+    original_pairs = [ann['box_pair'] for ann in current_annotations]
+    p_values = [ann['p_value'] for ann in current_annotations]
 
-        if use_hue:
-            hue_values = plot_data[subgroup_col].unique()
-            box_pairs = [((pair[0], str(hv)), (pair[1], str(hv))) for hv in hue_values for pair in original_pairs]
-            p_values = np.tile(p_values, len(hue_values))
-        else:
-            box_pairs = original_pairs
+    if use_hue:
+        hue_values = df[subgroup_col].unique()
+        box_pairs = [((pair[0], str(hv)), (pair[1], str(hv))) for hv in hue_values for pair in original_pairs]
+        p_values = np.tile(p_values, len(hue_values))
+    else:
+        box_pairs = original_pairs
+    
+    if not box_pairs:
+        return
         
-        if not box_pairs:
-            return
+    try:
+        for ax_facet in g.axes.flat:
+            annotator = Annotator(ax_facet, box_pairs, data=df, x=current_x, y=current_y, 
+                                  hue=subgroup_col if use_hue else None)
             
-        try:
-            for ax_facet in g.axes.flat:
-                annotator = Annotator(ax_facet, box_pairs, data=plot_data, x=current_x, y=current_y, 
-                                      hue=subgroup_col if use_hue else None)
-                annotator.configure(text_format='star', loc='inside', verbose=0)
-                annotator.set_pvalues(p_values)
-                annotator.annotate()
-        except Exception as e:
-            print(f"Annotation Error during plotting: {e}")
-            traceback.print_exc()
+            # ★★★ p値の表示ルールを追加 ★★★
+            pvalue_thresholds = [
+                [1e-4, "****"], [1e-3, "***"], [1e-2, "**"], [0.05, "*"], [1.0, "n.s."]
+            ]
+            annotator.configure(text_format='star', loc='inside', verbose=0,
+                                  pvalue_thresholds=pvalue_thresholds)
+            
+            annotator.set_pvalues(p_values)
+            annotator.annotate()
+    except Exception as e:
+        print(f"Annotation Error during plotting: {e}")
+        traceback.print_exc()
 
     def replace_canvas(self, new_fig):
         if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:
@@ -153,8 +146,7 @@ class GraphManager:
             if properties.get('y_log_scale'): ax.set_yscale('log')
         fig.tight_layout(rect=[0, 0, 1, 0.96])
 
-    def draw_paired_scatter(self, df, properties):
-        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+    def draw_paired_scatter(self, df, properties, data_settings):
         ax = self.main.graph_widget.ax
         ax.clear()
         col1 = data_settings.get('col1')
@@ -172,7 +164,9 @@ class GraphManager:
             self.main.graph_widget.canvas.figure.clear()
             self.main.graph_widget.canvas.draw()
 
+    # ★★★ ここから、元々あった関数を復元 ★★★
     def save_graph(self):
+        """現在のグラフを画像ファイルとして保存する。"""
         if not hasattr(self.main.graph_widget, 'fig'):
             QMessageBox.warning(self.main, "Warning", "No data to save.")
             return
@@ -185,9 +179,46 @@ class GraphManager:
                 QMessageBox.critical(self.main, "Error", f"Failed to save graph: {e}")
 
     def clear_annotations(self):
+        """グラフ上のすべてのアノテーションをクリアする。"""
         if hasattr(self.main, 'statistical_annotations'):
             self.main.statistical_annotations.clear()
+        
+        #  regression_line_params や fit_params もクリア
+        if hasattr(self.main, 'regression_line_params'):
+            self.main.regression_line_params = None
+        if hasattr(self.main, 'fit_params'):
+            self.main.fit_params = None
+
         self.update_graph()
     
     def _draw_paired_plot_seaborn(self, ax, df, col1, col2, properties):
-        pass # 実装は省略
+        """ペアデータの散布図を Seaborn を使って描画する。"""
+        try:
+            plot_df = df[[col1, col2]].dropna().copy()
+            if plot_df.empty: return
+
+            plot_df['ID'] = range(len(plot_df))
+            plot_df_long = pd.melt(plot_df, id_vars='ID', value_vars=[col1, col2], var_name='Condition', value_name='Value')
+
+            label1 = properties.get('paired_label1') or col1
+            label2 = properties.get('paired_label2') or col2
+            
+            sns.lineplot(data=plot_df_long, x='Condition', y='Value', units='ID',
+                         estimator=None, color='gray', alpha=0.5, ax=ax)
+            sns.scatterplot(data=plot_df_long, x='Condition', y='Value',
+                            color=properties.get('single_color', 'black'), 
+                            marker=properties.get('marker_style', 'o'),
+                            edgecolor=properties.get('marker_edgecolor', 'black'),
+                            linewidth=properties.get('marker_edgewidth', 1.0),
+                            ax=ax, legend=False)
+            
+            mean_df = plot_df_long.groupby('Condition')['Value'].mean().reindex([col1, col2])
+            ax.plot(mean_df.index, mean_df.values,
+                    color='red', marker='_', markersize=20, mew=2.5, linestyle='None', label='Mean')
+
+            ax.set_xticklabels([label1, label2])
+            ax.set_xlim(-0.5, 1.5)
+            ax.legend()
+
+        except Exception as e:
+            QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
