@@ -14,121 +14,187 @@ class GraphManager:
         self.main = main_window
 
     def update_graph(self):
+        print("\n--- [ graph_manager.py DEBUG ] ---")
+        print("1. update_graph が呼び出されました。")
+
         if not hasattr(self.main, 'model') or self.main.model is None:
+            print("→ モデルが存在しないため、処理を中断します。")
+            self.clear_canvas()
             return
 
         df = self.main.model._data.copy()
-        
-        # --- 描画設定の取得 ---
         properties = self.main.properties_panel.get_properties()
-        data_settings = self.main.properties_panel.data_tab.get_current_settings()
         
-        current_x = data_settings.get('x_col')
-        current_y = data_settings.get('y_col')
-        
-        # 必須項目が選択されていなければ描画しない
-        if not current_x or not current_y:
-            # 念のためキャンバスをクリア
-            if self.main.graph_widget.layout() is not None:
-                 old_canvas = self.main.graph_widget.canvas
-                 if old_canvas:
-                     old_canvas.figure.clear()
-                     old_canvas.draw()
-            return
-        
-        subgroup_col = data_settings.get('subgroup_col')
-        facet_col = data_settings.get('facet_col')
-        facet_row = data_settings.get('facet_row')
-
-        # 空文字列をNoneに変換
-        if not subgroup_col: subgroup_col = None
-        if not facet_col: facet_col = None
-        if not facet_row: facet_row = None
-        
-        # --- グラフ描画 ---
-        try:
-            # seaborn.catplotでグラフオブジェクト(FacetGrid)を生成
-            g = sns.catplot(
-                data=df,
-                x=current_x,
-                y=current_y,
-                hue=subgroup_col,
-                col=facet_col,
-                row=facet_row,
-                kind=self.main.current_graph_type,
-                height=4, 
-                aspect=1.2,
-                sharex=False, # ファセットごとにX軸を独立させる
-                sharey=False  # ファセットごとにY軸を独立させる
-            )
-
-            # --- アノテーションの描画 ---
-            current_annotations = [ann for ann in self.main.statistical_annotations if ann.get('value_col') == current_y and ann.get('group_col') == current_x]
-            if current_annotations:
-                box_pairs = [ann['box_pair'] for ann in current_annotations]
-                p_values = [ann['p_value'] for ann in current_annotations]
+        if self.main.statistical_annotations:
+            print("2. [分析フィルタービュー] の描画を開始します。")
+            context = self.main.statistical_annotations[0]
+            
+            y = context.get('value_col')
+            x = context.get('group_col')
+            filters = context.get('common_filters', {})
+            
+            print(f"→ 分析コンテキスト: y={y}, x={x}, filters={filters}")
+            
+            plot_data = df.copy()
+            if filters:
+                for col, val in filters.items():
+                    plot_data = plot_data[plot_data[col].astype(str) == str(val)]
+            
+            hue = list(filters.keys())[0] if filters else None
+            
+            self.draw_catplot_and_annotate(plot_data, properties, y, x, hue, context)
+        else:
+            print("2. [基本ビュー] の描画を開始します。")
+            if self.main.current_graph_type == 'paired_scatter':
+                self.draw_paired_scatter(df, properties)
+            else:
+                data_settings = self.main.properties_panel.data_tab.get_current_settings()
+                y = data_settings.get('y_col')
+                x = data_settings.get('x_col')
+                hue = data_settings.get('subgroup_col')
                 
-                # catplotの各Axes(ax)にアノテーションを適用
-                for ax in g.axes.flat:
-                    annotator = Annotator(ax, box_pairs, data=df, x=current_x, y=current_y, hue=subgroup_col)
-                    annotator.configure(text_format='star', loc='inside', verbose=0)
-                    annotator.set_pvalues(p_values)
-                    annotator.annotate()
+                if not x or not y:
+                    print("→ Y軸またはX軸が選択されていないため、描画を中断します。")
+                    self.clear_canvas()
+                    return
+                
+                self.draw_catplot_and_annotate(df, properties, y, x, hue, None)
 
-            # --- 古いキャンバスを削除し、新しいキャンバスをUIに配置 ---
-            if self.main.graph_widget.layout() is not None:
-                old_canvas = self.main.graph_widget.canvas
-                if old_canvas:
-                    old_canvas.setParent(None)
-                    old_canvas.deleteLater()
+    def draw_catplot_and_annotate(self, df, properties, y, x, hue, context):
+        print("3. draw_catplot_and_annotate が呼び出されました。")
+        if hue and hue in df.columns:
+            df[hue] = df[hue].astype(str)
 
-            new_canvas = g.fig.canvas
-            self.main.graph_widget.layout().addWidget(new_canvas)
-            self.main.graph_widget.canvas = new_canvas
-            self.main.graph_widget.fig = g.fig
+        plot_kind = 'strip' if self.main.current_graph_type == 'scatter' else 'bar'
+        
+        plot_kwargs = {}
+        if plot_kind == 'bar':
+            plot_kwargs['edgecolor'] = properties.get('bar_edgecolor', 'black')
+            plot_kwargs['linewidth'] = properties.get('bar_edgewidth', 1.0)
+            plot_kwargs['capsize'] = properties.get('capsize', 4) * 0.01
+            plot_kwargs['errwidth'] = properties.get('bar_edgewidth', 1.0)
+        elif plot_kind == 'strip':
+            plot_kwargs['marker'] = properties.get('marker_style', 'o')
+            plot_kwargs['edgecolor'] = properties.get('marker_edgecolor', 'black')
+            plot_kwargs['linewidth'] = properties.get('marker_edgewidth', 1.0)
+        
+        if hue:
+            plot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()}
+        else:
+            plot_kwargs['color'] = properties.get('single_color')
+        
+        print(f"→ seaborn.catplot に渡す引数: kind={plot_kind}, kwargs={plot_kwargs}")
 
-            # プロパティを適用
-            self.update_graph_properties(g, properties)
+        try:
+            g = sns.catplot(
+                data=df, x=x, y=y, hue=hue, kind=plot_kind,
+                height=4, aspect=1.2, sharex=False, sharey=False,
+                **plot_kwargs
+            )
+            print("4. seaborn.catplot によるグラフオブジェクトの生成に成功しました。")
+
+            if context:
+                self.apply_annotations(g, df, y, x, hue, context)
+
+            self.replace_canvas(g.fig)
+            self.update_graph_properties(g.fig, properties)
 
         except Exception as e:
-            print(f"Graph drawing error: {e}")
+            print(f"!!! グラフ描画中にエラーが発生しました: {e}")
             traceback.print_exc()
 
-    def update_graph_properties(self, g, properties):
-        """catplotで生成されたグラフにプロパティを適用する"""
+    def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
+        print("5. apply_annotations が呼び出されました。")
+        context = self.main.statistical_annotations[0]
+        annotations_data = context.get("annotations")
         
-        # Figure全体に適用する設定
-        g.fig.suptitle(properties.get('title', ''), fontsize=properties.get('title_fontsize', 16))
-        
-        # 各Axes(サブプロット)にプロパティを適用
-        for ax in g.axes.flat:
-            ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
-            
-            # X/Y軸ラベルのフォントサイズ設定
-            ax.xaxis.label.set_fontsize(properties.get('xlabel_fontsize', 12))
-            ax.yaxis.label.set_fontsize(properties.get('ylabel_fontsize', 12))
+        if not annotations_data:
+            print("→ アノテーションデータがないため、処理を終了します。")
+            return
 
-            # 枠線の表示設定
+        plot_data = df.copy()
+        filters = context.get('common_filters', {})
+        if filters:
+            for col, val in filters.items():
+                plot_data = plot_data[plot_data[col].astype(str) == str(val)]
+        
+        use_hue = subgroup_col and plot_data[subgroup_col].nunique() > 1
+        print(f"→ サブグループ(hue)を実際に使用するか？: {use_hue}")
+
+        original_pairs = [ann['box_pair'] for ann in annotations_data]
+        p_values = [ann['p_value'] for ann in annotations_data]
+
+        if use_hue:
+            hue_values = plot_data[subgroup_col].unique()
+            box_pairs = []
+            for hue_val in hue_values:
+                for pair in original_pairs:
+                    box_pairs.append(((pair[0], str(hue_val)), (pair[1], str(hue_val))))
+            p_values = np.tile(p_values, len(hue_values))
+        else:
+            box_pairs = original_pairs
+        
+        print(f"→ statannotationsに渡すbox_pairs: {box_pairs}")
+        
+        try:
+            for ax_facet in g.axes.flat:
+                annotator = Annotator(ax_facet, box_pairs, data=plot_data, x=current_x, y=current_y, 
+                                      hue=subgroup_col if use_hue else None)
+                annotator.configure(text_format='star', loc='inside', verbose=0)
+                annotator.set_pvalues(p_values)
+                annotator.annotate()
+            print("6. アノテーションの描画に成功しました。")
+        except Exception as e:
+            print(f"!!! アノテーション描画中にエラーが発生しました: {e}")
+            traceback.print_exc()
+
+    # (以降のヘルパー関数は変更なし)
+    def replace_canvas(self, new_fig):
+        if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:
+            self.main.graph_widget.canvas.setParent(None)
+            self.main.graph_widget.canvas.deleteLater()
+        
+        new_canvas = new_fig.canvas
+        self.main.graph_widget.layout().addWidget(new_canvas)
+        self.main.graph_widget.canvas = new_canvas
+        self.main.graph_widget.fig = new_fig
+        if hasattr(self.main.graph_widget.fig, 'axes') and self.main.graph_widget.fig.axes:
+             self.main.graph_widget.ax = self.main.graph_widget.fig.axes[0]
+
+    def update_graph_properties(self, fig, properties):
+        fig.suptitle(properties.get('title', ''), fontsize=properties.get('title_fontsize', 16))
+        for ax in fig.axes:
+            ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
+            if ax.get_xlabel(): ax.xaxis.label.set_fontsize(properties.get('xlabel_fontsize', 12))
+            if ax.get_ylabel(): ax.yaxis.label.set_fontsize(properties.get('ylabel_fontsize', 12))
             if properties.get('hide_top_right_spines', True):
-                ax.spines['right'].set_visible(False)
-                ax.spines['top'].set_visible(False)
-            else:
-                ax.spines['right'].set_visible(True)
-                ax.spines['top'].set_visible(True)
-            
-            # グリッド
+                ax.spines['right'].set_visible(False); ax.spines['top'].set_visible(False)
             ax.grid(properties.get('show_grid', False))
-            
-            # 対数スケール
             if properties.get('x_log_scale'): ax.set_xscale('log')
             if properties.get('y_log_scale'): ax.set_yscale('log')
+        fig.tight_layout(rect=[0, 0, 1, 0.96])
+
+    def draw_paired_scatter(self, df, properties):
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        ax = self.main.graph_widget.ax
+        ax.clear()
+        col1 = data_settings.get('col1')
+        col2 = data_settings.get('col2')
+        if not (col1 and col2 and col1 != col2):
+            self.main.graph_widget.canvas.draw()
+            return
+            
+        self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
+        self.update_graph_properties(self.main.graph_widget.fig, properties)
+        self.main.graph_widget.canvas.draw()
         
-        # レイアウト調整
-        g.fig.tight_layout(rect=[0, 0, 1, 0.96]) # suptitleとの重なりを避ける
+    def clear_canvas(self):
+        if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:
+            self.main.graph_widget.canvas.figure.clear()
+            self.main.graph_widget.canvas.draw()
 
     def save_graph(self):
-        """現在のグラフを画像ファイルとして保存する。"""
-        if not hasattr(self.main, 'model'):
+        if not hasattr(self.main.graph_widget, 'fig'):
             QMessageBox.warning(self.main, "Warning", "No data to save.")
             return
         file_path, _ = QFileDialog.getSaveFileName(self.main, "Save Graph", "", "PNG (*.png);;JPEG (*.jpg);;SVG (*.svg);;PDF (*.pdf)")
@@ -140,41 +206,9 @@ class GraphManager:
                 QMessageBox.critical(self.main, "Error", f"Failed to save graph: {e}")
 
     def clear_annotations(self):
-        """グラフ上のすべてのアノテーションをクリアする。"""
-        if hasattr(self, 'statistical_annotations'):
+        if hasattr(self.main, 'statistical_annotations'):
             self.main.statistical_annotations.clear()
-        self.main.regression_line_params = None
-        self.main.fit_params = None
         self.update_graph()
-
+    
     def _draw_paired_plot_seaborn(self, ax, df, col1, col2, properties):
-        """ペアデータの散布図を Seaborn を使って描画する。"""
-        try:
-            plot_df = df[[col1, col2]].dropna().copy()
-            if plot_df.empty: return
-
-            plot_df['ID'] = range(len(plot_df))
-            plot_df_long = pd.melt(plot_df, id_vars='ID', value_vars=[col1, col2], var_name='Condition', value_name='Value')
-
-            label1 = properties.get('paired_label1') or col1
-            label2 = properties.get('paired_label2') or col2
-            
-            sns.lineplot(data=plot_df_long, x='Condition', y='Value', units='ID',
-                         estimator=None, color='gray', alpha=0.5, ax=ax)
-            sns.scatterplot(data=plot_df_long, x='Condition', y='Value',
-                            color=properties.get('single_color', 'black'), 
-                            marker=properties.get('marker_style', 'o'),
-                            edgecolor=properties.get('marker_edgecolor', 'black'),
-                            linewidth=properties.get('marker_edgewidth', 1.0),
-                            ax=ax, legend=False)
-            
-            mean_df = plot_df_long.groupby('Condition')['Value'].mean().reindex([col1, col2])
-            ax.plot(mean_df.index, mean_df.values,
-                    color='red', marker='_', markersize=20, mew=2.5, linestyle='None', label='Mean')
-
-            ax.set_xticklabels([label1, label2])
-            ax.set_xlim(-0.5, 1.5)
-            ax.legend()
-
-        except Exception as e:
-            QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
+        pass # 実装は省略

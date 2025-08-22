@@ -204,6 +204,7 @@ class ActionHandler:
                 QMessageBox.warning(self.main, "Warning", "Please define both groups and select a value column.")
                 return
             try:
+                # (データフィルタリング部分は変更なし)
                 group1_data = df.copy()
                 for col, val in g1_filters.items():
                     group1_data = group1_data[group1_data[col].astype(str) == str(val)]
@@ -220,30 +221,34 @@ class ActionHandler:
                     return
                 
                 t_stat, p_value = ttest_ind(group1_values, group2_values)
-
-                # どの列の値が違うのかを特定する
-                diff_key = None
-                diff_values = []
-                all_keys = set(g1_filters.keys()) | set(g2_filters.keys())
-                for key in all_keys:
-                    if g1_filters.get(key) != g2_filters.get(key):
-                        diff_key = key
-                        diff_values = [g1_filters.get(key), g2_filters.get(key)]
-                        break
                 
-                # p値が有意な場合のみアノテーション情報を追加
-                if diff_key and p_value < 0.05:
-                    annotation = {
-                        "value_col": value_col,
-                        "group_col": diff_key,
+                # --- ★★★ 分析コンテキスト生成ロジックを修正 ★★★ ---
+                diff_key = next((k for k in set(g1_filters.keys()) | set(g2_filters.keys()) if g1_filters.get(k) != g2_filters.get(k)), None)
+                diff_values = [g1_filters.get(diff_key), g2_filters.get(diff_key)]
+                common_filters = {k: v for k, v in g1_filters.items() if k != diff_key}
+                
+                self.main.statistical_annotations.clear()
+
+                # まず、分析コンテキストの骨格を必ず作成する
+                annotation_context = {
+                    "analysis_type": "t-test",
+                    "value_col": value_col,
+                    "group_col": diff_key,
+                    "common_filters": common_filters,
+                    "annotations": [] # p値が有意な場合だけ、ここに情報を追加する
+                }
+                
+                # p値が有意な場合のみ、アノテーション情報をリストに追加
+                if p_value < 0.05:
+                    annotation_context["annotations"].append({
                         "box_pair": (str(diff_values[0]), str(diff_values[1])),
                         "p_value": p_value
-                    }
-                    if annotation not in self.main.statistical_annotations:
-                        self.main.statistical_annotations.append(annotation)
-                    
-                    self.main.graph_manager.update_graph()
+                    })
+                
+                self.main.statistical_annotations.append(annotation_context)
+                self.main.graph_manager.update_graph()
 
+                # (結果表示ダイアログのロジックは変更なし)
                 g1_name = " & ".join([f"{k}='{v}'" for k, v in g1_filters.items()])
                 g2_name = " & ".join([f"{k}='{v}'" for k, v in g2_filters.items()])
                 result_text = (
@@ -260,19 +265,12 @@ class ActionHandler:
                     result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
                 else:
                     result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
-                
-                # 解析した列を自動的にUIに反映させる
-                if diff_key: # 比較したグループの列が存在する場合
-                    self.main.properties_panel.data_tab.tidy_tab.y_axis_combo.setCurrentText(value_col)
-                    self.main.properties_panel.data_tab.tidy_tab.x_axis_combo.setCurrentText(diff_key)
-                
                 self.show_results_dialog("t-test Result", result_text)
 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform t-test: {e}")
 
     def perform_one_way_anova(self):
-        """一元配置分散分析を実行する。 statannotations を利用する形式に修正。"""
         if not hasattr(self.main, 'model'): return
         df = self.main.model._data
         dialog = AnovaDialog(df.columns, self.main)
@@ -290,8 +288,22 @@ class ActionHandler:
                 samples = [df[value_col][df[group_col] == g].dropna() for g in groups]
                 f_stat, p_value = f_oneway(*samples)
 
+                # ★★★ ここからロジックの構造を変更 ★★★
+                # 1. 以前のアノテーションをクリア
+                self.main.statistical_annotations.clear()
+
+                # 2. まず、分析コンテキストの骨格を必ず作成する
+                annotation_context = {
+                    "analysis_type": "anova",
+                    "value_col": value_col,
+                    "group_col": group_col,
+                    "common_filters": {}, # ANOVAでは共通フィルタはなし
+                    "annotations": []      # p値が有意な場合だけ、ここに情報を追加
+                }
+
                 result_text = f"One-way ANOVA Results\n======================\n\nF-statistic: {f_stat:.4f}\np-value: {p_value:.4f}\n\n"
                 
+                # 3. p値が有意な場合のみ、Tukey検定を行い、アノテーション情報をリストに追加
                 if p_value < 0.05 and len(groups) > 2:
                     all_data = pd.concat([s for s in samples if not s.empty])
                     group_labels = np.repeat([str(g) for g, s in zip(groups, samples) if not s.empty], [len(s) for s in samples if not s.empty])
@@ -301,25 +313,19 @@ class ActionHandler:
                     
                     for _, row in df_tukey.iterrows():
                         if row['p-adj'] < 0.05:
-                            annotation = {
-                                "value_col": value_col,
-                                "group_col": group_col,
+                            annotation_context["annotations"].append({
                                 "box_pair": (str(row['group1']), str(row['group2'])),
-                                "p_value": row['p-adj'] 
-                            }
-                            if annotation not in self.main.statistical_annotations:
-                                self.main.statistical_annotations.append(annotation)
-
-                    print("--- action_handler.py デバッグ ---")
-                    print(f"追加されたアノテーション情報: {self.main.statistical_annotations}")
-                    print("---------------------------------")
-
+                                "p_value": row['p-adj']
+                            })
+                    
                     result_text += "Post-hoc test (Tukey's HSD):\n"
                     result_text += str(tukey_result)
-                    self.main.graph_manager.update_graph()
 
-                self.main.properties_panel.data_tab.tidy_tab.y_axis_combo.setCurrentText(value_col)
-                self.main.properties_panel.data_tab.tidy_tab.x_axis_combo.setCurrentText(group_col)
+                # 4. コンテキストをメインウィンドウに保存（annotationsが空の場合もある）
+                self.main.statistical_annotations.append(annotation_context)
+                
+                # 5. グラフ更新をトリガー
+                self.main.graph_manager.update_graph()
                 
                 self.show_results_dialog("ANOVA Result", result_text)
             except Exception as e:
