@@ -286,56 +286,61 @@ class ActionHandler:
 
     def perform_one_way_anova(self):
         if not hasattr(self.main, 'model'): return
+        
         df = self.main.model._data
-        dialog = AnovaDialog(df.columns, self.main)
+        # t検定と同様に、現在のデータタブの設定を取得
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        value_col = data_settings.get('y_col')
+        group_col = data_settings.get('x_col')
+        # ★★★ ANOVAではhue（サブグループ）は現時点では考慮しない想定 ★★★
+        hue_col = None 
 
-        if dialog.exec():
-            settings = dialog.get_settings()
-            value_col, group_col = settings['value_col'], settings['group_col']
-            if not value_col or not group_col or value_col == group_col: return
-            try:
-                groups = df[group_col].dropna().unique()
-                if len(groups) < 2: 
-                    QMessageBox.warning(self.main, "Warning", "ANOVA requires at least 2 groups.")
-                    return
+        if not value_col or not group_col:
+            QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+            return
+
+        try:
+            # --- ここからANOVAとTukey検定のロジック ---
+            groups = df[group_col].dropna().unique()
+            if len(groups) < 2: 
+                QMessageBox.warning(self.main, "Warning", "ANOVA requires at least 2 groups.")
+                return
+            
+            samples = [df[value_col][df[group_col] == g].dropna() for g in groups]
+            f_stat, p_value = f_oneway(*samples)
+
+            result_text = f"One-way ANOVA Results\n======================\n\nF-statistic: {f_stat:.4f}\np-value: {p_value:.4f}\n\n"
+            
+            # Tukey検定はp値が有意な場合のみ実行
+            if p_value < 0.05 and len(groups) > 2:
+                all_data = pd.concat([s for s in samples if not s.empty])
+                group_labels = np.repeat([str(g) for g, s in zip(groups, samples) if not s.empty], [len(s) for s in samples if not s.empty])
                 
-                samples = [df[value_col][df[group_col] == g].dropna() for g in groups]
-                f_stat, p_value = f_oneway(*samples)
-
-                # 以前のアノテーション情報をクリア
-                # self.main.statistical_annotations.clear() # t検定など他の結果も消えてしまうので、一旦コメントアウト
-
-                result_text = f"One-way ANOVA Results\n======================\n\nF-statistic: {f_stat:.4f}\np-value: {p_value:.4f}\n\n"
+                tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
+                df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
                 
-                # Tukey検定はp値が有意な場合のみ実行
-                if p_value < 0.05 and len(groups) > 2:
-                    all_data = pd.concat([s for s in samples if not s.empty])
-                    group_labels = np.repeat([str(g) for g, s in zip(groups, samples) if not s.empty], [len(s) for s in samples if not s.empty])
-                    
-                    tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
-                    df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
-                    
-                    # ★★ Tukeyの結果をp値に関わらずアノテーションに追加 ★★
-                    for _, row in df_tukey.iterrows():
-                        annotation = {
-                            "value_col": value_col,
-                            "group_col": group_col,
-                            "hue_col": None, # ANOVAはhueを考慮しない
-                            "box_pair": (str(row['group1']), str(row['group2'])),
-                            "p_value": row['p-adj']
-                        }
-                        if annotation not in self.main.statistical_annotations:
-                            self.main.statistical_annotations.append(annotation)
-                    
-                    result_text += "Post-hoc test (Tukey's HSD):\n"
-                    result_text += str(tukey_result)
-
-                # グラフを再描画
-                self.main.graph_manager.update_graph()
+                # ★★★ Tukey検定の結果を「標準アノテーション辞書」に変換して格納 ★★★
+                for _, row in df_tukey.iterrows():
+                    annotation = {
+                        "value_col": value_col,
+                        "group_col": group_col,
+                        "hue_col": hue_col, # hueは使わないのでNone
+                        "box_pair": (str(row['group1']), str(row['group2'])),
+                        "p_value": row['p-adj']
+                    }
+                    if annotation not in self.main.statistical_annotations:
+                        self.main.statistical_annotations.append(annotation)
                 
-                self.show_results_dialog("ANOVA Result", result_text)
-            except Exception as e:
-                QMessageBox.critical(self.main, "Error", f"Failed to perform ANOVA: {e}")
+                result_text += "Post-hoc test (Tukey's HSD):\n"
+                result_text += str(tukey_result)
+
+            self.main.graph_manager.update_graph()
+            self.show_results_dialog("ANOVA Result", result_text)
+
+        except Exception as e:
+            QMessageBox.critical(self.main, "Error", f"Failed to perform ANOVA: {e}")
+            traceback.print_exc()
+
     def perform_paired_t_test(self):
         """対応のあるt検定を実行する。"""
         if not hasattr(self.main, 'model'): return

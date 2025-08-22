@@ -100,12 +100,12 @@ class GraphManager:
         print(f"【GraphManager】Applying annotations. Current graph: Y={current_y}, X={current_x}, Hue={subgroup_col}")
         print(f"【GraphManager】All available annotations: {self.main.statistical_annotations}")
 
-        # ★★★ ここのロジックを修正 ★★★
+        # ★★★ ここで現在描画中のグラフに合致するアノテーションのみをフィルタリング ★★★
         current_annotations = [
             ann for ann in self.main.statistical_annotations 
             if ann.get('value_col') == current_y and 
                ann.get('group_col') == current_x and
-               ann.get('hue_col') == subgroup_col
+               ann.get('hue_col') == subgroup_col # hueが無い場合は両方Noneになるので正しく機能する
         ]
         
         if not current_annotations:
@@ -121,6 +121,7 @@ class GraphManager:
             
         try:
             for ax_facet in g.axes.flat:
+                # 渡す引数を現在のグラフの軸に合わせる
                 annotator = Annotator(ax_facet, box_pairs, data=df, x=current_x, y=current_y, hue=subgroup_col)
                 pvalue_thresholds = [[1e-4, "****"], [1e-3, "***"], [1e-2, "**"], [0.05, "*"], [1.0, "n.s."]]
                 annotator.configure(text_format='star', loc='inside', verbose=0, pvalue_thresholds=pvalue_thresholds)
