@@ -21,12 +21,16 @@ class TidyDataTab(QWidget):
         self.facet_col_combo = QComboBox() # 列で分割
         self.facet_row_combo = QComboBox() # 行で分割
         
+        # ★★★ ラベルにもselfを付けてアクセス可能にする ★★★
+        self.y_axis_label = QLabel("Y-Axis (Value):")
+        self.x_axis_label = QLabel("X-Axis (Group):")
+        
         # シグナルを接続
         self.subgroup_combo.currentTextChanged.connect(self.subgroupColumnChanged.emit)
 
         # レイアウトにウィジェットを追加
-        layout.addRow(QLabel("Y-Axis (Value):"), self.y_axis_combo)
-        layout.addRow(QLabel("X-Axis (Group):"), self.x_axis_combo)
+        layout.addRow(self.y_axis_label, self.y_axis_combo)
+        layout.addRow(self.x_axis_label, self.x_axis_combo)
         layout.addRow(QLabel("Sub-group (Color):"), self.subgroup_combo)
         layout.addRow(QLabel("Facet (Columns):"), self.facet_col_combo)
         layout.addRow(QLabel("Facet (Rows):"), self.facet_row_combo)

@@ -22,14 +22,16 @@ class GraphManager:
         properties = self.main.properties_panel.get_properties()
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
 
-        # 描画処理から返されたFigureオブジェクトを受け取る
         fig = None
         if self.main.current_graph_type == 'paired_scatter':
             fig = self.draw_paired_scatter(df, properties, data_settings)
+        # ★★★ ここから追加 ★★★
+        elif self.main.current_graph_type == 'histogram':
+            fig = self.draw_histogram(df, properties, data_settings)
+        # ★★★ ここまで ★★★
         else:
             fig = self.draw_categorical_plot(df, properties, data_settings)
 
-        # Figureが正常に生成された場合のみ、キャンバスを置き換えてプロパティを適用
         if fig:
             self.replace_canvas(fig)
             self.update_graph_properties(fig, properties)
@@ -236,3 +238,33 @@ class GraphManager:
 
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
+            
+    def draw_histogram(self, df, properties, data_settings):
+        value_col = data_settings.get('y_col') # TidyDataTabのY軸をValueとして使う
+        if not value_col:
+            return None
+
+        hue_col = data_settings.get('subgroup_col')
+        if not hue_col:
+            hue_col = None
+
+        if hue_col and hue_col in df.columns:
+            df[hue_col] = df[hue_col].astype(str)
+
+        fig = Figure(tight_layout=True)
+        FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+
+        plot_kwargs = {}
+        if hue_col:
+             plot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()}
+        else:
+            plot_kwargs['color'] = properties.get('single_color')
+
+        try:
+            sns.histplot(data=df, x=value_col, hue=hue_col, ax=ax, **plot_kwargs)
+            return fig
+        except Exception as e:
+            print(f"Graph drawing error: {e}")
+            traceback.print_exc()
+            return None
