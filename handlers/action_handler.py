@@ -201,6 +201,9 @@ class ActionHandler:
         value_col = data_settings.get('y_col')
         group_col = data_settings.get('x_col')
         hue_col = data_settings.get('subgroup_col')
+        
+        if not hue_col:
+            hue_col = None
 
         if not value_col or not group_col:
             QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")

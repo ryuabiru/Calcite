@@ -43,6 +43,9 @@ class GraphManager:
         if not facet_col: facet_col = None
         if not facet_row: facet_row = None
         
+        if current_x in df.columns:
+            df[current_x] = df[current_x].astype(str)
+        
         if subgroup_col and subgroup_col in df.columns:
             df[subgroup_col] = df[subgroup_col].astype(str)
 
