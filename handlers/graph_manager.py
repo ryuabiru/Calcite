@@ -22,10 +22,17 @@ class GraphManager:
         properties = self.main.properties_panel.get_properties()
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
 
+        # 描画処理から返されたFigureオブジェクトを受け取る
+        fig = None
         if self.main.current_graph_type == 'paired_scatter':
-            self.draw_paired_scatter(df, properties, data_settings)
+            fig = self.draw_paired_scatter(df, properties, data_settings)
         else:
-            self.draw_categorical_plot(df, properties, data_settings)
+            fig = self.draw_categorical_plot(df, properties, data_settings)
+
+        # Figureが正常に生成された場合のみ、キャンバスを置き換えてプロパティを適用
+        if fig:
+            self.replace_canvas(fig)
+            self.update_graph_properties(fig, properties)
 
     def draw_categorical_plot(self, df, properties, data_settings):
         current_x = data_settings.get('x_col')
@@ -78,12 +85,12 @@ class GraphManager:
             )
 
             self.apply_annotations(g, df, current_y, current_x, subgroup_col)
-            self.replace_canvas(g.fig)
-            self.update_graph_properties(g.fig, properties)
+            return g.fig
 
         except Exception as e:
             print(f"Graph drawing error: {e}")
             traceback.print_exc()
+            return None
     
     def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
         """グラフに統計アノテーションを適用する"""
@@ -147,19 +154,24 @@ class GraphManager:
         fig.tight_layout(rect=[0, 0, 1, 0.96])
 
     def draw_paired_scatter(self, df, properties, data_settings):
-        ax = self.main.graph_widget.ax
-        ax.clear()
         col1 = data_settings.get('col1')
         col2 = data_settings.get('col2')
         if not (col1 and col2 and col1 != col2):
-            if hasattr(self.main.graph_widget, 'canvas'):
-                self.main.graph_widget.canvas.draw()
-            return
-            
-        self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
-        self.update_graph_properties(self.main.graph_widget.fig, properties)
-        if hasattr(self.main.graph_widget, 'canvas'):
-            self.main.graph_widget.canvas.draw()
+            return None
+
+        # 新しいFigureとAxesをここで作成する
+        fig = Figure(tight_layout=True)
+        FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+
+        try:
+            # 描画ロジック自体は _draw_paired_plot_seaborn を流用
+            self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
+            return fig # ★ 完成したFigureオブジェクトを返す
+
+        except Exception as e:
+            QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
+            return None # ★ エラー時はNoneを返す
         
     def clear_canvas(self):
         if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:
@@ -214,9 +226,13 @@ class GraphManager:
             ax.plot(mean_df.index, mean_df.values,
                     color='red', marker='_', markersize=20, mew=2.5, linestyle='None', label='Mean')
 
-            ax.set_xticklabels([label1, label2])
-            ax.set_xlim(-0.5, 1.5)
-            ax.legend()
+            ax.set_xticks([0, 1]) # X軸の目盛りの位置を明示的に指定
+            ax.set_xticklabels([label1, label2]) # それからラベルを設定
+            
+            # 凡例が空でない場合のみ表示するように修正
+            handles, labels = ax.get_legend_handles_labels()
+            if handles:
+                ax.legend(handles, labels)
 
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
