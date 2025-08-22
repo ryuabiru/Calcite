@@ -85,6 +85,9 @@ class GraphManager:
     def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
         """グラフに統計アノテーションを適用する"""
         
+        print(f"【GraphManager】Applying annotations. Current graph: Y={current_y}, X={current_x}, Hue={subgroup_col}")
+        print(f"【GraphManager】All available annotations: {self.main.statistical_annotations}")
+
         # ★★★ ここのロジックを修正 ★★★
         current_annotations = [
             ann for ann in self.main.statistical_annotations 
@@ -101,6 +104,8 @@ class GraphManager:
 
         if not box_pairs:
             return
+
+        print(f"【GraphManager】Filtered annotations for this graph: box_pairs={box_pairs}, p_values={p_values}")
             
         try:
             for ax_facet in g.axes.flat:

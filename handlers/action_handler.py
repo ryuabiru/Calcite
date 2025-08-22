@@ -251,6 +251,8 @@ class ActionHandler:
                     "box_pair": pair, "p_value": p_value
                 }
                 
+                print(f"【ActionHandler】Generated Annotation: {annotation}")
+
                 if annotation not in self.main.statistical_annotations:
                     self.main.statistical_annotations.append(annotation)
                 
