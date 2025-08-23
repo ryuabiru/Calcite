@@ -234,6 +234,9 @@ class ActionHandler:
         
         hue_col = data_settings.get('subgroup_col')
         if not hue_col: hue_col = None
+        
+        if group_col == hue_col:
+            hue_col = None
 
         facet_col = data_settings.get('facet_col')
 
@@ -352,6 +355,9 @@ class ActionHandler:
         
         hue_col = data_settings.get('subgroup_col')
         if not hue_col: hue_col = None
+
+        if group_col == hue_col:
+            hue_col = None
 
         facet_col = data_settings.get('facet_col') 
 

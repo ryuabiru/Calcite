@@ -42,18 +42,29 @@ class GraphManager:
         
         if not current_x or not current_y:
             self.clear_canvas()
-            return
+            return None # ★ figオブジェクトを返すように変更
         
-        subgroup_col = data_settings.get('subgroup_col')
+        # ★★★ ここからロジックを修正 ★★★
+        
+        # UIからの選択をそのまま保持する「描画用」の変数を定義
+        visual_hue_col = data_settings.get('subgroup_col')
+        if not visual_hue_col: visual_hue_col = None
+
+        # 統計分析とアノテーションのマッチングに使う「分析用」の変数を定義
+        analysis_hue_col = visual_hue_col
+        if current_x == analysis_hue_col:
+            analysis_hue_col = None
+        
+        # ★★★ ここまで ★★★
+
         facet_col = data_settings.get('facet_col')
         facet_row = data_settings.get('facet_row')
 
-        if not subgroup_col: subgroup_col = None
         if not facet_col: facet_col = None
         if not facet_row: facet_row = None
         
-        if subgroup_col and subgroup_col in df.columns:
-            df[subgroup_col] = df[subgroup_col].astype(str)
+        if visual_hue_col and visual_hue_col in df.columns:
+            df[visual_hue_col] = df[visual_hue_col].astype(str)
 
         plot_kind = 'strip' if self.main.current_graph_type == 'scatter' else 'bar'
         
@@ -68,25 +79,29 @@ class GraphManager:
             plot_kwargs['edgecolor'] = properties.get('marker_edgecolor', 'black')
             plot_kwargs['linewidth'] = properties.get('marker_edgewidth', 1.0)
         
-        ui_subgroup_col = data_settings.get('subgroup_col')
-        if subgroup_col:
-            if subgroup_col == ui_subgroup_col:
-                plot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()}
+        # paletteの適用は、描画用のvisual_hue_colを基準に行う
+        if visual_hue_col:
+            plot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()}
         else:
             plot_kwargs['color'] = properties.get('single_color')
 
         try:
-            # ★★★【修正】sharey=True を追加 ★★★
+            # catplotには、描画用のvisual_hue_colを渡す
             g = sns.catplot(
-                data=df, x=current_x, y=current_y, hue=subgroup_col,
+                data=df, x=current_x, y=current_y, hue=visual_hue_col,
                 col=facet_col, row=facet_row, kind=plot_kind,
-                height=4, aspect=1.2, sharex=False, sharey=True, # <--- 修正箇所
+                height=4, aspect=1.2, sharex=False, sharey=True,
                 **plot_kwargs
             )
 
-            self.apply_annotations(g, df, current_y, current_x, subgroup_col)
-            self.replace_canvas(g.fig)
-            self.update_graph_properties(g.fig, properties)
+            # apply_annotationsには、分析用のanalysis_hue_colを渡す
+            self.apply_annotations(g, df, current_y, current_x, analysis_hue_col)
+            return g.fig # ★ figオブジェクトを返す
+
+        except Exception as e:
+            print(f"Graph drawing error: {e}")
+            traceback.print_exc()
+            return None # ★ エラー時はNoneを返す
 
         except Exception as e:
             print(f"Graph drawing error: {e}")
