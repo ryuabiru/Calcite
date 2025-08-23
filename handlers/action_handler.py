@@ -14,7 +14,6 @@ from dialogs.restructure_dialog import RestructureDialog
 from dialogs.calculate_dialog import CalculateDialog
 from dialogs.anova_dialog import AnovaDialog
 from dialogs.ttest_dialog import TTestDialog
-from dialogs.ttest_dialog_simple import TTestDialogSimple
 from dialogs.paired_ttest_dialog import PairedTTestDialog
 from dialogs.fitting_dialog import FittingDialog
 from dialogs.contingency_dialog import ContingencyDialog
@@ -34,13 +33,13 @@ class ActionHandler:
         【生成】ヘルパー：X軸とサブグループ（hue）から検定用のグループ列を生成する。
         """
         if hue_col and hue_col in df.columns:
-            # hueが指定されている場合、交互作用グループを作成
             interaction_col_name = f"{x_col}_{hue_col}_interaction"
+            # ★★★【修正】astype(str)を追加して、常に文字列で結合する ★★★
             effective_groups = df[x_col].astype(str) + self._UNIQUE_SEPARATOR + df[hue_col].astype(str)
             return effective_groups, interaction_col_name
         else:
-            # hueがない場合、X軸をそのまま使用
-            return df[x_col], x_col
+            # ★★★【修正】astype(str)を追加して、常に文字列として返す ★★★
+            return df[x_col].astype(str), x_col
         
     def _format_pair_for_annotation(self, pair, hue_col):
         """
@@ -232,14 +231,16 @@ class ActionHandler:
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
         value_col = data_settings.get('y_col')
         group_col = data_settings.get('x_col')
+        
         hue_col = data_settings.get('subgroup_col')
+        if not hue_col: hue_col = None
+
         facet_col = data_settings.get('facet_col')
 
         if not value_col or not group_col:
             QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
             return
 
-        # ★★★【修正】元のTTestDialogを呼び出す ★★★
         x_values = [str(v) for v in df[group_col].dropna().unique()]
         hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
         
@@ -258,8 +259,13 @@ class ActionHandler:
                  QMessageBox.warning(self.main, "Warning", "Please select two different groups.")
                  return
 
+            # --- ★★★ PRINTデバッグ (1) ★★★ ---
+            print("--- TTestDialog Selection ---")
+            print(f"Group 1 Condition: {g1_cond}")
+            print(f"Group 2 Condition: {g2_cond}")
+            # --- デバッグここまで ---
+
             try:
-                # ★★★【修正】内部グループ名をダイアログの選択に基づいて再構築 ★★★
                 if hue_col:
                     g1_name = f"{g1_cond['x']}{self._UNIQUE_SEPARATOR}{g1_cond['hue']}"
                     g2_name = f"{g2_cond['x']}{self._UNIQUE_SEPARATOR}{g2_cond['hue']}"
@@ -269,14 +275,23 @@ class ActionHandler:
 
                 if facet_col and facet_col in df.columns:
                     facet_categories = df[facet_col].dropna().unique()
+                    
                     for category in facet_categories:
                         subset_df = df[df[facet_col] == category].reset_index(drop=True)
                         effective_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
                         
+                        # --- ★★★ PRINTデバッグ (2) ★★★ ---
+                        print(f"\n--- Debugging Facet Category: {category} ---")
+                        print(f"Internal group names to find: g1='{g1_name}', g2='{g2_name}'")
+                        print(f"Unique groups in this subset: {effective_groups.unique()}")
+                        # --- デバッグここまで ---
+
                         group1_values = subset_df.loc[effective_groups == g1_name, value_col].dropna()
                         group2_values = subset_df.loc[effective_groups == g2_name, value_col].dropna()
 
-                        if group1_values.empty or group2_values.empty: continue
+                        if group1_values.empty or group2_values.empty:
+                            print(f"-> Skipping facet {category}: One or both groups have no data.")
+                            continue
                         
                         _, p_value = ttest_ind(group1_values, group2_values, nan_policy='omit')
                         
@@ -290,6 +305,9 @@ class ActionHandler:
                         }
                         if annotation not in self.main.statistical_annotations:
                             self.main.statistical_annotations.append(annotation)
+                            # --- ★★★ PRINTデバッグ (3) ★★★ ---
+                            print(f"-> Annotation CREATED for facet {category}: {annotation}")
+                            # --- デバッグここまで ---
                 
                 else: # ファセットなし
                     effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
@@ -312,8 +330,11 @@ class ActionHandler:
                     }
                     if annotation not in self.main.statistical_annotations:
                         self.main.statistical_annotations.append(annotation)
+                        # --- ★★★ PRINTデバッグ (3) ★★★ ---
+                        print(f"-> Annotation CREATED (no facet): {annotation}")
+                        # --- デバッグここまで ---
                     
-                    # ... 結果表示ダイアログのロジック ...
+                    # ... (結果表示ダイアログのロジック) ...
 
                 self.main.graph_manager.update_graph()
 
@@ -328,8 +349,10 @@ class ActionHandler:
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
         value_col = data_settings.get('y_col')
         group_col = data_settings.get('x_col')
+        
         hue_col = data_settings.get('subgroup_col')
-        # ★★★【追加】ファセット列を取得 ★★★
+        if not hue_col: hue_col = None
+
         facet_col = data_settings.get('facet_col') 
 
         if not value_col or not group_col:

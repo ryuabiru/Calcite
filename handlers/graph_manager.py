@@ -95,14 +95,11 @@ class GraphManager:
     def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
         """グラフに統計アノテーションを適用する"""
         
-        # ★★★【追加】現在のファセット列も取得 ★★★
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
         facet_col = data_settings.get('facet_col')
 
         print(f"【GraphManager】Applying annotations. Graph: Y={current_y}, X={current_x}, Hue={subgroup_col}, Facet={facet_col}")
-        print(f"【GraphManager】All available annotations: {self.main.statistical_annotations}")
-
-        # 現在のグラフ描画コンテキストに合致するアノテーションを全てフィルタリング
+        
         current_annotations = [
             ann for ann in self.main.statistical_annotations 
             if ann.get('value_col') == current_y and 
@@ -114,29 +111,37 @@ class GraphManager:
         if not current_annotations:
             return
 
-        # --- ★★★【修正】ここからファセットごとにアノテーションを振り分けるロジック ★★★ ---
         try:
-            # g.axes_dictはファセットのカテゴリ名をキー、Axesオブジェクトを値とする辞書
-            for facet_value, ax_facet in g.axes_dict.items():
+            # --- ★★★【修正】seabornのFacetGridから直接サブプロットの情報を取得 ★★★
+            # g.facet_dataは (インデックス, データ) のタプルのリスト
+            for i, (ax_index, subset_df) in enumerate(g.facet_data()):
+                ax_facet = g.axes.flat[i] # 対応するAxesオブジェクトを取得
                 
-                # このファセット（サブプロット）に属するアノテーションだけをさらに絞り込む
+                # ファセットのカテゴリ値を取得
+                facet_value = None
+                if facet_col and g.col_names:
+                    facet_value = g.col_names[i % len(g.col_names)]
+
                 annotations_for_this_facet = [
                     ann for ann in current_annotations
                     if ann.get('facet_value') == facet_value
                 ]
 
                 if not annotations_for_this_facet:
-                    continue # このファセット用のアノテーションがなければ次へ
+                    continue
 
                 box_pairs = [ann['box_pair'] for ann in annotations_for_this_facet]
                 p_values = [ann['p_value'] for ann in annotations_for_this_facet]
 
                 if not box_pairs:
                     continue
+                
+                # subset_dfのX軸列を文字列に変換しておく
+                subset_df[current_x] = subset_df[current_x].astype(str)
 
                 print(f"【GraphManager】Annotating Facet '{facet_value}': pairs={box_pairs}")
                 
-                annotator = Annotator(ax_facet, box_pairs, data=df, x=current_x, y=current_y, hue=subgroup_col)
+                annotator = Annotator(ax_facet, box_pairs, data=subset_df, x=current_x, y=current_y, hue=subgroup_col)
                 pvalue_thresholds = [[1e-4, "****"], [1e-3, "***"], [1e-2, "**"], [0.05, "*"], [1.0, "n.s."]]
                 annotator.configure(text_format='star', loc='inside', verbose=0, pvalue_thresholds=pvalue_thresholds)
                 annotator.set_pvalues(p_values)
@@ -145,6 +150,7 @@ class GraphManager:
         except Exception as e:
             print(f"Annotation Error during plotting: {e}")
             traceback.print_exc()
+
 
     def replace_canvas(self, new_fig):
         if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:
