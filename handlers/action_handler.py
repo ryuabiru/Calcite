@@ -338,7 +338,23 @@ class ActionHandler:
                         print(f"-> Annotation CREATED (no facet): {annotation}")
                         # --- デバッグここまで ---
                     
-                    # ... (結果表示ダイアログのロジック) ...
+                    g1_display_name = f"{group_col}={g1_cond['x']}" + (f", {hue_col}={g1_cond['hue']}" if hue_col and g1_cond.get('hue') else "")
+                    g2_display_name = f"{group_col}={g2_cond['x']}" + (f", {hue_col}={g2_cond['hue']}" if hue_col and g2_cond.get('hue') else "")
+                    result_text = (
+                        f"Independent t-test results (on current graph):\n"
+                        f"============================================\n\n"
+                        f"Comparing '{value_col}' between:\n"
+                        f"- Group 1: {g1_display_name} (n={len(group1_values)}, Mean: {group1_values.mean():.3f})\n"
+                        f"- Group 2: {g2_display_name} (n={len(group2_values)}, Mean: {group2_values.mean():.3f})\n\n"
+                        f"---\n"
+                        f"t-statistic: {t_stat:.4f}\n"
+                        f"p-value: {p_value:.4f}\n\n"
+                    )
+                    if p_value < 0.05:
+                        result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
+                    else:
+                        result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
+                    self.show_results_dialog("t-test Result", result_text)
 
                 self.main.graph_manager.update_graph()
 

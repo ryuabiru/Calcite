@@ -159,9 +159,6 @@ class MainWindow(QMainWindow):
         # TextTabのペアラベル入力欄の表示を切り替える
         self.properties_panel.text_tab.update_paired_labels_visibility(graph_type == 'paired_scatter')
         self.graph_manager.update_graph()
-        
-        self.properties_panel.text_tab.update_paired_labels_visibility(graph_type == 'paired_scatter')
-        self.graph_manager.update_graph()
 
     def edit_header(self, logicalIndex):
         if self.header_editor: self.header_editor.close()
