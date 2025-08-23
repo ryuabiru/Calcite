@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import io
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication, QDialog, QVBoxLayout, QTextEdit
-from scipy.stats import ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency
+from scipy.stats import ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency, shapiro, spearmanr
 from scipy.optimize import curve_fit
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 
@@ -15,6 +15,7 @@ from dialogs.calculate_dialog import CalculateDialog
 from dialogs.anova_dialog import AnovaDialog
 from dialogs.ttest_dialog import TTestDialog
 from dialogs.paired_ttest_dialog import PairedTTestDialog
+from dialogs.correlation_dialog import CorrelationDialog
 from dialogs.fitting_dialog import FittingDialog
 from dialogs.contingency_dialog import ContingencyDialog
 from dialogs.pivot_dialog import PivotDialog
@@ -520,6 +521,121 @@ class ActionHandler:
                 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform Chi-squared test: {e}")
+                
+    def perform_spearman_correlation(self):
+        """
+        選択された2つの列に対して、スピアマンの順位相関係数検定を実行する。
+        """
+        if not hasattr(self.main, 'model'): return
+        
+        df = self.main.model._data
+        dialog = CorrelationDialog(df.columns, self.main)
+
+        if dialog.exec():
+            settings = dialog.get_settings()
+            col1, col2 = settings['col1'], settings['col2']
+
+            if not col1 or not col2 or col1 == col2:
+                QMessageBox.warning(self.main, "Warning", "Please select two different columns.")
+                return
+
+            try:
+                data1 = df[col1].dropna()
+                data2 = df[col2].dropna()
+
+                # データ長を合わせる
+                common_indices = data1.index.intersection(data2.index)
+                if len(common_indices) < 3:
+                    QMessageBox.warning(self.main, "Warning", "Not enough paired data to perform the test.")
+                    return
+                
+                data1 = data1.loc[common_indices]
+                data2 = data2.loc[common_indices]
+                
+                rho, p_value = spearmanr(data1, data2)
+
+                result_text = (
+                    f"Spearman's Rank Correlation Results\n"
+                    f"====================================\n\n"
+                    f"Comparing:\n- Variable 1: '{col1}'\n- Variable 2: '{col2}'\n"
+                    f"(n={len(data1)})\n\n"
+                    f"---\n"
+                    f"Spearman's rho: {rho:.4f}\n"
+                    f"p-value: {p_value:.4f}\n\n"
+                )
+                if p_value < 0.05:
+                    result_text += "Conclusion: There is a statistically significant correlation."
+                else:
+                    result_text += "Conclusion: There is no statistically significant correlation."
+                
+                self.show_results_dialog("Spearman's Correlation Result", result_text)
+
+            except Exception as e:
+                QMessageBox.critical(self.main, "Error", f"Failed to perform Spearman's correlation: {e}")
+                traceback.print_exc()
+
+    def perform_shapiro_test(self):
+        """
+        表示されているグラフの各グループに対して、シャピロ–ウィルク検定を実行し、
+        正規性を評価する。
+        """
+        if not hasattr(self.main, 'model'): return
+        
+        df = self.main.model._data.copy()
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        value_col = data_settings.get('y_col')
+        group_col = data_settings.get('x_col')
+        hue_col = data_settings.get('subgroup_col')
+
+        if not value_col or not group_col:
+            QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+            return
+
+        # X軸とサブグループが同じ場合は、hueを分析上無視する
+        if group_col == hue_col:
+            hue_col = None
+
+        try:
+            effective_groups, group_name = self._get_interaction_group_col(df, group_col, hue_col)
+            unique_groups = sorted(effective_groups.dropna().unique())
+
+            if not unique_groups:
+                QMessageBox.warning(self.main, "Warning", "No groups found to test.")
+                return
+
+            # 結果を格納する文字列を初期化
+            result_text = f"Shapiro-Wilk Normality Test Results\n"
+            result_text += "=========================================\n\n"
+            result_text += f"Value Column: {value_col}\n"
+            result_text += f"Grouping by: {group_name}\n\n"
+            result_text += "p > 0.05 suggests that the data is normally distributed.\n\n"
+            result_text += "-----------------------------------------\n"
+
+            # 各グループに対してループ処理
+            for group in unique_groups:
+                data = df[value_col][effective_groups == group].dropna()
+                
+                result_text += f"Group: {group} (n={len(data)})\n"
+                
+                # サンプル数が3未満の場合、検定は実行できない
+                if len(data) < 3:
+                    result_text += "  -> Skipped (sample size < 3)\n"
+                else:
+                    stat, p_value = shapiro(data)
+                    result_text += f"  - W-statistic: {stat:.4f}\n"
+                    result_text += f"  - p-value: {p_value:.4f}\n"
+                    if p_value > 0.05:
+                        result_text += "  - Conclusion: Data likely follows a normal distribution.\n"
+                    else:
+                        result_text += "  - Conclusion: Data likely does not follow a normal distribution.\n"
+                result_text += "-----------------------------------------\n"
+
+            # 結果をダイアログで表示
+            self.show_results_dialog("Normality Test Results", result_text)
+
+        except Exception as e:
+            QMessageBox.critical(self.main, "Error", f"Failed to perform Shapiro-Wilk test: {e}")
+            traceback.print_exc()
 
     # --- Regression Analysis ---
     
