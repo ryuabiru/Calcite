@@ -54,8 +54,6 @@ class GraphManager:
         analysis_hue_col = visual_hue_col
         if current_x == analysis_hue_col:
             analysis_hue_col = None
-        
-        # ★★★ ここまで ★★★
 
         facet_col = data_settings.get('facet_col')
         facet_row = data_settings.get('facet_row')
@@ -66,7 +64,14 @@ class GraphManager:
         if visual_hue_col and visual_hue_col in df.columns:
             df[visual_hue_col] = df[visual_hue_col].astype(str)
 
-        plot_kind = 'strip' if self.main.current_graph_type == 'scatter' else 'bar'
+        plot_kind_map = {
+            'scatter': 'strip',
+            'bar': 'bar',
+            'boxplot': 'box',
+            'violin': 'violin'
+        }
+        plot_kind = plot_kind_map.get(self.main.current_graph_type)
+        if not plot_kind: return None
         
         plot_kwargs = {}
         if plot_kind == 'bar':
@@ -78,21 +83,39 @@ class GraphManager:
             plot_kwargs['marker'] = properties.get('marker_style', 'o')
             plot_kwargs['edgecolor'] = properties.get('marker_edgecolor', 'black')
             plot_kwargs['linewidth'] = properties.get('marker_edgewidth', 1.0)
-        
-        # paletteの適用は、描画用のvisual_hue_colを基準に行う
+
         if visual_hue_col:
             plot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()}
         else:
             plot_kwargs['color'] = properties.get('single_color')
 
         try:
-            # catplotには、描画用のvisual_hue_colを渡す
             g = sns.catplot(
                 data=df, x=current_x, y=current_y, hue=visual_hue_col,
                 col=facet_col, row=facet_row, kind=plot_kind,
                 height=4, aspect=1.2, sharex=False, sharey=True,
                 **plot_kwargs
             )
+            
+            # --- 個別データ点の重ね描き（オーバーレイ） ---
+            if properties.get('scatter_overlay', False) and plot_kind in ['bar', 'box', 'violin']:
+                g.map_dataframe(
+                    sns.stripplot,
+                    x=current_x, 
+                    y=current_y, 
+                    hue=visual_hue_col,
+                    dodge=True,
+                    jitter=True,
+                    alpha=0.7,
+                    marker=properties.get('marker_style', 'o'),
+                    edgecolor=properties.get('marker_edgecolor', 'black'),
+                    linewidth=properties.get('marker_edgewidth', 1.0),
+                )
+                if visual_hue_col:
+                    handles, labels = g.axes[0,0].get_legend_handles_labels()
+                    num_hues = len(df[visual_hue_col].unique())
+                    if g.legend: g.legend.remove()
+                    g.add_legend(handles[:num_hues], labels[:num_hues], title=visual_hue_col)
 
             # apply_annotationsには、分析用のanalysis_hue_colを渡す
             self.apply_annotations(g, df, current_y, current_x, analysis_hue_col)

@@ -37,7 +37,7 @@ class DataTab(QWidget):
 
     def set_graph_type(self, graph_type):
         """表示するUIをグラフタイプに応じて切り替える"""
-        if graph_type in ['scatter', 'bar', 'histogram']: # histogramを追加
+        if graph_type in ['scatter', 'bar', 'histogram', 'boxplot', 'violin']:
             self.stacked_widget.setCurrentWidget(self.tidy_tab)
 
             if graph_type == 'histogram':
