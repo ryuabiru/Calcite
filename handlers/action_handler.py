@@ -367,53 +367,54 @@ class ActionHandler:
         表示されているグラフのデータに基づいて一元配置分散分析を実行する。
         ユーザーがダイアログで選択した複数グループを対象とする。
         """
-        if not hasattr(self, 'model'): return
-        
-        df = self.main.model._data.copy()
-        data_settings = self.main.properties_panel.data_tab.get_current_settings()
-        value_col = data_settings.get('y_col')
-        group_col = data_settings.get('x_col')
-        
-        hue_col = data_settings.get('subgroup_col')
-        if not hue_col: hue_col = None
-
-        if group_col == hue_col:
-            hue_col = None
-
-        facet_col = data_settings.get('facet_col') 
-
-        if not value_col or not group_col:
-            QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
-            return
-
         try:
-            # 検定用のグループ名を生成
-            effective_groups, effective_group_name = self._get_interaction_group_col(df, group_col, hue_col)
-            all_unique_groups = sorted(effective_groups.dropna().unique())
-            
-            # グループが2つ未満の場合はダイアログを出さずに終了
-            if len(all_unique_groups) < 2:
-                QMessageBox.warning(self.main, "Warning", "At least 2 groups are required for comparison.")
+            if not hasattr(self.main, 'model'):
+                QMessageBox.warning(self.main, "Warning", "Please load data first.")
                 return
 
-            # 新しいAnovaDialogを呼び出す
-            dialog = AnovaDialog(all_unique_groups, effective_group_name, self.main)
+            df = self.main.model._data.copy()
+            data_settings = self.main.properties_panel.data_tab.get_current_settings()
+            value_col = data_settings.get('y_col')
+            group_col = data_settings.get('x_col')
+
+            if not value_col or not group_col:
+                QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+                return
+
+            hue_col = data_settings.get('subgroup_col')
+            if not hue_col or group_col == hue_col:
+                hue_col = None
+
+            facet_col = data_settings.get('facet_col')
+
+            # ★★★ ここからが修正箇所 ★★★
+            x_values = [str(v) for v in df[group_col].dropna().unique()]
+            hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
+
+            if not x_values:
+                QMessageBox.warning(self.main, "Warning", "The selected X-Axis column has no data.")
+                return
+
+            # 新しいAnovaDialogを正しい引数で呼び出す
+            dialog = AnovaDialog(x_values, hue_values, group_col, hue_col, self.main)
             
             if dialog.exec():
                 selected_groups = dialog.get_settings()
                 
-                # 2グループ未満しか選択されなかった場合は警告
                 if not selected_groups:
-                    QMessageBox.warning(self.main, "Warning", "Please select at least 2 groups for comparison.")
+                    QMessageBox.warning(self.main, "Warning", "Please build a list of at least 2 groups to compare.")
                     return
+                
+                effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
+                # ★★★ ここまでが修正箇所 ★★★
 
-                # --- ファセットの有無で処理を分岐 ---
+                results_summary = []
+
                 if facet_col and facet_col in df.columns:
                     facet_categories = df[facet_col].dropna().unique()
                     
                     for category in facet_categories:
                         subset_df = df[df[facet_col] == category].copy()
-                        
                         current_facet_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
                         
                         samples = [subset_df.loc[current_facet_groups == g, value_col].dropna() for g in selected_groups]
@@ -422,27 +423,32 @@ class ActionHandler:
                         if len(samples) < 2: continue
 
                         _, p_value = f_oneway(*samples)
+                        
+                        results_summary.append(f"--- Facet: {facet_col} = {category} ---\n"
+                                             f"F-statistic: _, p-value: {p_value:.4f}\n") # F-statは省略
 
-                        # p値が有意水準以下で、かつ3群以上の場合のみ多重比較
-                        if p_value < 0.05 and len(samples) >= 3:
+                        if p_value < 0.05 and len(samples) >= 2:
                             selected_data_indices = current_facet_groups.isin(selected_groups)
                             all_data = subset_df.loc[selected_data_indices, value_col].dropna()
                             group_labels = current_facet_groups[selected_data_indices].dropna()
                             
                             tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
                             df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
+                            
+                            results_summary.append(str(tukey_result) + "\n")
 
                             for _, row in df_tukey.iterrows():
-                                simple_pair = (str(row['group1']), str(row['group2']))
-                                formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
-                                
-                                annotation = {
-                                    "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
-                                    "facet_col": facet_col, "facet_value": category,
-                                    "box_pair": formatted_pair, "p_value": row['p-adj']
-                                }
-                                if annotation not in self.main.statistical_annotations:
-                                    self.main.statistical_annotations.append(annotation)
+                                if row['p-adj'] < 0.05:
+                                    simple_pair = (str(row['group1']), str(row['group2']))
+                                    formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                                    
+                                    annotation = {
+                                        "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                                        "facet_col": facet_col, "facet_value": category,
+                                        "box_pair": formatted_pair, "p_value": row['p-adj']
+                                    }
+                                    if annotation not in self.main.statistical_annotations:
+                                        self.main.statistical_annotations.append(annotation)
                 
                 else: # ファセットなし
                     samples = [df.loc[effective_groups == g, value_col].dropna() for g in selected_groups]
@@ -453,40 +459,39 @@ class ActionHandler:
                         return
 
                     f_stat, p_value = f_oneway(*samples)
-                    
-                    result_text = f"One-way ANOVA Results\n======================\n\nF-statistic: {f_stat:.4f}\np-value: {p_value:.4f}\n\n"
+                    results_summary.append(f"F-statistic: {f_stat:.4f}\np-value: {p_value:.4f}\n")
 
-                    # 3群以上で有意差があった場合のみ多重比較
-                    if p_value < 0.05 and len(samples) >= 3:
+                    if p_value < 0.05 and len(samples) >= 2:
                         selected_data_indices = effective_groups.isin(selected_groups)
                         all_data = df.loc[selected_data_indices, value_col].dropna()
                         group_labels = effective_groups[selected_data_indices].dropna()
 
                         tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
                         df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
+                        results_summary.append("\nPost-hoc test (Tukey's HSD):\n" + str(tukey_result))
                         
                         for _, row in df_tukey.iterrows():
-                            simple_pair = (str(row['group1']), str(row['group2']))
-                            formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
-                            
-                            annotation = {
-                                "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
-                                "facet_col": None, "facet_value": None,
-                                "box_pair": formatted_pair, "p_value": row['p-adj']
-                            }
-                            if annotation not in self.main.statistical_annotations:
-                                self.main.statistical_annotations.append(annotation)
-                        
-                        result_text += "Post-hoc test (Tukey's HSD):\n" + str(tukey_result)
-                    
-                    self.show_results_dialog("ANOVA Result", result_text)
+                             if row['p-adj'] < 0.05:
+                                simple_pair = (str(row['group1']), str(row['group2']))
+                                formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                                
+                                annotation = {
+                                    "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                                    "facet_col": None, "facet_value": None,
+                                    "box_pair": formatted_pair, "p_value": row['p-adj']
+                                }
+                                if annotation not in self.main.statistical_annotations:
+                                    self.main.statistical_annotations.append(annotation)
+                
+                if results_summary:
+                    final_summary = "One-way ANOVA Results\n======================\n\n" + "\n".join(results_summary)
+                    self.show_results_dialog("ANOVA Result", final_summary)
 
                 self.main.graph_manager.update_graph()
 
         except Exception as e:
-            QMessageBox.critical(self.main, "Error", f"Failed to perform ANOVA: {e}")
             traceback.print_exc()
-            traceback.print_exc()
+            QMessageBox.critical(self.main, "Error", f"An unexpected error occurred in ANOVA:\n\n{e}")
 
     def perform_paired_t_test(self):
         """対応のあるt検定を実行する。"""
