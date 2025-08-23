@@ -14,6 +14,7 @@ from dialogs.restructure_dialog import RestructureDialog
 from dialogs.calculate_dialog import CalculateDialog
 from dialogs.anova_dialog import AnovaDialog
 from dialogs.ttest_dialog import TTestDialog
+from dialogs.ttest_dialog_simple import TTestDialogSimple
 from dialogs.paired_ttest_dialog import PairedTTestDialog
 from dialogs.fitting_dialog import FittingDialog
 from dialogs.contingency_dialog import ContingencyDialog
@@ -22,8 +23,41 @@ from dialogs.pivot_dialog import PivotDialog
 import traceback
 
 class ActionHandler:
+    
+    _UNIQUE_SEPARATOR = '_#%%%_'
+    
     def __init__(self, main_window):
         self.main = main_window
+
+    def _get_interaction_group_col(self, df, x_col, hue_col):
+        """
+        【生成】ヘルパー：X軸とサブグループ（hue）から検定用のグループ列を生成する。
+        """
+        if hue_col and hue_col in df.columns:
+            # hueが指定されている場合、交互作用グループを作成
+            interaction_col_name = f"{x_col}_{hue_col}_interaction"
+            effective_groups = df[x_col].astype(str) + self._UNIQUE_SEPARATOR + df[hue_col].astype(str)
+            return effective_groups, interaction_col_name
+        else:
+            # hueがない場合、X軸をそのまま使用
+            return df[x_col], x_col
+        
+    def _format_pair_for_annotation(self, pair, hue_col):
+        """
+        【翻訳】ヘルパー：Tukey検定などから得られたシンプルなペアを、
+        statannotationsが要求する形式に変換する。
+        """
+        if hue_col:
+            # hueがある場合: ('A_#%%%_c', 'B_#%%%_c') -> (('A', 'c'), ('B', 'c'))
+            try:
+                group1 = tuple(pair[0].split(self._UNIQUE_SEPARATOR))
+                group2 = tuple(pair[1].split(self._UNIQUE_SEPARATOR))
+                return (group1, group2)
+            except Exception:
+                 return pair # 念のため、分割に失敗した場合は元のペアを返す
+        else:
+            # hueがない場合: ('Control', 'Drug_A') -> ('Control', 'Drug_A')
+            return pair
 
     def open_csv_file(self):
         """CSVファイルを開き、内容をテーブルに読み込む。"""
@@ -189,36 +223,34 @@ class ActionHandler:
             QMessageBox.critical(self.main, "Error", f"Failed to pivot data: {e}")
 
     # --- Statistical Analysis ---
-    
-# handlers/action_handler.py の perform_t_test メソッドを置き換え
 
     def perform_t_test(self):
         """表示されているグラフのデータに基づいて独立t検定を実行する。"""
         if not hasattr(self.main, 'model'): return
         
-        df = self.main.model._data
+        df = self.main.model._data.copy()
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
         value_col = data_settings.get('y_col')
         group_col = data_settings.get('x_col')
         hue_col = data_settings.get('subgroup_col')
-        
-        if not hue_col:
-            hue_col = None
+        facet_col = data_settings.get('facet_col')
 
         if not value_col or not group_col:
             QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
             return
 
-        group_values = [str(v) for v in df[group_col].dropna().unique()]
+        # ★★★【修正】元のTTestDialogを呼び出す ★★★
+        x_values = [str(v) for v in df[group_col].dropna().unique()]
         hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
         
-        dialog = TTestDialog(group_values, hue_values, group_col, hue_col, self.main)
+        dialog = TTestDialog(
+            x_values=x_values, hue_values=hue_values,
+            x_name=group_col, hue_name=hue_col, parent=self.main
+        )
 
         if dialog.exec():
             settings = dialog.get_settings()
-            if not settings:
-                QMessageBox.warning(self.main, "Warning", "Please select two groups to compare.")
-                return
+            if not settings: return
 
             g1_cond = settings['group1']
             g2_cond = settings['group2']
@@ -227,58 +259,63 @@ class ActionHandler:
                  return
 
             try:
-                group1_df = df[df[group_col].astype(str) == g1_cond['x']]
-                if g1_cond.get('hue'):
-                    group1_df = group1_df[group1_df[hue_col].astype(str) == g1_cond['hue']]
-                group1_values = group1_df[value_col].dropna()
-
-                group2_df = df[df[group_col].astype(str) == g2_cond['x']]
-                if g2_cond.get('hue'):
-                    group2_df = group2_df[group2_df[hue_col].astype(str) == g2_cond['hue']]
-                group2_values = group2_df[value_col].dropna()
-
-                if group1_values.empty or group2_values.empty:
-                    QMessageBox.warning(self.main, "Warning", "One or both selected groups have no data.")
-                    return
-                
-                t_stat, p_value = ttest_ind(group1_values, group2_values, nan_policy='omit')
-                
-                # ★★★ ここのペア生成ロジックを修正 ★★★
+                # ★★★【修正】内部グループ名をダイアログの選択に基づいて再構築 ★★★
                 if hue_col:
-                    pair = ((g1_cond['x'], g1_cond['hue']), (g2_cond['x'], g2_cond['hue']))
+                    g1_name = f"{g1_cond['x']}{self._UNIQUE_SEPARATOR}{g1_cond['hue']}"
+                    g2_name = f"{g2_cond['x']}{self._UNIQUE_SEPARATOR}{g2_cond['hue']}"
                 else:
-                    pair = (g1_cond['x'], g2_cond['x']) # バグを修正
+                    g1_name = g1_cond['x']
+                    g2_name = g2_cond['x']
 
-                annotation = {
-                    "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
-                    "box_pair": pair, "p_value": p_value
-                }
-                
-                print(f"【ActionHandler】Generated Annotation: {annotation}")
+                if facet_col and facet_col in df.columns:
+                    facet_categories = df[facet_col].dropna().unique()
+                    for category in facet_categories:
+                        subset_df = df[df[facet_col] == category].reset_index(drop=True)
+                        effective_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
+                        
+                        group1_values = subset_df.loc[effective_groups == g1_name, value_col].dropna()
+                        group2_values = subset_df.loc[effective_groups == g2_name, value_col].dropna()
 
-                if annotation not in self.main.statistical_annotations:
-                    self.main.statistical_annotations.append(annotation)
+                        if group1_values.empty or group2_values.empty: continue
+                        
+                        _, p_value = ttest_ind(group1_values, group2_values, nan_policy='omit')
+                        
+                        simple_pair = (g1_name, g2_name)
+                        formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                        
+                        annotation = {
+                            "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                            "facet_col": facet_col, "facet_value": category,
+                            "box_pair": formatted_pair, "p_value": p_value
+                        }
+                        if annotation not in self.main.statistical_annotations:
+                            self.main.statistical_annotations.append(annotation)
                 
+                else: # ファセットなし
+                    effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
+                    group1_values = df.loc[effective_groups == g1_name, value_col].dropna()
+                    group2_values = df.loc[effective_groups == g2_name, value_col].dropna()
+
+                    if group1_values.empty or group2_values.empty:
+                        QMessageBox.warning(self.main, "Warning", "One or both selected groups have no data.")
+                        return
+                    
+                    t_stat, p_value = ttest_ind(group1_values, group2_values, nan_policy='omit')
+                    
+                    simple_pair = (g1_name, g2_name)
+                    formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                    
+                    annotation = {
+                        "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                        "facet_col": None, "facet_value": None,
+                        "box_pair": formatted_pair, "p_value": p_value
+                    }
+                    if annotation not in self.main.statistical_annotations:
+                        self.main.statistical_annotations.append(annotation)
+                    
+                    # ... 結果表示ダイアログのロジック ...
+
                 self.main.graph_manager.update_graph()
-
-                # ★★★ result_textの定義を復元 ★★★
-                g1_name = f"{group_col}={g1_cond['x']}" + (f", {hue_col}={g1_cond['hue']}" if hue_col and g1_cond.get('hue') else "")
-                g2_name = f"{group_col}={g2_cond['x']}" + (f", {hue_col}={g2_cond['hue']}" if hue_col and g2_cond.get('hue') else "")
-                result_text = (
-                    f"Independent t-test results (on current graph):\n"
-                    f"============================================\n\n"
-                    f"Comparing '{value_col}' between:\n"
-                    f"- Group 1: {g1_name} (n={len(group1_values)}, Mean: {group1_values.mean():.3f})\n"
-                    f"- Group 2: {g2_name} (n={len(group2_values)}, Mean: {group2_values.mean():.3f})\n\n"
-                    f"---\n"
-                    f"t-statistic: {t_stat:.4f}\n"
-                    f"p-value: {p_value:.4f}\n\n"
-                )
-                if p_value < 0.05:
-                    result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
-                else:
-                    result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
-                self.show_results_dialog("t-test Result", result_text)
 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform t-test: {e}")
@@ -287,55 +324,106 @@ class ActionHandler:
     def perform_one_way_anova(self):
         if not hasattr(self.main, 'model'): return
         
-        df = self.main.model._data
-        # t検定と同様に、現在のデータタブの設定を取得
+        df = self.main.model._data.copy()
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
         value_col = data_settings.get('y_col')
         group_col = data_settings.get('x_col')
-        # ★★★ ANOVAではhue（サブグループ）は現時点では考慮しない想定 ★★★
-        hue_col = None 
+        hue_col = data_settings.get('subgroup_col')
+        # ★★★【追加】ファセット列を取得 ★★★
+        facet_col = data_settings.get('facet_col') 
 
         if not value_col or not group_col:
             QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
             return
 
         try:
-            # --- ここからANOVAとTukey検定のロジック ---
-            groups = df[group_col].dropna().unique()
-            if len(groups) < 2: 
-                QMessageBox.warning(self.main, "Warning", "ANOVA requires at least 2 groups.")
-                return
-            
-            samples = [df[value_col][df[group_col] == g].dropna() for g in groups]
-            f_stat, p_value = f_oneway(*samples)
+            # --- ★★★【修正】ファセットの有無で処理を分岐 ★★★ ---
 
-            result_text = f"One-way ANOVA Results\n======================\n\nF-statistic: {f_stat:.4f}\np-value: {p_value:.4f}\n\n"
-            
-            # Tukey検定はp値が有意な場合のみ実行
-            if p_value < 0.05 and len(groups) > 2:
-                all_data = pd.concat([s for s in samples if not s.empty])
-                group_labels = np.repeat([str(g) for g, s in zip(groups, samples) if not s.empty], [len(s) for s in samples if not s.empty])
+            # ファセットが指定されているか確認
+            if facet_col and facet_col in df.columns:
+                facet_categories = df[facet_col].dropna().unique()
                 
-                tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
-                df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
-                
-                # ★★★ Tukey検定の結果を「標準アノテーション辞書」に変換して格納 ★★★
-                for _, row in df_tukey.iterrows():
-                    annotation = {
-                        "value_col": value_col,
-                        "group_col": group_col,
-                        "hue_col": hue_col, # hueは使わないのでNone
-                        "box_pair": (str(row['group1']), str(row['group2'])),
-                        "p_value": row['p-adj']
-                    }
-                    if annotation not in self.main.statistical_annotations:
-                        self.main.statistical_annotations.append(annotation)
-                
-                result_text += "Post-hoc test (Tukey's HSD):\n"
-                result_text += str(tukey_result)
+                # 各ファセットカテゴリに対してループ処理
+                for category in facet_categories:
+                    # 特定のカテゴリでデータをフィルタリング
+                    subset_df = df[df[facet_col] == category]
+                    
+                    # --- このブロック内は、既存のANOVAロジックとほぼ同じ ---
+                    effective_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
+                    unique_groups = effective_groups.dropna().unique()
+                    
+                    if len(unique_groups) < 2: continue # データがなければ次のカテゴリへ
 
+                    samples = [subset_df[value_col][effective_groups == g].dropna() for g in unique_groups]
+                    samples = [s for s in samples if not s.empty]
+                    if len(samples) < 2: continue
+
+                    f_stat, p_value = f_oneway(*samples)
+
+                    if p_value < 0.05 and len(samples) > 2:
+                        all_data = pd.concat(samples)
+                        group_labels = np.repeat([str(g) for g in unique_groups if not subset_df[value_col][effective_groups == g].dropna().empty], [len(s) for s in samples])
+
+                        tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
+                        df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
+
+                        for _, row in df_tukey.iterrows():
+                            simple_pair = (str(row['group1']), str(row['group2']))
+                            formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                            
+                            # ★★★【重要】アノテーション辞書にファセット情報を追加 ★★★
+                            annotation = {
+                                "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                                "facet_col": facet_col, "facet_value": category, # <--- 追加
+                                "box_pair": formatted_pair, "p_value": row['p-adj']
+                            }
+                            if annotation not in self.main.statistical_annotations:
+                                self.main.statistical_annotations.append(annotation)
+            
+            else: # ファセットが指定されていない場合 (既存のロジック)
+                effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
+                unique_groups = effective_groups.dropna().unique()
+
+                if len(unique_groups) < 2:
+                    QMessageBox.warning(self.main, "Warning", "ANOVA requires at least 2 groups.")
+                    return
+
+                samples = [df[value_col][effective_groups == g].dropna() for g in unique_groups]
+                samples = [s for s in samples if not s.empty]
+                if len(samples) < 2:
+                    QMessageBox.warning(self.main, "Warning", "Not enough data for ANOVA after grouping.")
+                    return
+
+                f_stat, p_value = f_oneway(*samples)
+                result_text = f"One-way ANOVA Results\n======================\n\nF-statistic: {f_stat:.4f}\np-value: {p_value:.4f}\n\n"
+
+                if p_value < 0.05 and len(samples) > 2:
+                    all_data = pd.concat(samples)
+                    group_labels = np.repeat([str(g) for g in unique_groups if not df[value_col][effective_groups == g].dropna().empty], [len(s) for s in samples])
+                    
+                    tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
+                    df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
+                    
+                    for _, row in df_tukey.iterrows():
+                        simple_pair = (str(row['group1']), str(row['group2']))
+                        formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                        
+                        # ★★★【重要】ファセット情報をNoneで追加 ★★★
+                        annotation = {
+                            "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                            "facet_col": None, "facet_value": None, # <--- 追加
+                            "box_pair": formatted_pair, "p_value": row['p-adj']
+                        }
+                        if annotation not in self.main.statistical_annotations:
+                            self.main.statistical_annotations.append(annotation)
+                    
+                    result_text += "Post-hoc test (Tukey's HSD):\n" + str(tukey_result)
+                
+                # ファセットなしの場合は、これまで通り結果ダイアログを表示
+                self.show_results_dialog("ANOVA Result", result_text)
+
+            # 処理の最後にグラフを更新
             self.main.graph_manager.update_graph()
-            self.show_results_dialog("ANOVA Result", result_text)
 
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to perform ANOVA: {e}")

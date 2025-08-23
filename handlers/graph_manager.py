@@ -52,9 +52,6 @@ class GraphManager:
         if not facet_col: facet_col = None
         if not facet_row: facet_row = None
         
-        if current_x in df.columns:
-            df[current_x] = df[current_x].astype(str)
-        
         if subgroup_col and subgroup_col in df.columns:
             df[subgroup_col] = df[subgroup_col].astype(str)
 
@@ -65,7 +62,7 @@ class GraphManager:
             plot_kwargs['edgecolor'] = properties.get('bar_edgecolor', 'black')
             plot_kwargs['linewidth'] = properties.get('bar_edgewidth', 1.0)
             plot_kwargs['capsize'] = properties.get('capsize', 4) * 0.01
-            plot_kwargs['errwidth'] = properties.get('bar_edgewidth', 1.0)
+            plot_kwargs['err_kws'] = {'linewidth': properties.get('bar_edgewidth', 1.0)}
         elif plot_kind == 'strip':
             plot_kwargs['marker'] = properties.get('marker_style', 'o')
             plot_kwargs['edgecolor'] = properties.get('marker_edgecolor', 'black')
@@ -79,54 +76,72 @@ class GraphManager:
             plot_kwargs['color'] = properties.get('single_color')
 
         try:
+            # ★★★【修正】sharey=True を追加 ★★★
             g = sns.catplot(
                 data=df, x=current_x, y=current_y, hue=subgroup_col,
                 col=facet_col, row=facet_row, kind=plot_kind,
-                height=4, aspect=1.2, sharex=False, sharey=False,
+                height=4, aspect=1.2, sharex=False, sharey=True, # <--- 修正箇所
                 **plot_kwargs
             )
 
             self.apply_annotations(g, df, current_y, current_x, subgroup_col)
-            return g.fig
+            self.replace_canvas(g.fig)
+            self.update_graph_properties(g.fig, properties)
 
         except Exception as e:
             print(f"Graph drawing error: {e}")
             traceback.print_exc()
-            return None
     
     def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
         """グラフに統計アノテーションを適用する"""
         
-        print(f"【GraphManager】Applying annotations. Current graph: Y={current_y}, X={current_x}, Hue={subgroup_col}")
+        # ★★★【追加】現在のファセット列も取得 ★★★
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        facet_col = data_settings.get('facet_col')
+
+        print(f"【GraphManager】Applying annotations. Graph: Y={current_y}, X={current_x}, Hue={subgroup_col}, Facet={facet_col}")
         print(f"【GraphManager】All available annotations: {self.main.statistical_annotations}")
 
-        # ★★★ ここで現在描画中のグラフに合致するアノテーションのみをフィルタリング ★★★
+        # 現在のグラフ描画コンテキストに合致するアノテーションを全てフィルタリング
         current_annotations = [
             ann for ann in self.main.statistical_annotations 
             if ann.get('value_col') == current_y and 
                ann.get('group_col') == current_x and
-               ann.get('hue_col') == subgroup_col # hueが無い場合は両方Noneになるので正しく機能する
+               ann.get('hue_col') == subgroup_col and
+               ann.get('facet_col') == (facet_col if facet_col and facet_col in df.columns else None)
         ]
         
         if not current_annotations:
             return
 
-        box_pairs = [ann['box_pair'] for ann in current_annotations]
-        p_values = [ann['p_value'] for ann in current_annotations]
-
-        if not box_pairs:
-            return
-
-        print(f"【GraphManager】Filtered annotations for this graph: box_pairs={box_pairs}, p_values={p_values}")
-            
+        # --- ★★★【修正】ここからファセットごとにアノテーションを振り分けるロジック ★★★ ---
         try:
-            for ax_facet in g.axes.flat:
-                # 渡す引数を現在のグラフの軸に合わせる
+            # g.axes_dictはファセットのカテゴリ名をキー、Axesオブジェクトを値とする辞書
+            for facet_value, ax_facet in g.axes_dict.items():
+                
+                # このファセット（サブプロット）に属するアノテーションだけをさらに絞り込む
+                annotations_for_this_facet = [
+                    ann for ann in current_annotations
+                    if ann.get('facet_value') == facet_value
+                ]
+
+                if not annotations_for_this_facet:
+                    continue # このファセット用のアノテーションがなければ次へ
+
+                box_pairs = [ann['box_pair'] for ann in annotations_for_this_facet]
+                p_values = [ann['p_value'] for ann in annotations_for_this_facet]
+
+                if not box_pairs:
+                    continue
+
+                print(f"【GraphManager】Annotating Facet '{facet_value}': pairs={box_pairs}")
+                
                 annotator = Annotator(ax_facet, box_pairs, data=df, x=current_x, y=current_y, hue=subgroup_col)
                 pvalue_thresholds = [[1e-4, "****"], [1e-3, "***"], [1e-2, "**"], [0.05, "*"], [1.0, "n.s."]]
                 annotator.configure(text_format='star', loc='inside', verbose=0, pvalue_thresholds=pvalue_thresholds)
                 annotator.set_pvalues(p_values)
                 annotator.annotate()
+
         except Exception as e:
             print(f"Annotation Error during plotting: {e}")
             traceback.print_exc()
