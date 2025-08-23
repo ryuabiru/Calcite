@@ -6,8 +6,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal
 from functools import partial
-import seaborn as sns # ★★★ seabornをインポート ★★★
-import itertools # ★★★ itertoolsをインポート ★★★
+import seaborn as sns
+import itertools
 
 class FormatTab(QWidget):
     """フォーマット設定タブのUIとロジック"""
@@ -35,8 +35,30 @@ class FormatTab(QWidget):
         layout.addRow(self.spines_check)
         layout.addRow(QLabel("---"))
 
-        self.scatter_overlay_check = QCheckBox()
-        layout.addRow(QLabel("Overlay Individual Points:"), self.scatter_overlay_check)
+        layout.addRow(QLabel("<b>Overlays</b>"))
+        self.scatter_overlay_check = QCheckBox("Show individual points (on Bar/Box/Violin)")
+        layout.addRow(self.scatter_overlay_check)
+
+        layout.addRow(QLabel("---"))
+        
+        # ★★★ ここから追加 ★★★
+        layout.addRow(QLabel("<b>Legend</b>"))
+        self.legend_pos_combo = QComboBox()
+        positions = {
+            "Automatic": "best",
+            "Upper Right": "upper right",
+            "Upper Left": "upper left",
+            "Lower Right": "lower right",
+            "Lower Left": "lower left",
+            "Outside Right": "outside"
+        }
+        for name, key in positions.items():
+            self.legend_pos_combo.addItem(name, key)
+        layout.addRow(QLabel("Position:"), self.legend_pos_combo)
+        layout.addRow(QLabel("---"))
+        # ★★★ ここまで ★★★
+
+        layout.addRow(QLabel("<b>Marker Settings (for Scatter/Overlays)</b>"))
         self.marker_combo = QComboBox()
         markers = {'Circle': 'o', 'Square': 's', 'Triangle': '^', 'Diamond': 'D', 'None': 'None'}
         for name, style in markers.items():
@@ -92,14 +114,17 @@ class FormatTab(QWidget):
 
     def connect_signals(self):
         """ウィジェットの変更をpropertiesChangedシグナルに接続する"""
-        self.spines_check.stateChanged.connect(self.propertiesChanged.emit)
-        self.scatter_overlay_check.stateChanged.connect(self.propertiesChanged.emit)
-        self.marker_combo.currentIndexChanged.connect(self.propertiesChanged.emit)
-        self.marker_edgewidth_spin.valueChanged.connect(self.propertiesChanged.emit)
-        self.bar_edgewidth_spin.valueChanged.connect(self.propertiesChanged.emit)
-        self.capsize_spin.valueChanged.connect(self.propertiesChanged.emit)
-        self.linestyle_combo.currentIndexChanged.connect(self.propertiesChanged.emit)
-        self.linewidth_spin.valueChanged.connect(self.propertiesChanged.emit)
+        self.spines_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
+        self.scatter_overlay_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
+        
+        self.legend_pos_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit()) # ★★★ 追加 ★★★
+        self.marker_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
+        self.linestyle_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
+        
+        self.marker_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        self.bar_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        self.capsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        self.linewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
         
         self.single_color_button.clicked.connect(self.open_single_color_dialog)
         self.marker_edgecolor_button.clicked.connect(self.open_marker_edgecolor_dialog)
@@ -110,6 +135,7 @@ class FormatTab(QWidget):
         return {
             'hide_top_right_spines': self.spines_check.isChecked(),
             'scatter_overlay': self.scatter_overlay_check.isChecked(),
+            'legend_position': self.legend_pos_combo.currentData(), # ★★★ 追加 ★★★
             'marker_style': self.marker_combo.currentData(),
             'marker_edgecolor': self.current_marker_edgecolor,
             'marker_edgewidth': self.marker_edgewidth_spin.value(),
@@ -161,32 +187,24 @@ class FormatTab(QWidget):
         
         self.subgroup_widgets.clear()
         
-        # ★★★ ここから修正 ★★★
-        # カテゴリ数に応じてデフォルトのカラーパレットを生成
         if categories:
-            # seabornのデフォルトカラーパレットをカテゴリ数だけ取得
             default_colors = sns.color_palette(n_colors=len(categories))
-            # 色を16進数コードに変換
             hex_colors = [f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}" for r, g, b in default_colors]
         else:
             hex_colors = []
 
-        # 新しいカテゴリにのみデフォルト色を割り当てる
         for i, category in enumerate(categories):
-            # カテゴリを文字列に変換して扱う
             str_category = str(category)
             if str_category not in self.subgroup_colors:
                 self.subgroup_colors[str_category] = hex_colors[i]
         
-        # 不要になったカテゴリをsubgroup_colorsから削除
         current_categories_str = {str(c) for c in categories}
         for key in list(self.subgroup_colors.keys()):
             if key not in current_categories_str:
                 del self.subgroup_colors[key]
-        # ★★★ ここまで修正 ★★★
 
         for category in categories:
-            str_category = str(category) # UIでも文字列として扱う
+            str_category = str(category)
             button = QPushButton("Select Color")
             if str_category in self.subgroup_colors:
                 button.setStyleSheet(f"background-color: {self.subgroup_colors[str_category]};")

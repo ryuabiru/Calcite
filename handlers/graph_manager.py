@@ -8,6 +8,7 @@ from statannotations.Annotator import Annotator
 import traceback
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from collections import OrderedDict
 
 class GraphManager:
     def __init__(self, main_window):
@@ -25,10 +26,8 @@ class GraphManager:
         fig = None
         if self.main.current_graph_type == 'paired_scatter':
             fig = self.draw_paired_scatter(df, properties, data_settings)
-        # ★★★ ここから追加 ★★★
         elif self.main.current_graph_type == 'histogram':
             fig = self.draw_histogram(df, properties, data_settings)
-        # ★★★ ここまで ★★★
         else:
             fig = self.draw_categorical_plot(df, properties, data_settings)
 
@@ -42,19 +41,15 @@ class GraphManager:
         
         if not current_x or not current_y:
             self.clear_canvas()
-            return None # ★ figオブジェクトを返すように変更
-        
-        # ★★★ ここからロジックを修正 ★★★
-        
-        # UIからの選択をそのまま保持する「描画用」の変数を定義
+            return None
+
         visual_hue_col = data_settings.get('subgroup_col')
         if not visual_hue_col: visual_hue_col = None
 
-        # 統計分析とアノテーションのマッチングに使う「分析用」の変数を定義
         analysis_hue_col = visual_hue_col
         if current_x == analysis_hue_col:
             analysis_hue_col = None
-
+        
         facet_col = data_settings.get('facet_col')
         facet_row = data_settings.get('facet_row')
 
@@ -83,9 +78,11 @@ class GraphManager:
             plot_kwargs['marker'] = properties.get('marker_style', 'o')
             plot_kwargs['edgecolor'] = properties.get('marker_edgecolor', 'black')
             plot_kwargs['linewidth'] = properties.get('marker_edgewidth', 1.0)
-
+        
+        palette = None
         if visual_hue_col:
-            plot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()}
+            palette = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()}
+            plot_kwargs['palette'] = palette
         else:
             plot_kwargs['color'] = properties.get('single_color')
 
@@ -97,38 +94,40 @@ class GraphManager:
                 **plot_kwargs
             )
             
-            # --- 個別データ点の重ね描き（オーバーレイ） ---
+            # --- 重ね描き処理 ---
             if properties.get('scatter_overlay', False) and plot_kind in ['bar', 'box', 'violin']:
+                hue_order = g.hue_names
                 g.map_dataframe(
                     sns.stripplot,
-                    x=current_x, 
-                    y=current_y, 
-                    hue=visual_hue_col,
-                    dodge=True,
-                    jitter=True,
-                    alpha=0.7,
+                    x=current_x, y=current_y, hue=visual_hue_col,
+                    dodge=True, jitter=True, alpha=0.7,
                     marker=properties.get('marker_style', 'o'),
                     edgecolor=properties.get('marker_edgecolor', 'black'),
                     linewidth=properties.get('marker_edgewidth', 1.0),
+                    palette=palette,
+                    hue_order=hue_order
                 )
-                if visual_hue_col:
-                    handles, labels = g.axes[0,0].get_legend_handles_labels()
-                    num_hues = len(df[visual_hue_col].unique())
-                    if g.legend: g.legend.remove()
-                    g.add_legend(handles[:num_hues], labels[:num_hues], title=visual_hue_col)
+            
+            # ★★★ ここからロジックを修正 ★★★
+            # --- 凡例の手動での再配置 ---
+            if visual_hue_col and g.legend:
+                legend_pos = properties.get('legend_position', 'best')
+                
+                # 'best' 以外が選択された場合のみ、凡例を移動させる
+                if legend_pos != 'best':
+                    if legend_pos == 'outside':
+                        sns.move_legend(g, "center left", bbox_to_anchor=(1.02, 0.5))
+                    else:
+                        sns.move_legend(g, legend_pos)
+            # ★★★ ここまで ★★★
 
-            # apply_annotationsには、分析用のanalysis_hue_colを渡す
             self.apply_annotations(g, df, current_y, current_x, analysis_hue_col)
-            return g.fig # ★ figオブジェクトを返す
+            return g.fig
 
         except Exception as e:
             print(f"Graph drawing error: {e}")
             traceback.print_exc()
-            return None # ★ エラー時はNoneを返す
-
-        except Exception as e:
-            print(f"Graph drawing error: {e}")
-            traceback.print_exc()
+            return None
     
     def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
         """グラフに統計アノテーションを適用する"""
@@ -150,12 +149,9 @@ class GraphManager:
             return
 
         try:
-            # --- ★★★【修正】seabornのFacetGridから直接サブプロットの情報を取得 ★★★
-            # g.facet_dataは (インデックス, データ) のタプルのリスト
             for i, (ax_index, subset_df) in enumerate(g.facet_data()):
-                ax_facet = g.axes.flat[i] # 対応するAxesオブジェクトを取得
+                ax_facet = g.axes.flat[i]
                 
-                # ファセットのカテゴリ値を取得
                 facet_value = None
                 if facet_col and g.col_names:
                     facet_value = g.col_names[i % len(g.col_names)]
@@ -174,7 +170,6 @@ class GraphManager:
                 if not box_pairs:
                     continue
                 
-                # subset_dfのX軸列を文字列に変換しておく
                 subset_df[current_x] = subset_df[current_x].astype(str)
 
                 print(f"【GraphManager】Annotating Facet '{facet_value}': pairs={box_pairs}")
@@ -221,19 +216,17 @@ class GraphManager:
         if not (col1 and col2 and col1 != col2):
             return None
 
-        # 新しいFigureとAxesをここで作成する
         fig = Figure(tight_layout=True)
         FigureCanvas(fig)
         ax = fig.add_subplot(111)
 
         try:
-            # 描画ロジック自体は _draw_paired_plot_seaborn を流用
             self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
-            return fig # ★ 完成したFigureオブジェクトを返す
+            return fig
 
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
-            return None # ★ エラー時はNoneを返す
+            return None
         
     def clear_canvas(self):
         if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:
@@ -288,10 +281,9 @@ class GraphManager:
             ax.plot(mean_df.index, mean_df.values,
                     color='red', marker='_', markersize=20, mew=2.5, linestyle='None', label='Mean')
 
-            ax.set_xticks([0, 1]) # X軸の目盛りの位置を明示的に指定
-            ax.set_xticklabels([label1, label2]) # それからラベルを設定
+            ax.set_xticks([0, 1])
+            ax.set_xticklabels([label1, label2])
             
-            # 凡例が空でない場合のみ表示するように修正
             handles, labels = ax.get_legend_handles_labels()
             if handles:
                 ax.legend(handles, labels)
@@ -300,7 +292,7 @@ class GraphManager:
             QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
             
     def draw_histogram(self, df, properties, data_settings):
-        value_col = data_settings.get('y_col') # TidyDataTabのY軸をValueとして使う
+        value_col = data_settings.get('y_col')
         if not value_col:
             return None
 
