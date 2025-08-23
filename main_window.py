@@ -137,15 +137,22 @@ class MainWindow(QMainWindow):
         
         paired_scatter_action = QAction("Paired Scatter", self)
         paired_scatter_action.setCheckable(True)
-        # ダイアログを呼び出す代わりに、直接グラフタイプを設定する
         paired_scatter_action.triggered.connect(lambda: self.set_graph_type('paired_scatter'))
         toolbar.addAction(paired_scatter_action); action_group.addAction(paired_scatter_action)
+
+        histogram_action = QAction("Histogram", self)
+        histogram_action.setCheckable(True)
+        histogram_action.triggered.connect(lambda: self.set_graph_type('histogram'))
+        toolbar.addAction(histogram_action); action_group.addAction(histogram_action)
 
     def set_graph_type(self, graph_type):
         self.current_graph_type = graph_type
         # DataTabにグラフタイプを伝達して、UIを切り替える
         self.properties_panel.data_tab.set_graph_type(graph_type)
         # TextTabのペアラベル入力欄の表示を切り替える
+        self.properties_panel.text_tab.update_paired_labels_visibility(graph_type == 'paired_scatter')
+        self.graph_manager.update_graph()
+        
         self.properties_panel.text_tab.update_paired_labels_visibility(graph_type == 'paired_scatter')
         self.graph_manager.update_graph()
 

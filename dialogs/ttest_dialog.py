@@ -1,75 +1,82 @@
-# ttest_dialog.py
+# dialogs/ttest_dialog.py
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QFormLayout, QLabel, QComboBox, 
-    QDialogButtonBox, QListWidget, QAbstractItemView
+    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QComboBox, 
+    QDialogButtonBox, QWidget
 )
 
 class TTestDialog(QDialog):
     """
-    独立t検定のための設定を行うダイアログ（Tidy Data形式対応）。
-    値の列、グループ分けの列、そして比較する2つのグループを選択させる。
+    X軸とサブグループ(hue)の組み合わせで2つのグループを選択し、
+    独立t検定を行うためのダイアログ。
     """
-    def __init__(self, columns, df, parent=None):
+    def __init__(self, x_values, hue_values, x_name, hue_name, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Independent t-test")
-        self.df = df
-        self.columns = columns
-
-        main_layout = QVBoxLayout(self)
-        form_layout = QFormLayout()
-
-        # --- ウィジェットの作成 ---
-        self.value_column_combo = QComboBox()
-        self.group_column_combo = QComboBox()
-        self.group1_list = QListWidget()
-        self.group2_list = QListWidget()
-
-        self.value_column_combo.addItems(self.columns)
-        self.group_column_combo.addItems(self.columns)
-
-        # グループ選択リストは単一選択に
-        self.group1_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.group2_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-
-        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-
-        # --- レイアウトの組み立て ---
-        form_layout.addRow(QLabel("Value Column (Dependent Variable):"), self.value_column_combo)
-        form_layout.addRow(QLabel("Group Column (Independent Variable):"), self.group_column_combo)
-        form_layout.addRow(QLabel("Select Group 1:"), self.group1_list)
-        form_layout.addRow(QLabel("Select Group 2:"), self.group2_list)
         
-        main_layout.addLayout(form_layout)
-        main_layout.addWidget(button_box)
+        self.x_name = x_name
+        self.hue_name = hue_name
 
-        # --- シグナルの接続 ---
-        self.group_column_combo.currentTextChanged.connect(self.update_group_lists)
+        # ★★★ ここからレイアウト構造を修正 ★★★
+        # 全体を縦に並べるメインのレイアウト
+        main_layout = QVBoxLayout(self)
+
+        # グループ選択部分を横に並べるためのレイアウト
+        group_selectors_layout = QHBoxLayout()
+
+        # グループ1とグループ2の選択UIを作成
+        self.group1_widget = self._create_group_selector("Group 1", x_values, hue_values)
+        self.group2_widget = self._create_group_selector("Group 2", x_values, hue_values)
+        
+        group_selectors_layout.addWidget(self.group1_widget)
+        group_selectors_layout.addWidget(self.group2_widget)
+        
+        # メインレイアウトにグループ選択部分を追加
+        main_layout.addLayout(group_selectors_layout)
+        
+        # OK/Cancelボタンを追加
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        main_layout.addWidget(button_box)
+        # ★★★ ここまで ★★★
+
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
-        
-        # 初期状態を更新
-        self.update_group_lists(self.group_column_combo.currentText())
 
-    def update_group_lists(self, group_col):
-        """グループ列が選択されたら、その列のユニークな値をリストに表示する"""
-        self.group1_list.clear()
-        self.group2_list.clear()
-        if group_col and not self.df.empty:
-            try:
-                unique_groups = sorted(self.df[group_col].unique().astype(str))
-                self.group1_list.addItems(unique_groups)
-                self.group2_list.addItems(unique_groups)
-            except KeyError:
-                pass # 列が存在しない場合は何もしない
+    def _create_group_selector(self, title, x_values, hue_values):
+        """片方のグループを選択するためのUIウィジェットを作成する"""
+        widget = QWidget()
+        layout = QFormLayout(widget)
+        
+        layout.addRow(QLabel(f"<b>{title}</b>"))
+
+        x_combo = QComboBox()
+        x_combo.addItems(x_values)
+        layout.addRow(QLabel(f"{self.x_name}:"), x_combo)
+        
+        # サブグループ(hue)が存在する場合のみ、その選択肢を追加
+        if self.hue_name and hue_values:
+            hue_combo = QComboBox()
+            hue_combo.addItems(hue_values)
+            layout.addRow(QLabel(f"{self.hue_name}:"), hue_combo)
+        
+        return widget
 
     def get_settings(self):
-        """ユーザーが選択した設定を取得する"""
-        g1_items = self.group1_list.selectedItems()
-        g2_items = self.group2_list.selectedItems()
-        return {
-            "value_col": self.value_column_combo.currentText(),
-            "group_col": self.group_column_combo.currentText(),
-            "group1": g1_items[0].text() if g1_items else None,
-            "group2": g2_items[0].text() if g2_items else None,
-        }
+        """ユーザーが選択した2つのグループの条件を返す"""
+        
+        def get_widget_values(group_widget):
+            """指定されたウィジェットから選択値を取得するヘルパー関数"""
+            combos = group_widget.findChildren(QComboBox)
+            x_val = combos[0].currentText()
+            hue_val = combos[1].currentText() if len(combos) > 1 else None
+            return {"x": x_val, "hue": hue_val}
+
+        g1_settings = get_widget_values(self.group1_widget)
+        g2_settings = get_widget_values(self.group2_widget)
+        
+        if not g1_settings["x"] or not g2_settings["x"]:
+            return None
+        if self.hue_name and (not g1_settings["hue"] or not g2_settings["hue"]):
+            return None
+
+        return {"group1": g1_settings, "group2": g2_settings}

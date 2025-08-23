@@ -19,9 +19,44 @@ from dialogs.fitting_dialog import FittingDialog
 from dialogs.contingency_dialog import ContingencyDialog
 from dialogs.pivot_dialog import PivotDialog
 
+import traceback
+
 class ActionHandler:
+    
+    _UNIQUE_SEPARATOR = '_#%%%_'
+    
     def __init__(self, main_window):
         self.main = main_window
+
+    def _get_interaction_group_col(self, df, x_col, hue_col):
+        """
+        【生成】ヘルパー：X軸とサブグループ（hue）から検定用のグループ列を生成する。
+        """
+        if hue_col and hue_col in df.columns:
+            interaction_col_name = f"{x_col}_{hue_col}_interaction"
+            # ★★★【修正】astype(str)を追加して、常に文字列で結合する ★★★
+            effective_groups = df[x_col].astype(str) + self._UNIQUE_SEPARATOR + df[hue_col].astype(str)
+            return effective_groups, interaction_col_name
+        else:
+            # ★★★【修正】astype(str)を追加して、常に文字列として返す ★★★
+            return df[x_col].astype(str), x_col
+        
+    def _format_pair_for_annotation(self, pair, hue_col):
+        """
+        【翻訳】ヘルパー：Tukey検定などから得られたシンプルなペアを、
+        statannotationsが要求する形式に変換する。
+        """
+        if hue_col:
+            # hueがある場合: ('A_#%%%_c', 'B_#%%%_c') -> (('A', 'c'), ('B', 'c'))
+            try:
+                group1 = tuple(pair[0].split(self._UNIQUE_SEPARATOR))
+                group2 = tuple(pair[1].split(self._UNIQUE_SEPARATOR))
+                return (group1, group2)
+            except Exception:
+                 return pair # 念のため、分割に失敗した場合は元のペアを返す
+        else:
+            # hueがない場合: ('Control', 'Drug_A') -> ('Control', 'Drug_A')
+            return pair
 
     def open_csv_file(self):
         """CSVファイルを開き、内容をテーブルに読み込む。"""
@@ -187,63 +222,242 @@ class ActionHandler:
             QMessageBox.critical(self.main, "Error", f"Failed to pivot data: {e}")
 
     # --- Statistical Analysis ---
-    
+
     def perform_t_test(self):
-        """独立t検定を実行する。"""
+        """表示されているグラフのデータに基づいて独立t検定を実行する。"""
         if not hasattr(self.main, 'model'): return
-        df = self.main.model._data
-        dialog = TTestDialog(df.columns, df, self.main)
+        
+        df = self.main.model._data.copy()
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        value_col = data_settings.get('y_col')
+        group_col = data_settings.get('x_col')
+        
+        hue_col = data_settings.get('subgroup_col')
+        if not hue_col: hue_col = None
+        
+        if group_col == hue_col:
+            hue_col = None
+
+        facet_col = data_settings.get('facet_col')
+
+        if not value_col or not group_col:
+            QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+            return
+
+        x_values = [str(v) for v in df[group_col].dropna().unique()]
+        hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
+        
+        dialog = TTestDialog(
+            x_values=x_values, hue_values=hue_values,
+            x_name=group_col, hue_name=hue_col, parent=self.main
+        )
 
         if dialog.exec():
             settings = dialog.get_settings()
-            value_col = settings['value_col']
-            group_col = settings['group_col']
-            group1_name = settings['group1']
-            group2_name = settings['group2']
+            if not settings: return
 
-            if not all([value_col, group_col, group1_name, group2_name]):
-                QMessageBox.warning(self.main, "Warning", "Please select all fields.")
-                return
-            if value_col == group_col:
-                QMessageBox.warning(self.main, "Warning", "Value and group columns cannot be the same.")
-                return
-            if group1_name == group2_name:
-                QMessageBox.warning(self.main, "Warning", "Please select two different groups.")
-                return
+            g1_cond = settings['group1']
+            g2_cond = settings['group2']
+            if g1_cond == g2_cond:
+                 QMessageBox.warning(self.main, "Warning", "Please select two different groups.")
+                 return
+
+            # --- ★★★ PRINTデバッグ (1) ★★★ ---
+            print("--- TTestDialog Selection ---")
+            print(f"Group 1 Condition: {g1_cond}")
+            print(f"Group 2 Condition: {g2_cond}")
+            # --- デバッグここまで ---
 
             try:
-                group1_data = df[df[group_col] == group1_name][value_col].dropna()
-                group2_data = df[df[group_col] == group2_name][value_col].dropna()
-
-                if group1_data.empty or group2_data.empty:
-                    QMessageBox.warning(self.main, "Warning", "One or both selected groups have no data.")
-                    return
-
-                t_stat, p_value = ttest_ind(group1_data, group2_data)
-
-                annotation = {"type": "ttest", "p_value": p_value, "group_col": group_col, "value_col": value_col, "groups": [group1_name, group2_name]}
-                self.main.statistical_annotations.append(annotation)
-                self.main.graph_manager.update_graph()
-
-                result_text = (
-                    f"Independent t-test results:\n"
-                    f"===========================\n\n"
-                    f"Comparing '{value_col}' between:\n"
-                    f"- Group 1: '{group1_name}' (Mean: {group1_data.mean():.3f})\n"
-                    f"- Group 2: '{group2_name}' (Mean: {group2_data.mean():.3f})\n\n"
-                    f"---\n"
-                    f"t-statistic: {t_stat:.4f}\n"
-                    f"p-value: {p_value:.4f}\n\n"
-                )
-                if p_value < 0.05:
-                    result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
+                if hue_col:
+                    g1_name = f"{g1_cond['x']}{self._UNIQUE_SEPARATOR}{g1_cond['hue']}"
+                    g2_name = f"{g2_cond['x']}{self._UNIQUE_SEPARATOR}{g2_cond['hue']}"
                 else:
-                    result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
-                self.show_results_dialog("t-test Result", result_text)
+                    g1_name = g1_cond['x']
+                    g2_name = g2_cond['x']
+
+                if facet_col and facet_col in df.columns:
+                    facet_categories = df[facet_col].dropna().unique()
+                    
+                    for category in facet_categories:
+                        subset_df = df[df[facet_col] == category].reset_index(drop=True)
+                        effective_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
+                        
+                        # --- ★★★ PRINTデバッグ (2) ★★★ ---
+                        print(f"\n--- Debugging Facet Category: {category} ---")
+                        print(f"Internal group names to find: g1='{g1_name}', g2='{g2_name}'")
+                        print(f"Unique groups in this subset: {effective_groups.unique()}")
+                        # --- デバッグここまで ---
+
+                        group1_values = subset_df.loc[effective_groups == g1_name, value_col].dropna()
+                        group2_values = subset_df.loc[effective_groups == g2_name, value_col].dropna()
+
+                        if group1_values.empty or group2_values.empty:
+                            print(f"-> Skipping facet {category}: One or both groups have no data.")
+                            continue
+                        
+                        _, p_value = ttest_ind(group1_values, group2_values, nan_policy='omit')
+                        
+                        simple_pair = (g1_name, g2_name)
+                        formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                        
+                        annotation = {
+                            "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                            "facet_col": facet_col, "facet_value": category,
+                            "box_pair": formatted_pair, "p_value": p_value
+                        }
+                        if annotation not in self.main.statistical_annotations:
+                            self.main.statistical_annotations.append(annotation)
+                            # --- ★★★ PRINTデバッグ (3) ★★★ ---
+                            print(f"-> Annotation CREATED for facet {category}: {annotation}")
+                            # --- デバッグここまで ---
+                
+                else: # ファセットなし
+                    effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
+                    group1_values = df.loc[effective_groups == g1_name, value_col].dropna()
+                    group2_values = df.loc[effective_groups == g2_name, value_col].dropna()
+
+                    if group1_values.empty or group2_values.empty:
+                        QMessageBox.warning(self.main, "Warning", "One or both selected groups have no data.")
+                        return
+                    
+                    t_stat, p_value = ttest_ind(group1_values, group2_values, nan_policy='omit')
+                    
+                    simple_pair = (g1_name, g2_name)
+                    formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                    
+                    annotation = {
+                        "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                        "facet_col": None, "facet_value": None,
+                        "box_pair": formatted_pair, "p_value": p_value
+                    }
+                    if annotation not in self.main.statistical_annotations:
+                        self.main.statistical_annotations.append(annotation)
+                        # --- ★★★ PRINTデバッグ (3) ★★★ ---
+                        print(f"-> Annotation CREATED (no facet): {annotation}")
+                        # --- デバッグここまで ---
+                    
+                    # ... (結果表示ダイアログのロジック) ...
+
+                self.main.graph_manager.update_graph()
 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform t-test: {e}")
+                traceback.print_exc()
+
+    def perform_one_way_anova(self):
+        if not hasattr(self.main, 'model'): return
+        
+        df = self.main.model._data.copy()
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        value_col = data_settings.get('y_col')
+        group_col = data_settings.get('x_col')
+        
+        hue_col = data_settings.get('subgroup_col')
+        if not hue_col: hue_col = None
+
+        if group_col == hue_col:
+            hue_col = None
+
+        facet_col = data_settings.get('facet_col') 
+
+        if not value_col or not group_col:
+            QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+            return
+
+        try:
+            # --- ★★★【修正】ファセットの有無で処理を分岐 ★★★ ---
+
+            # ファセットが指定されているか確認
+            if facet_col and facet_col in df.columns:
+                facet_categories = df[facet_col].dropna().unique()
                 
+                # 各ファセットカテゴリに対してループ処理
+                for category in facet_categories:
+                    # 特定のカテゴリでデータをフィルタリング
+                    subset_df = df[df[facet_col] == category]
+                    
+                    # --- このブロック内は、既存のANOVAロジックとほぼ同じ ---
+                    effective_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
+                    unique_groups = effective_groups.dropna().unique()
+                    
+                    if len(unique_groups) < 2: continue # データがなければ次のカテゴリへ
+
+                    samples = [subset_df[value_col][effective_groups == g].dropna() for g in unique_groups]
+                    samples = [s for s in samples if not s.empty]
+                    if len(samples) < 2: continue
+
+                    f_stat, p_value = f_oneway(*samples)
+
+                    if p_value < 0.05 and len(samples) > 2:
+                        all_data = pd.concat(samples)
+                        group_labels = np.repeat([str(g) for g in unique_groups if not subset_df[value_col][effective_groups == g].dropna().empty], [len(s) for s in samples])
+
+                        tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
+                        df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
+
+                        for _, row in df_tukey.iterrows():
+                            simple_pair = (str(row['group1']), str(row['group2']))
+                            formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                            
+                            # ★★★【重要】アノテーション辞書にファセット情報を追加 ★★★
+                            annotation = {
+                                "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                                "facet_col": facet_col, "facet_value": category, # <--- 追加
+                                "box_pair": formatted_pair, "p_value": row['p-adj']
+                            }
+                            if annotation not in self.main.statistical_annotations:
+                                self.main.statistical_annotations.append(annotation)
+            
+            else: # ファセットが指定されていない場合 (既存のロジック)
+                effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
+                unique_groups = effective_groups.dropna().unique()
+
+                if len(unique_groups) < 2:
+                    QMessageBox.warning(self.main, "Warning", "ANOVA requires at least 2 groups.")
+                    return
+
+                samples = [df[value_col][effective_groups == g].dropna() for g in unique_groups]
+                samples = [s for s in samples if not s.empty]
+                if len(samples) < 2:
+                    QMessageBox.warning(self.main, "Warning", "Not enough data for ANOVA after grouping.")
+                    return
+
+                f_stat, p_value = f_oneway(*samples)
+                result_text = f"One-way ANOVA Results\n======================\n\nF-statistic: {f_stat:.4f}\np-value: {p_value:.4f}\n\n"
+
+                if p_value < 0.05 and len(samples) > 2:
+                    all_data = pd.concat(samples)
+                    group_labels = np.repeat([str(g) for g in unique_groups if not df[value_col][effective_groups == g].dropna().empty], [len(s) for s in samples])
+                    
+                    tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
+                    df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
+                    
+                    for _, row in df_tukey.iterrows():
+                        simple_pair = (str(row['group1']), str(row['group2']))
+                        formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                        
+                        # ★★★【重要】ファセット情報をNoneで追加 ★★★
+                        annotation = {
+                            "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                            "facet_col": None, "facet_value": None, # <--- 追加
+                            "box_pair": formatted_pair, "p_value": row['p-adj']
+                        }
+                        if annotation not in self.main.statistical_annotations:
+                            self.main.statistical_annotations.append(annotation)
+                    
+                    result_text += "Post-hoc test (Tukey's HSD):\n" + str(tukey_result)
+                
+                # ファセットなしの場合は、これまで通り結果ダイアログを表示
+                self.show_results_dialog("ANOVA Result", result_text)
+
+            # 処理の最後にグラフを更新
+            self.main.graph_manager.update_graph()
+
+        except Exception as e:
+            QMessageBox.critical(self.main, "Error", f"Failed to perform ANOVA: {e}")
+            traceback.print_exc()
+
     def perform_paired_t_test(self):
         """対応のあるt検定を実行する。"""
         if not hasattr(self.main, 'model'): return
@@ -253,7 +467,9 @@ class ActionHandler:
         if dialog.exec():
             settings = dialog.get_settings()
             col1, col2 = settings['col1'], settings['col2']
-            if not col1 or not col2 or col1 == col2: return
+            if not col1 or not col2 or col1 == col2:
+                QMessageBox.warning(self.main, "Warning", "Please select two different columns.")
+                return
             try:
                 data1 = df[col1].dropna()
                 data2 = df[col2].dropna()
@@ -265,14 +481,9 @@ class ActionHandler:
                 t_stat, p_value = ttest_rel(data1[:min_len], data2[:min_len])
 
                 result_text = (
-                    f"Paired t-test results:\n"
-                    f"=====================\n\n"
-                    f"Comparing:\n"
-                    f"- Column 1: '{col1}' (Mean: {data1.mean():.3f})\n"
-                    f"- Column 2: '{col2}' (Mean: {data2.mean():.3f})\n\n"
-                    f"---\n"
-                    f"t-statistic: {t_stat:.4f}\n"
-                    f"p-value: {p_value:.4f}\n\n"
+                    f"Paired t-test results:\n=====================\n\nComparing:\n- Column 1: '{col1}' (Mean: {data1.mean():.3f})\n"
+                    f"- Column 2: '{col2}' (Mean: {data2.mean():.3f})\n\n---\n"
+                    f"t-statistic: {t_stat:.4f}\np-value: {p_value:.4f}\n\n"
                 )
                 if p_value < 0.05:
                     result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
@@ -282,46 +493,6 @@ class ActionHandler:
 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform paired t-test: {e}")
-
-    def perform_one_way_anova(self):
-        """一元配置分散分析を実行する。"""
-        if not hasattr(self.main, 'model'): return
-        df = self.main.model._data
-        dialog = AnovaDialog(df.columns, self.main)
-
-        if dialog.exec():
-            settings = dialog.get_settings()
-            value_col, group_col = settings['value_col'], settings['group_col']
-            if not value_col or not group_col or value_col == group_col: return
-            try:
-                groups = df[group_col].dropna().unique()
-                if len(groups) < 2: 
-                    QMessageBox.warning(self.main, "Warning", "ANOVA requires at least 2 groups.")
-                    return
-                
-                samples = [df[value_col][df[group_col] == g].dropna() for g in groups]
-                f_stat, p_value = f_oneway(*samples)
-
-                result_text = f"One-way ANOVA Results\n======================\n\nF-statistic: {f_stat:.4f}\np-value: {p_value:.4f}\n\n"
-                
-                if p_value < 0.05 and len(groups) > 2:
-                    all_data = pd.concat(samples)
-                    group_labels = np.repeat([str(g) for g in groups], [len(s) for s in samples])
-                    tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
-                    df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
-                    
-                    for _, row in df_tukey.iterrows():
-                        if row['p-adj'] < 0.05:
-                            annotation = {"type": "ttest", "p_value": row['p-adj'], "group_col": group_col, "value_col": value_col, "groups": [row['group1'], row['group2']]}
-                            self.main.statistical_annotations.append(annotation)
-                    
-                    result_text += "Post-hoc test (Tukey's HSD):\n"
-                    result_text += str(tukey_result)
-                    self.main.graph_manager.update_graph()
-                
-                self.show_results_dialog("ANOVA Result", result_text)
-            except Exception as e:
-                QMessageBox.critical(self.main, "Error", f"Failed to perform ANOVA: {e}")
 
     def perform_chi_squared_test(self):
         """カイ二乗検定を実行する。"""
@@ -337,16 +508,10 @@ class ActionHandler:
                 chi2, p, dof, expected = chi2_contingency(contingency_table)
                 expected_table = pd.DataFrame(expected, index=contingency_table.index, columns=contingency_table.columns)
 
-                result_text = "Chi-squared Test Results\n"
-                result_text += "==========================\n\n"
-                result_text += "Observed Frequencies:\n"
-                result_text += f"{contingency_table.to_string()}\n\n"
-                result_text += "Expected Frequencies:\n"
-                result_text += f"{expected_table.round(2).to_string()}\n\n"
-                result_text += "---\n"
-                result_text += f"Chi-squared statistic: {chi2:.4f}\n"
-                result_text += f"Degrees of Freedom: {dof}\n"
-                result_text += f"p-value: {p:.4f}\n\n"
+                result_text = "Chi-squared Test Results\n==========================\n\nObserved Frequencies:\n"
+                result_text += f"{contingency_table.to_string()}\n\nExpected Frequencies:\n"
+                result_text += f"{expected_table.round(2).to_string()}\n\n---\n"
+                result_text += f"Chi-squared statistic: {chi2:.4f}\nDegrees of Freedom: {dof}\np-value: {p:.4f}\n\n"
                 if p < 0.05:
                     result_text += f"Conclusion: There is a statistically significant association between '{rows_col}' and '{cols_col}' (p < 0.05)."
                 else:
@@ -382,7 +547,6 @@ class ActionHandler:
 
     def sigmoid_4pl(self, x, bottom, top, hill_slope, log_ec50):
         """4パラメータロジスティック（4PL）モデルの関数。xとlog_ec50はlog10スケール。"""
-        # 関数内部のlog10(ec50)をなくし、直接log_ec50を使用
         return bottom + (top - bottom) / (1 + 10**((log_ec50 - x) * hill_slope))
 
     def perform_fitting(self):
@@ -403,12 +567,10 @@ class ActionHandler:
                 fit_df['log_x'] = np.log10(fit_df[x_col])
                 x_data, y_data = fit_df['log_x'], fit_df[y_col]
 
-                # 初期推測値のEC50をlogスケールに変更
                 p0 = [y_data.min(), y_data.max(), 1.0, np.log10(np.median(fit_df[x_col]))]
                 
                 params, _ = curve_fit(self.sigmoid_4pl, x_data, y_data, p0=p0, maxfev=10000)
                 
-                # パラメータをアンパックし、log_ec50を線形スケールに戻す
                 bottom, top, hill_slope, log_ec50 = params
                 ec50 = 10**log_ec50
                 
@@ -419,7 +581,6 @@ class ActionHandler:
                 self.main.regression_line_params = None
                 self.main.graph_manager.update_graph()
 
-                # 結果表示では線形スケールのec50を使用
                 result_text = "Non-linear Regression Results (Sigmoidal 4PL)\n"
                 result_text += "==============================================\n\n"
                 result_text += f"Top: {top:.4f}\n"

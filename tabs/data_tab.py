@@ -37,8 +37,17 @@ class DataTab(QWidget):
 
     def set_graph_type(self, graph_type):
         """表示するUIをグラフタイプに応じて切り替える"""
-        if graph_type in ['scatter', 'bar']:
+        if graph_type in ['scatter', 'bar', 'histogram']: # histogramを追加
             self.stacked_widget.setCurrentWidget(self.tidy_tab)
+
+            if graph_type == 'histogram':
+                self.tidy_tab.y_axis_label.setText("Value Column:")
+                self.tidy_tab.x_axis_label.setVisible(False)
+                self.tidy_tab.x_axis_combo.setVisible(False)
+            else:
+                self.tidy_tab.y_axis_label.setText("Y-Axis (Value):")
+                self.tidy_tab.x_axis_label.setVisible(True)
+                self.tidy_tab.x_axis_combo.setVisible(True)
         elif graph_type == 'paired_scatter':
             self.stacked_widget.setCurrentWidget(self.paired_tab)
 

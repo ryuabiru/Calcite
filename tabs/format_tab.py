@@ -2,10 +2,12 @@
 
 from PySide6.QtWidgets import (
     QWidget, QFormLayout, QLabel, QComboBox, QPushButton, QColorDialog,
-    QScrollArea, QCheckBox, QSpinBox, QDoubleSpinBox, QVBoxLayout  # <- QVBoxLayoutを追加しました
+    QScrollArea, QCheckBox, QSpinBox, QDoubleSpinBox, QVBoxLayout
 )
 from PySide6.QtCore import Signal
 from functools import partial
+import seaborn as sns # ★★★ seabornをインポート ★★★
+import itertools # ★★★ itertoolsをインポート ★★★
 
 class FormatTab(QWidget):
     """フォーマット設定タブのUIとロジック"""
@@ -14,30 +16,25 @@ class FormatTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         
-        # 状態を保持する変数
         self.current_color = None
         self.current_marker_edgecolor = 'black'
         self.current_bar_edgecolor = 'black'
         self.subgroup_colors = {}
         self.subgroup_widgets = {}
 
-        # スクロール可能なエリアを作成
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        # スクロールエリアに配置するメインのウィジェット
         main_widget = QWidget()
         scroll_area.setWidget(main_widget)
         
         layout = QFormLayout(main_widget)
         
-        # --- Graph Style Settings ---
         layout.addRow(QLabel("<b>Graph Style Settings</b>"))
         self.spines_check = QCheckBox("Remove Top/Right Axis Lines")
         self.spines_check.setChecked(True)
         layout.addRow(self.spines_check)
         layout.addRow(QLabel("---"))
 
-        # --- Marker Settings ---
         self.scatter_overlay_check = QCheckBox()
         layout.addRow(QLabel("Overlay Individual Points:"), self.scatter_overlay_check)
         self.marker_combo = QComboBox()
@@ -55,7 +52,6 @@ class FormatTab(QWidget):
         layout.addRow(QLabel("Marker Edge Width:"), self.marker_edgewidth_spin)
         layout.addRow(QLabel("---"))
         
-        # --- Bar Chart Settings ---
         layout.addRow(QLabel("<b>Bar Chart Settings</b>"))
         self.bar_edgecolor_button = QPushButton("Select Color")
         self.bar_edgecolor_button.setStyleSheet(f"background-color: {self.current_bar_edgecolor};")
@@ -70,7 +66,6 @@ class FormatTab(QWidget):
         layout.addRow(QLabel("Error Bar Cap Size:"), self.capsize_spin)
         layout.addRow(QLabel("---"))
 
-        # --- Line Settings ---
         layout.addRow(QLabel("<b>Regression Line Settings</b>"))
         self.linestyle_combo = QComboBox()
         linestyles = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'Dash-Dot': '-.'}
@@ -83,7 +78,6 @@ class FormatTab(QWidget):
         layout.addRow(QLabel("Line Width:"), self.linewidth_spin)
         layout.addRow(QLabel("---"))
 
-        # --- Color Settings ---
         layout.addRow(QLabel("<b>Color Settings</b>"))
         self.single_color_button = QPushButton("Select Color")
         layout.addRow(QLabel("Graph Color (Single):"), self.single_color_button)
@@ -91,7 +85,6 @@ class FormatTab(QWidget):
         layout.addRow(QLabel("Graph Color (Sub-group):"))
         layout.addRow(self.subgroup_color_layout)
 
-        # 最終的なレイアウトとしてスクロールエリアを配置
         outer_layout = QVBoxLayout(self)
         outer_layout.addWidget(scroll_area)
         
@@ -160,19 +153,44 @@ class FormatTab(QWidget):
             self.propertiesChanged.emit()
 
     def update_subgroup_color_ui(self, categories):
-        """サブグループの色選択UIを動的に更新する"""
+        """サブグループの色選択UIを動的に更新し、デフォルト色を割り当てる"""
         while self.subgroup_color_layout.count():
             item = self.subgroup_color_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         
         self.subgroup_widgets.clear()
+        
+        # ★★★ ここから修正 ★★★
+        # カテゴリ数に応じてデフォルトのカラーパレットを生成
+        if categories:
+            # seabornのデフォルトカラーパレットをカテゴリ数だけ取得
+            default_colors = sns.color_palette(n_colors=len(categories))
+            # 色を16進数コードに変換
+            hex_colors = [f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}" for r, g, b in default_colors]
+        else:
+            hex_colors = []
+
+        # 新しいカテゴリにのみデフォルト色を割り当てる
+        for i, category in enumerate(categories):
+            # カテゴリを文字列に変換して扱う
+            str_category = str(category)
+            if str_category not in self.subgroup_colors:
+                self.subgroup_colors[str_category] = hex_colors[i]
+        
+        # 不要になったカテゴリをsubgroup_colorsから削除
+        current_categories_str = {str(c) for c in categories}
+        for key in list(self.subgroup_colors.keys()):
+            if key not in current_categories_str:
+                del self.subgroup_colors[key]
+        # ★★★ ここまで修正 ★★★
 
         for category in categories:
+            str_category = str(category) # UIでも文字列として扱う
             button = QPushButton("Select Color")
-            if category in self.subgroup_colors:
-                button.setStyleSheet(f"background-color: {self.subgroup_colors[category]};")
+            if str_category in self.subgroup_colors:
+                button.setStyleSheet(f"background-color: {self.subgroup_colors[str_category]};")
             
-            button.clicked.connect(partial(self.open_subgroup_color_dialog, category))
-            self.subgroup_color_layout.addRow(QLabel(f"{category}:"), button)
-            self.subgroup_widgets[category] = button
+            button.clicked.connect(partial(self.open_subgroup_color_dialog, str_category))
+            self.subgroup_color_layout.addRow(QLabel(f"{str_category}:"), button)
+            self.subgroup_widgets[str_category] = button
