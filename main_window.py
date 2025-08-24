@@ -142,14 +142,14 @@ class MainWindow(QMainWindow):
         bar_action.triggered.connect(lambda: self.set_graph_type('bar'))
         toolbar.addAction(bar_action); action_group.addAction(bar_action)
         
-        boxplot_action = QAction("Box Plot", self)
-        boxplot_action.setCheckable(True)
-        boxplot_action.triggered.connect(lambda: self.set_graph_type('boxplot'))
-        toolbar.addAction(boxplot_action); action_group.addAction(boxplot_action)
-        
+        box_action = QAction("Box Plot", self)
+        box_action.setCheckable(True)
+        box_action.triggered.connect(lambda: self.set_graph_type('boxplot'))
+        toolbar.addAction(box_action); action_group.addAction(box_action)
+
         violin_action = QAction("Violin Plot", self)
         violin_action.setCheckable(True)
-        violin_action.triggered.connect(lambda: self.set_graph_type('violin'))
+        violin_action.triggered.connect(lambda: self.set_graph_type('violinplot'))
         toolbar.addAction(violin_action); action_group.addAction(violin_action)
         
         paired_scatter_action = QAction("Paired Scatter", self)
