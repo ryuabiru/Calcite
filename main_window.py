@@ -41,22 +41,32 @@ class MainWindow(QMainWindow):
         self._connect_signals()
 
     def _setup_ui(self):
-        main_splitter = QSplitter(Qt.Orientation.Vertical)
-        top_splitter = QSplitter(Qt.Orientation.Horizontal)
-        
-        self.table_view = QTableView()
-        top_splitter.addWidget(self.table_view)
-        
-        self.graph_widget = GraphWidget()
-        top_splitter.addWidget(self.graph_widget)
-        
-        top_splitter.setSizes([550, 450])
-        self.properties_panel = PropertiesWidget()
-
-        main_splitter.addWidget(top_splitter)
-        main_splitter.addWidget(self.properties_panel)
-        main_splitter.setSizes([550, 250])
+        # ▼▼▼ ここからが修正箇所です ▼▼▼
+        # メインの分割を水平（左右）にする
+        main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(main_splitter)
+
+        # --- 左カラム ---
+        self.table_view = QTableView()
+        main_splitter.addWidget(self.table_view)
+
+        # --- 右カラム（ここは垂直に分割）---
+        right_splitter = QSplitter(Qt.Orientation.Vertical)
+        
+        self.properties_panel = PropertiesWidget()
+        right_splitter.addWidget(self.properties_panel)
+
+        self.graph_widget = GraphWidget()
+        right_splitter.addWidget(self.graph_widget)
+
+        # 右カラムの上下の比率を設定
+        right_splitter.setSizes([250, 400])
+
+        main_splitter.addWidget(right_splitter)
+
+        # 全体の左右の比率を設定
+        main_splitter.setSizes([350, 650])
+        # ▲▲▲ ここまで ▲▲▲
 
     def _connect_signals(self):
         self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
