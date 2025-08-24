@@ -43,7 +43,7 @@ class FormatTab(QWidget):
         layout.addRow(QLabel("<b>Legend</b>"))
         self.legend_pos_combo = QComboBox()
         positions = {
-            "Automatic (Upper Right)": "best", # デフォルトの挙動をこちらで制御
+            "Automatic (Outside Right)": "best", # デフォルトの挙動
             "Upper Right": "upper right",
             "Upper Left": "upper left",
             "Lower Right": "lower right",

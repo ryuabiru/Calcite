@@ -231,6 +231,7 @@ class GraphManager:
                             ax.spines['left'].set_bounds(bottom - extension, top)
 
             if visual_hue_col:
+                # (凡例のクリア処理などは変更なし)
                 if fig.legends:
                     fig.legends.clear()
                 for ax in axes.flat:
@@ -244,14 +245,18 @@ class GraphManager:
                 
                 handles = [mpatches.Patch(color=color, label=label) for label, color in subgroup_palette.items()]
                 
+                # ▼▼▼ ここからが修正箇所です ▼▼▼
                 kwargs = {}
                 if legend_pos == 'best':
-                    kwargs['loc'] = 'upper right'
-                    kwargs['bbox_to_anchor'] = (1, 1)
+                    # デフォルトは常に枠外右上に配置
+                    kwargs['loc'] = 'upper left'
+                    kwargs['bbox_to_anchor'] = (1.02, 1)
                 else:
+                    # ユーザーが明示的に位置を指定した場合は、それに従う
                     kwargs['loc'] = legend_pos
                 
                 fig.legend(handles=handles, title=legend_title, **kwargs)
+                # ▲▲▲ ここまで ▲▲▲
                 
             return fig
 
