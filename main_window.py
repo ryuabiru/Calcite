@@ -149,7 +149,7 @@ class MainWindow(QMainWindow):
 
         violin_action = QAction("Violin Plot", self)
         violin_action.setCheckable(True)
-        violin_action.triggered.connect(lambda: self.set_graph_type('violinplot'))
+        violin_action.triggered.connect(lambda: self.set_graph_type('violin'))
         toolbar.addAction(violin_action); action_group.addAction(violin_action)\
         
         point_action = QAction("Point Plot", self)
