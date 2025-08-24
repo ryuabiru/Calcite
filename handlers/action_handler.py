@@ -8,6 +8,7 @@ from scipy.stats import (ttest_ind, ttest_rel, f_oneway, linregress, chi2_contin
                          shapiro, spearmanr, mannwhitneyu, wilcoxon, kruskal)
 from scipy.optimize import curve_fit
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
+import scikit_posthocs as sp
 
 from pandas_model import PandasModel
 # --- Dialogs ---
@@ -709,10 +710,9 @@ class ActionHandler:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform Wilcoxon test: {e}")
 
     def perform_kruskal_test(self):
-        """クラスカル・ウォリス検定を実行する。"""
+        """クラスカル・ウォリス検定と、それに続くダンの多重比較検定を実行する。"""
         try:
             if not hasattr(self.main, 'model'):
-                QMessageBox.warning(self.main, "Warning", "Please load data first.")
                 return
 
             df = self.main.model._data.copy()
@@ -721,7 +721,7 @@ class ActionHandler:
             group_col = data_settings.get('x_col')
 
             if not value_col or not group_col:
-                QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+                QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis.")
                 return
 
             hue_col = data_settings.get('subgroup_col')
@@ -733,60 +733,84 @@ class ActionHandler:
                 df[hue_col] = df[hue_col].astype(str)
 
             facet_col = data_settings.get('facet_col')
-
             x_values = [str(v) for v in df[group_col].dropna().unique()]
-            hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
+            hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col else []
 
-            if not x_values:
-                QMessageBox.warning(self.main, "Warning", "The selected X-Axis column has no data.")
-                return
-            
             dialog = KruskalDialog(x_values, hue_values, group_col, hue_col, self.main)
             
             if dialog.exec():
                 selected_groups = dialog.get_settings()
                 
-                if not selected_groups:
-                    QMessageBox.warning(self.main, "Warning", "Please build a list of at least 2 groups to compare.")
+                if not selected_groups or len(selected_groups) < 2:
+                    QMessageBox.warning(self.main, "Warning", "Please select at least 2 groups.")
                     return
                 
-                effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
+                effective_groups, interaction_col_name = self._get_interaction_group_col(df, group_col, hue_col)
+                df[interaction_col_name] = effective_groups
 
                 results_summary = []
 
+                # --- ファセット処理 ---
                 if facet_col and facet_col in df.columns:
                     for category in df[facet_col].dropna().unique():
                         subset_df = df[df[facet_col] == category].copy()
-                        current_facet_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
                         
-                        samples = [subset_df.loc[current_facet_groups == g, value_col].dropna() for g in selected_groups]
+                        samples = [subset_df.loc[subset_df[interaction_col_name] == g, value_col].dropna() for g in selected_groups]
                         samples = [s for s in samples if not s.empty]
                         
                         if len(samples) < 2: continue
 
                         h_stat, p_value = kruskal(*samples)
-                        
-                        results_summary.append(
-                            f"--- Facet: {facet_col} = {category} ---\n"
-                            f"H-statistic: {h_stat:.4f}, p-value: {p_value:.4f}\n"
-                        )
-                
-                else: # ファセットなし
-                    samples = [df.loc[effective_groups == g, value_col].dropna() for g in selected_groups]
+                        results_summary.append(f"--- Facet: {facet_col} = {category} ---")
+                        results_summary.append(f"Kruskal-Wallis H-statistic: {h_stat:.4f}, p-value: {p_value:.4f}")
+
+                        # --- Dunn's Post-hoc Test ---
+                        if p_value < 0.05 and len(samples) > 2:
+                            posthoc_df = sp.posthoc_dunn(subset_df, val_col=value_col, group_col=interaction_col_name)
+                            results_summary.append("\nDunn's Post-hoc Test (p-values):\n" + posthoc_df.to_string())
+
+                            for group1 in posthoc_df.columns:
+                                for group2, p_adj in posthoc_df.loc[group1].items():
+                                    if group1 != group2 and pd.notna(p_adj) and p_adj < 0.05:
+                                        simple_pair = tuple(sorted((group1, group2)))
+                                        formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                                        annotation = {
+                                            "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                                            "facet_col": facet_col, "facet_value": category,
+                                            "box_pair": formatted_pair, "p_value": p_adj
+                                        }
+                                        if annotation not in self.main.statistical_annotations:
+                                            self.main.statistical_annotations.append(annotation)
+                        results_summary.append("-" * 20)
+                else:
+                    samples = [df.loc[df[interaction_col_name] == g, value_col].dropna() for g in selected_groups]
                     samples = [s for s in samples if not s.empty]
                     
-                    if len(samples) < 2:
-                        QMessageBox.warning(self.main, "Warning", "Not enough data for the selected groups.")
-                        return
+                    if len(samples) < 2: return
 
                     h_stat, p_value = kruskal(*samples)
-                    results_summary.append(f"H-statistic: {h_stat:.4f}\np-value: {p_value:.4f}\n")
-                    
-                    if p_value < 0.05:
-                        results_summary.append("\nNote: A post-hoc test (e.g., Dunn's test) is recommended to identify which specific groups differ.")
+                    results_summary.append(f"Kruskal-Wallis H-statistic: {h_stat:.4f}, p-value: {p_value:.4f}")
+
+                    if p_value < 0.05 and len(samples) > 2:
+                        posthoc_df = sp.posthoc_dunn(df, val_col=value_col, group_col=interaction_col_name)
+                        results_summary.append("\nDunn's Post-hoc Test (p-values):\n" + posthoc_df.to_string())
+                        
+                        # アノテーション生成ロジック
+                        for group1 in posthoc_df.columns:
+                            for group2, p_adj in posthoc_df.loc[group1].items():
+                                if group1 != group2 and pd.notna(p_adj) and p_adj < 0.05:
+                                    simple_pair = tuple(sorted((str(group1), str(group2))))
+                                    formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                                    annotation = {
+                                        "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                                        "facet_col": None, "facet_value": None,
+                                        "box_pair": formatted_pair, "p_value": p_adj
+                                    }
+                                    if annotation not in self.main.statistical_annotations:
+                                        self.main.statistical_annotations.append(annotation)
 
                 if results_summary:
-                    final_summary = "Kruskal-Wallis H Test Results\n======================\n\n" + "\n".join(results_summary)
+                    final_summary = "Kruskal-Wallis Test Results\n======================\n\n" + "\n".join(results_summary)
                     self.show_results_dialog("Kruskal-Wallis Test Result", final_summary)
 
                 self.main.graph_manager.update_graph()
