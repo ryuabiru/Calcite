@@ -163,7 +163,8 @@ class GraphManager:
 
                             if base_kind == 'pointplot':
                                 base_kwargs.update({
-                                    'join': True, 'dodge': 0.3,
+                                    'join': True, 
+                                    'dodge': False, # サブグループがあっても横にずらさない
                                     'capsize': properties.get('capsize', 4) * 0.02,
                                     'linestyle': properties.get('linestyle', '-')
                                 })
