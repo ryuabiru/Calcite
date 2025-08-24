@@ -171,6 +171,7 @@ class GraphManager:
                             plot_func_map[base_kind](**base_kwargs, **plot_kwargs)
 
                     if base_kind == 'scatter' or properties.get('scatter_overlay'):
+                        
                         stripplot_kwargs = {
                             'data': subset_df, 'x': current_x, 'y': current_y, 'ax': ax,
                             'marker': properties.get('marker_style', 'o'),
@@ -178,21 +179,30 @@ class GraphManager:
                             'linewidth': properties.get('marker_edgewidth', 1.0),
                             'legend': False
                         }
+
+                        # ▼▼▼ ここからが修正箇所です ▼▼▼
+                        # dodge（横ずれ）を適用するかどうかを賢く判断する
+                        should_dodge = True
+                        if visual_hue_col == current_x: # xとhueが同じ場合は、dodgeしない
+                            should_dodge = False
+
                         if base_kind == 'scatter':
                             stripplot_kwargs.update({
                                 'hue': visual_hue_col,
                                 'palette': subgroup_palette if subgroup_palette else None,
                                 'alpha': 1.0,
-                                'dodge': True
+                                'dodge': should_dodge # 判断結果を適用
                             })
-                        else:
+                        else: # 重ね描きの場合
                             stripplot_kwargs.update({
                                 'hue': visual_hue_col,
                                 'palette': subgroup_palette if subgroup_palette else None,
                                 'alpha': 0.6,
-                                'dodge': True,
+                                'dodge': should_dodge, # 判断結果を適用
                                 'jitter': 0.2
                             })
+                        # ▲▲▲ ここまで ▲▲▲
+
                         sns.stripplot(**stripplot_kwargs)
 
                     title_parts = []
@@ -204,25 +214,20 @@ class GraphManager:
                     hue_order = sorted(df[visual_hue_col].unique()) if visual_hue_col else None
                     self.apply_annotations(ax, subset_df, data_settings, hue_order, annotations_for_this_facet)
 
-            # ▼▼▼ ここからが最終修正箇所です ▼▼▼
-            # --- ファセットの見た目を調整 ---
             is_faceted = n_rows > 1 or n_cols > 1
             if is_faceted:
-                # 1. X軸ラベルを共有する
                 shared_xlabel = properties.get('xlabel') or current_x
                 for ax in axes.flat:
-                    ax.set_xlabel('') # 個別のラベルを消す
-                fig.supxlabel(shared_xlabel, y=0.02) # 図全体に一つだけ追加
+                    ax.set_xlabel('')
+                fig.supxlabel(shared_xlabel, y=0.02)
 
-                # 2. 2列目以降のファセットで、左のSpineを下に延長する
                 for i in range(n_rows):
                     for j in range(n_cols):
-                        if j > 0: # 2列目以降
+                        if j > 0:
                             ax = axes[i, j]
                             bottom, top = ax.get_ylim()
-                            extension = (top - bottom) * 0.10 # 10%延長
+                            extension = (top - bottom) * 0.10
                             ax.spines['left'].set_bounds(bottom - extension, top)
-            # ▲▲▲ ここまで ▲▲▲
 
             if visual_hue_col:
                 if fig.legends:
