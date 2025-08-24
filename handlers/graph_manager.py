@@ -171,18 +171,29 @@ class GraphManager:
                             plot_func_map[base_kind](**base_kwargs, **plot_kwargs)
 
                     if base_kind == 'scatter' or properties.get('scatter_overlay'):
-                        sns.stripplot(
-                            data=subset_df, x=current_x, y=current_y, ax=ax,
-                            hue=visual_hue_col if base_kind == 'scatter' else None,
-                            palette=subgroup_palette if base_kind == 'scatter' and subgroup_palette else None,
-                            color='black' if base_kind != 'scatter' else None,
-                            alpha=0.6 if base_kind != 'scatter' else 1.0,
-                            jitter=0.2 if base_kind != 'scatter' else True,
-                            marker=properties.get('marker_style', 'o'),
-                            edgecolor=properties.get('marker_edgecolor', 'black'),
-                            linewidth=properties.get('marker_edgewidth', 1.0),
-                            **plot_kwargs
-                        )
+                        stripplot_kwargs = {
+                            'data': subset_df, 'x': current_x, 'y': current_y, 'ax': ax,
+                            'marker': properties.get('marker_style', 'o'),
+                            'edgecolor': properties.get('marker_edgecolor', 'black'),
+                            'linewidth': properties.get('marker_edgewidth', 1.0),
+                            'legend': False
+                        }
+                        if base_kind == 'scatter':
+                            stripplot_kwargs.update({
+                                'hue': visual_hue_col,
+                                'palette': subgroup_palette if subgroup_palette else None,
+                                'alpha': 1.0,
+                                'dodge': True
+                            })
+                        else:
+                            stripplot_kwargs.update({
+                                'hue': visual_hue_col,
+                                'palette': subgroup_palette if subgroup_palette else None,
+                                'alpha': 0.6,
+                                'dodge': True,
+                                'jitter': 0.2
+                            })
+                        sns.stripplot(**stripplot_kwargs)
 
                     title_parts = []
                     if facet_row: title_parts.append(f"{facet_row} = {row_cat}")
@@ -193,12 +204,34 @@ class GraphManager:
                     hue_order = sorted(df[visual_hue_col].unique()) if visual_hue_col else None
                     self.apply_annotations(ax, subset_df, data_settings, hue_order, annotations_for_this_facet)
 
+            # ▼▼▼ ここからが最終修正箇所です ▼▼▼
+            # --- ファセットの見た目を調整 ---
+            is_faceted = n_rows > 1 or n_cols > 1
+            if is_faceted:
+                # 1. X軸ラベルを共有する
+                shared_xlabel = properties.get('xlabel') or current_x
+                for ax in axes.flat:
+                    ax.set_xlabel('') # 個別のラベルを消す
+                fig.supxlabel(shared_xlabel, y=0.02) # 図全体に一つだけ追加
+
+                # 2. 2列目以降のファセットで、左のSpineを下に延長する
+                for i in range(n_rows):
+                    for j in range(n_cols):
+                        if j > 0: # 2列目以降
+                            ax = axes[i, j]
+                            bottom, top = ax.get_ylim()
+                            extension = (top - bottom) * 0.10 # 10%延長
+                            ax.spines['left'].set_bounds(bottom - extension, top)
+            # ▲▲▲ ここまで ▲▲▲
+
             if visual_hue_col:
                 if fig.legends:
                     fig.legends.clear()
                 for ax in axes.flat:
                     if ax.get_legend() is not None:
                         ax.get_legend().remove()
+
+                import matplotlib.patches as mpatches
                 
                 legend_title = properties.get('legend_title') or visual_hue_col
                 legend_pos = properties.get('legend_position', 'best')

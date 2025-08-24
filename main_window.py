@@ -22,7 +22,7 @@ class MainWindow(QMainWindow):
     """
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Calcite")
+        self.setWindowTitle("demo")
         self.setGeometry(100, 100, 1000, 650)
         
         self.model = None
