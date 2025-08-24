@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import io
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication, QDialog, QVBoxLayout, QTextEdit
-from scipy.stats import ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency, shapiro, spearmanr
+from scipy.stats import ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency, shapiro, spearmanr, mannwhitneyu
 from scipy.optimize import curve_fit
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 
@@ -14,6 +14,7 @@ from dialogs.restructure_dialog import RestructureDialog
 from dialogs.calculate_dialog import CalculateDialog
 from dialogs.anova_dialog import AnovaDialog
 from dialogs.ttest_dialog import TTestDialog
+from dialogs.mannwhitney_dialog import MannWhitneyDialog
 from dialogs.paired_ttest_dialog import PairedTTestDialog
 from dialogs.correlation_dialog import CorrelationDialog
 from dialogs.fitting_dialog import FittingDialog
@@ -367,6 +368,124 @@ class ActionHandler:
 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform t-test: {e}")
+                traceback.print_exc()
+
+    def perform_mannwhitney_test(self):
+        """マン・ホイットニーのU検定を実行する。"""
+        if not hasattr(self.main, 'model'): return
+        
+        df = self.main.model._data.copy()
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        value_col = data_settings.get('y_col')
+        group_col = data_settings.get('x_col')
+        
+        hue_col = data_settings.get('subgroup_col')
+        if not hue_col: hue_col = None
+        
+        if group_col == hue_col:
+            hue_col = None
+
+        facet_col = data_settings.get('facet_col')
+
+        if not value_col or not group_col:
+            QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+            return
+
+        df[group_col] = df[group_col].astype(str)
+        if hue_col and hue_col in df.columns:
+            df[hue_col] = df[hue_col].astype(str)
+
+        x_values = [str(v) for v in df[group_col].dropna().unique()]
+        hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
+        
+        dialog = MannWhitneyDialog(
+            x_values=x_values, hue_values=hue_values,
+            x_name=group_col, hue_name=hue_col, parent=self.main
+        )
+
+        if dialog.exec():
+            settings = dialog.get_settings()
+            if not settings: return
+
+            g1_cond = settings['group1']
+            g2_cond = settings['group2']
+            if g1_cond == g2_cond:
+                 QMessageBox.warning(self.main, "Warning", "Please select two different groups.")
+                 return
+            try:
+                if hue_col:
+                    g1_name = f"{g1_cond['x']}{self._UNIQUE_SEPARATOR}{g1_cond['hue']}"
+                    g2_name = f"{g2_cond['x']}{self._UNIQUE_SEPARATOR}{g2_cond['hue']}"
+                else:
+                    g1_name = g1_cond['x']
+                    g2_name = g2_cond['x']
+
+                if facet_col and facet_col in df.columns:
+                    for category in df[facet_col].dropna().unique():
+                        subset_df = df[df[facet_col] == category].reset_index(drop=True)
+                        effective_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
+                        
+                        group1_values = subset_df.loc[effective_groups == g1_name, value_col].dropna()
+                        group2_values = subset_df.loc[effective_groups == g2_name, value_col].dropna()
+
+                        if len(group1_values) < 1 or len(group2_values) < 1: continue
+                        
+                        _, p_value = mannwhitneyu(group1_values, group2_values)
+                        
+                        simple_pair = (g1_name, g2_name)
+                        formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                        
+                        annotation = {
+                            "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                            "facet_col": facet_col, "facet_value": category,
+                            "box_pair": formatted_pair, "p_value": p_value
+                        }
+                        if annotation not in self.main.statistical_annotations:
+                            self.main.statistical_annotations.append(annotation)
+                else:
+                    effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
+                    group1_values = df.loc[effective_groups == g1_name, value_col].dropna()
+                    group2_values = df.loc[effective_groups == g2_name, value_col].dropna()
+
+                    if group1_values.empty or group2_values.empty:
+                        QMessageBox.warning(self.main, "Warning", "One or both selected groups have no data.")
+                        return
+                    
+                    u_stat, p_value = mannwhitneyu(group1_values, group2_values)
+                    
+                    simple_pair = (g1_name, g2_name)
+                    formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                    
+                    annotation = {
+                        "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                        "facet_col": None, "facet_value": None,
+                        "box_pair": formatted_pair, "p_value": p_value
+                    }
+                    if annotation not in self.main.statistical_annotations:
+                        self.main.statistical_annotations.append(annotation)
+                    
+                    g1_display_name = f"{group_col}={g1_cond['x']}" + (f", {hue_col}={g1_cond['hue']}" if hue_col and g1_cond.get('hue') else "")
+                    g2_display_name = f"{group_col}={g2_cond['x']}" + (f", {hue_col}={g2_cond['hue']}" if hue_col and g2_cond.get('hue') else "")
+                    result_text = (
+                        f"Mann-Whitney U test results:\n"
+                        f"============================================\n\n"
+                        f"Comparing '{value_col}' between:\n"
+                        f"- Group 1: {g1_display_name} (n={len(group1_values)})\n"
+                        f"- Group 2: {g2_display_name} (n={len(group2_values)})\n\n"
+                        f"---\n"
+                        f"U-statistic: {u_stat:.4f}\n"
+                        f"p-value: {p_value:.4f}\n\n"
+                    )
+                    if p_value < 0.05:
+                        result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
+                    else:
+                        result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
+                    self.show_results_dialog("Mann-Whitney U Test Result", result_text)
+
+                self.main.graph_manager.update_graph()
+
+            except Exception as e:
+                QMessageBox.critical(self.main, "Error", f"Failed to perform Mann-Whitney U test: {e}")
                 traceback.print_exc()
 
     def perform_one_way_anova(self):
