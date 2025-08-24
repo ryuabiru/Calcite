@@ -117,7 +117,10 @@ class MainWindow(QMainWindow):
         wilcoxon_action = QAction("&Wilcoxon signed-rank test...", self)
         wilcoxon_action.triggered.connect(self.action_handler.perform_wilcoxon_test)
         analysis_menu.addAction(wilcoxon_action)
-        
+        kruskal_action = QAction("&Kruskal-Wallis test...", self)
+        kruskal_action.triggered.connect(self.action_handler.perform_kruskal_test)
+        analysis_menu.addAction(kruskal_action)
+
         shapiro_test_action = QAction("&Shapiro-Wilk...", self)
         shapiro_test_action.triggered.connect(self.action_handler.perform_shapiro_test)
         analysis_menu.addAction(shapiro_test_action)

@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 import io
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication, QDialog, QVBoxLayout, QTextEdit
-from scipy.stats import ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency, shapiro, spearmanr, mannwhitneyu, wilcoxon
+from scipy.stats import (ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency, 
+                         shapiro, spearmanr, mannwhitneyu, wilcoxon, kruskal)
 from scipy.optimize import curve_fit
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 
@@ -13,6 +14,7 @@ from pandas_model import PandasModel
 from dialogs.restructure_dialog import RestructureDialog
 from dialogs.calculate_dialog import CalculateDialog
 from dialogs.anova_dialog import AnovaDialog
+from dialogs.kruskal_dialog import KruskalDialog
 from dialogs.ttest_dialog import TTestDialog
 from dialogs.mannwhitney_dialog import MannWhitneyDialog
 from dialogs.paired_ttest_dialog import PairedTTestDialog
@@ -705,6 +707,93 @@ class ActionHandler:
 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform Wilcoxon test: {e}")
+
+    def perform_kruskal_test(self):
+        """クラスカル・ウォリス検定を実行する。"""
+        try:
+            if not hasattr(self.main, 'model'):
+                QMessageBox.warning(self.main, "Warning", "Please load data first.")
+                return
+
+            df = self.main.model._data.copy()
+            data_settings = self.main.properties_panel.data_tab.get_current_settings()
+            value_col = data_settings.get('y_col')
+            group_col = data_settings.get('x_col')
+
+            if not value_col or not group_col:
+                QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+                return
+
+            hue_col = data_settings.get('subgroup_col')
+            if not hue_col or group_col == hue_col:
+                hue_col = None
+
+            df[group_col] = df[group_col].astype(str)
+            if hue_col and hue_col in df.columns:
+                df[hue_col] = df[hue_col].astype(str)
+
+            facet_col = data_settings.get('facet_col')
+
+            x_values = [str(v) for v in df[group_col].dropna().unique()]
+            hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
+
+            if not x_values:
+                QMessageBox.warning(self.main, "Warning", "The selected X-Axis column has no data.")
+                return
+            
+            dialog = KruskalDialog(x_values, hue_values, group_col, hue_col, self.main)
+            
+            if dialog.exec():
+                selected_groups = dialog.get_settings()
+                
+                if not selected_groups:
+                    QMessageBox.warning(self.main, "Warning", "Please build a list of at least 2 groups to compare.")
+                    return
+                
+                effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
+
+                results_summary = []
+
+                if facet_col and facet_col in df.columns:
+                    for category in df[facet_col].dropna().unique():
+                        subset_df = df[df[facet_col] == category].copy()
+                        current_facet_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
+                        
+                        samples = [subset_df.loc[current_facet_groups == g, value_col].dropna() for g in selected_groups]
+                        samples = [s for s in samples if not s.empty]
+                        
+                        if len(samples) < 2: continue
+
+                        h_stat, p_value = kruskal(*samples)
+                        
+                        results_summary.append(
+                            f"--- Facet: {facet_col} = {category} ---\n"
+                            f"H-statistic: {h_stat:.4f}, p-value: {p_value:.4f}\n"
+                        )
+                
+                else: # ファセットなし
+                    samples = [df.loc[effective_groups == g, value_col].dropna() for g in selected_groups]
+                    samples = [s for s in samples if not s.empty]
+                    
+                    if len(samples) < 2:
+                        QMessageBox.warning(self.main, "Warning", "Not enough data for the selected groups.")
+                        return
+
+                    h_stat, p_value = kruskal(*samples)
+                    results_summary.append(f"H-statistic: {h_stat:.4f}\np-value: {p_value:.4f}\n")
+                    
+                    if p_value < 0.05:
+                        results_summary.append("\nNote: A post-hoc test (e.g., Dunn's test) is recommended to identify which specific groups differ.")
+
+                if results_summary:
+                    final_summary = "Kruskal-Wallis H Test Results\n======================\n\n" + "\n".join(results_summary)
+                    self.show_results_dialog("Kruskal-Wallis Test Result", final_summary)
+
+                self.main.graph_manager.update_graph()
+
+        except Exception as e:
+            traceback.print_exc()
+            QMessageBox.critical(self.main, "Error", f"An unexpected error occurred in Kruskal-Wallis test:\n\n{e}")
 
     def perform_chi_squared_test(self):
         """カイ二乗検定を実行する。"""
