@@ -100,22 +100,21 @@ class GraphManager:
         facet_row = data_settings.get('facet_row')
 
         try:
-            subgroup_palette = properties.get('subgroup_colors')
-            
-            # (パレットの型変換処理は変更なし)
-            if subgroup_palette and visual_hue_col and pd.api.types.is_numeric_dtype(df[visual_hue_col]):
-                # This part is complex because the original dtype could be int or float.
-                # We try to convert palette keys back to the original dtype.
-                try:
-                    # Attempt to convert keys to the series' dtype
-                    original_dtype = df[visual_hue_col].dtype
-                    subgroup_palette = {original_dtype.type(k): v for k, v in subgroup_palette.items()}
-                except (ValueError, TypeError):
-                    # Fallback for mixed types or other conversion errors
-                    pass
-
-            if not subgroup_palette:
-                subgroup_palette = None
+            # ▼▼▼ ここからが最終修正箇所です ▼▼▼
+            subgroup_palette = {}
+            if visual_hue_col:
+                user_colors = properties.get('subgroup_colors', {})
+                unique_hues = sorted(df[visual_hue_col].unique())
+                
+                # 1. まず、全てのカテゴリに対するデフォルトパレットを生成
+                default_colors = sns.color_palette(n_colors=len(unique_hues))
+                subgroup_palette = dict(zip(unique_hues, default_colors))
+                
+                # 2. ユーザー設定の色があれば、それでデフォルトを上書き
+                for category, color in user_colors.items():
+                    if category in subgroup_palette:
+                        subgroup_palette[category] = color
+            # ▲▲▲ ここまで ▲▲▲
 
             row_categories = sorted(df[facet_row].unique()) if facet_row else [None]
             col_categories = sorted(df[facet_col].unique()) if facet_col else [None]
@@ -143,84 +142,74 @@ class GraphManager:
                     if facet_col:
                         subset_df = subset_df[subset_df[facet_col] == col_cat]
                     
-                    # ▼▼▼ ここが最後の修正箇所です ▼▼▼
-                    # action_handlerと状態を同期するため、インデックスをリセットする
                     subset_df = subset_df.reset_index(drop=True)
-                    # ▲▲▲ ここまで ▲▲▲
 
                     base_kind = self.main.current_graph_type
                     
+                    plot_kwargs = {'legend': False}
+
                     if base_kind != 'scatter':
-                        # (描画ロジックは変更なし)
                         plot_func_map = {
-                            'bar': sns.barplot, 
-                            'boxplot': sns.boxplot, 
-                            'violin': sns.violinplot, 
-                            'pointplot': sns.pointplot
+                            'bar': sns.barplot, 'boxplot': sns.boxplot, 
+                            'violin': sns.violinplot, 'pointplot': sns.pointplot
                         }
                         if base_kind in plot_func_map:
-                            base_kwargs = {
-                                'data': subset_df, 'x': current_x, 'y': current_y, 
-                                'hue': visual_hue_col, 'ax': ax,
-                                'palette': subgroup_palette,
-                                'color': properties.get('single_color') if not visual_hue_col else None
-                            }
-                            
-                            if base_kind == 'pointplot':
-                                base_kwargs['join'] = True
-                                base_kwargs['dodge'] = 0.3
-                                base_kwargs['capsize'] = properties.get('capsize', 4) * 0.02
-                                base_kwargs['linestyle'] = properties.get('linestyle', '-')
-                            
-                            plot_func_map[base_kind](**base_kwargs)
+                            plot_func_map[base_kind](
+                                data=subset_df, x=current_x, y=current_y, 
+                                hue=visual_hue_col, ax=ax,
+                                palette=subgroup_palette if subgroup_palette else None,
+                                color=properties.get('single_color') if not visual_hue_col else None,
+                                **plot_kwargs
+                            )
 
                     if base_kind == 'scatter' or properties.get('scatter_overlay'):
-                        # (描画ロジックは変更なし)
-                        plot_kwargs = {
-                            'data': subset_df, 'x': current_x, 'y': current_y, 'ax': ax,
-                            'marker': properties.get('marker_style', 'o'),
-                            'edgecolor': properties.get('marker_edgecolor', 'black'),
-                            'linewidth': properties.get('marker_edgewidth', 1.0)
-                        }
-                        if base_kind == 'scatter':
-                            plot_kwargs.update({
-                                'hue': visual_hue_col, 
-                                'palette': subgroup_palette,
-                                'alpha': 1.0, 'legend': False,
-                                'color': properties.get('single_color') if not visual_hue_col else None
-                            })
-                        else:
-                             plot_kwargs.update({'color': 'black', 'alpha': 0.6, 'jitter': 0.2})
-                        sns.stripplot(**plot_kwargs)
+                        sns.stripplot(
+                            data=subset_df, x=current_x, y=current_y, ax=ax,
+                            hue=visual_hue_col if base_kind == 'scatter' else None,
+                            palette=subgroup_palette if base_kind == 'scatter' and subgroup_palette else None,
+                            color='black' if base_kind != 'scatter' else None,
+                            alpha=0.6 if base_kind != 'scatter' else 1.0,
+                            jitter=0.2 if base_kind != 'scatter' else True,
+                            marker=properties.get('marker_style', 'o'),
+                            edgecolor=properties.get('marker_edgecolor', 'black'),
+                            linewidth=properties.get('marker_edgewidth', 1.0),
+                            **plot_kwargs
+                        )
 
                     title_parts = []
                     if facet_row: title_parts.append(f"{facet_row} = {row_cat}")
                     if facet_col: title_parts.append(f"{facet_col} = {col_cat}")
                     ax.set_title(" | ".join(title_parts))
                     
-                    annotations_for_this_facet = [
-                        ann for ann in all_relevant_annotations
-                        if ann.get('facet_value') == (col_cat if facet_col else None)
-                    ]
-                    
+                    annotations_for_this_facet = [ann for ann in all_relevant_annotations if ann.get('facet_value') == (col_cat if facet_col else None)]
                     hue_order = sorted(df[visual_hue_col].unique()) if visual_hue_col else None
                     self.apply_annotations(ax, subset_df, data_settings, hue_order, annotations_for_this_facet)
 
             if visual_hue_col:
-                # (凡例ロジックは変更なし)
-                handles, labels = axes[0,0].get_legend_handles_labels()
-                if handles:
-                    by_label = dict(zip(labels, handles))
-                    legend_title = properties.get('legend_title') or visual_hue_col
-                    
-                    legend_pos = properties.get('legend_position', 'best')
-                    if legend_pos == 'best':
-                        legend_pos = 'upper right'
-                    
-                    fig.legend(by_label.values(), by_label.keys(),
-                               title=legend_title,
-                               loc=legend_pos)
+                if fig.legends:
+                    fig.legends.clear()
+                for ax in axes.flat:
+                    if ax.get_legend() is not None:
+                        ax.get_legend().remove()
 
+                import matplotlib.patches as mpatches
+                
+                legend_title = properties.get('legend_title') or visual_hue_col
+                legend_pos = properties.get('legend_position', 'best')
+                
+                handles = [mpatches.Patch(color=color, label=label) for label, color in subgroup_palette.items()]
+                
+                kwargs = {}
+                if legend_pos == 'best':
+                    # デフォルトは「右上」を基準に配置する
+                    kwargs['loc'] = 'upper right'
+                    kwargs['bbox_to_anchor'] = (1, 1) # 右上の角(1,1)に凡例の右上を合わせる
+                else:
+                    kwargs['loc'] = legend_pos
+                
+                fig.legend(handles=handles, title=legend_title, **kwargs)
+
+                
             return fig
 
         except Exception as e:
@@ -250,7 +239,10 @@ class GraphManager:
             ax.grid(properties.get('show_grid', False))
             if properties.get('x_log_scale'): ax.set_xscale('log')
             if properties.get('y_log_scale'): ax.set_yscale('log')
-        fig.tight_layout(rect=[0, 0, 1, 0.96])
+            
+        # 凡例がはみ出ないようにレイアウトを調整
+        # rectのrightを小さくして、右側にスペースを確保する
+        fig.tight_layout(rect=[0, 0, 0.9, 0.96])
 
     def draw_paired_scatter(self, df, properties, data_settings):
         col1 = data_settings.get('col1')
