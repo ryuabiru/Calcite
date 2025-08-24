@@ -105,16 +105,9 @@ class GraphManager:
 
             # --- 2. 各サブプロットをループし、グラフを描画 ---
             for ax in g.axes.flat:
-                # --- ▼▼▼ ここからが今回の修正の核心部です ▼▼▼ ---
-                # タイトルを一時的に保存
                 original_title = ax.get_title()
-                
-                # サブプロットをクリア
                 ax.clear()
-                
-                # 保存しておいたタイトルを再設定
                 ax.set_title(original_title)
-                # --- ▲▲▲ 修正はここまで ▲▲▲ ---
 
                 # 土台となるグラフ（棒、箱ひげ等）を描画
                 if base_kind != 'scatter':
@@ -122,11 +115,26 @@ class GraphManager:
                         'bar': sns.barplot, 'boxplot': sns.boxplot, 'violinplot': sns.violinplot
                     }
                     plot_func = plot_func_map[base_kind]
-                    plot_func(
-                        data=df, x=current_x, y=current_y, hue=visual_hue_col, ax=ax,
-                        palette={str(k): v for k, v in properties.get('subgroup_colors', {}).items()} if visual_hue_col else None,
-                        color=properties.get('single_color') if not visual_hue_col else None
-                    )
+                    
+                    base_kwargs = {
+                        'data': df, 'x': current_x, 'y': current_y, 'hue': visual_hue_col, 'ax': ax,
+                        'palette': {str(k): v for k, v in properties.get('subgroup_colors', {}).items()} if visual_hue_col else None,
+                        'color': properties.get('single_color') if not visual_hue_col else None
+                    }
+
+                    # --- ▼▼▼ ここからが今回の修正の核心部です ▼▼▼ ---
+                    # グラフの種類に応じて、専用のプロパティを引数に追加
+                    if base_kind == 'boxplot':
+                        base_kwargs['showfliers'] = False
+                    elif base_kind == 'bar':
+                        base_kwargs['edgecolor'] = properties.get('bar_edgecolor', 'black')
+                        base_kwargs['linewidth'] = properties.get('bar_edgewidth', 1.0)
+                        # seabornのcapsizeは0-1の範囲で指定するため、UIの値を100で割るなどの調整が必要な場合があります
+                        # ここではUIの値を直接使うと仮定します
+                        base_kwargs['capsize'] = properties.get('capsize', 4) * 0.01 # 例: UI値が4なら0.04に
+                    # --- ▲▲▲ 修正はここまで ▲▲▲ ---
+
+                    plot_func(**base_kwargs)
 
                 # 個別のデータ点（stripplot）を描画
                 if base_kind == 'scatter' or properties.get('scatter_overlay', False):
@@ -149,7 +157,7 @@ class GraphManager:
                         stripplot_kwargs['jitter'] = 0.2
                     sns.stripplot(**stripplot_kwargs)
 
-            # --- 3. 凡例の処理 ---
+            # --- 3. 凡例の処理 (リセットされた状態) ---
             if visual_hue_col:
                 handles, labels = g.axes.flat[0].get_legend_handles_labels()
                 if handles:
