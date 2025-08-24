@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QFormLayout, QLabel, QComboBox, QPushButton, QColorDialog,
-    QScrollArea, QCheckBox, QSpinBox, QDoubleSpinBox, QVBoxLayout
+    QScrollArea, QCheckBox, QSpinBox, QDoubleSpinBox, QVBoxLayout, QLineEdit
 )
 from PySide6.QtCore import Signal
 from functools import partial
@@ -41,7 +41,6 @@ class FormatTab(QWidget):
 
         layout.addRow(QLabel("---"))
         
-        # ★★★ ここから追加 ★★★
         layout.addRow(QLabel("<b>Legend</b>"))
         self.legend_pos_combo = QComboBox()
         positions = {
@@ -50,13 +49,15 @@ class FormatTab(QWidget):
             "Upper Left": "upper left",
             "Lower Right": "lower right",
             "Lower Left": "lower left",
-            "Outside Right": "outside"
+            "Outside Right": "center left"
         }
         for name, key in positions.items():
             self.legend_pos_combo.addItem(name, key)
+        self.legend_title_edit = QLineEdit()
+
         layout.addRow(QLabel("Position:"), self.legend_pos_combo)
+        layout.addRow(QLabel("Title:"), self.legend_title_edit)
         layout.addRow(QLabel("---"))
-        # ★★★ ここまで ★★★
 
         layout.addRow(QLabel("<b>Marker Settings (for Scatter/Overlays)</b>"))
         self.marker_combo = QComboBox()
@@ -117,14 +118,16 @@ class FormatTab(QWidget):
         self.spines_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
         self.scatter_overlay_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
         
-        self.legend_pos_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit()) # ★★★ 追加 ★★★
-        self.marker_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
-        self.linestyle_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
+        self.legend_pos_combo.currentIndexChanged.connect(self.propertiesChanged.emit)
+        self.legend_title_edit.editingFinished.connect(self.propertiesChanged.emit)
+
+        self.marker_combo.currentIndexChanged.connect(self.propertiesChanged.emit)
+        self.linestyle_combo.currentIndexChanged.connect(self.propertiesChanged.emit)
         
-        self.marker_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-        self.bar_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-        self.capsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-        self.linewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        self.marker_edgewidth_spin.valueChanged.connect(self.propertiesChanged.emit)
+        self.bar_edgewidth_spin.valueChanged.connect(self.propertiesChanged.emit)
+        self.capsize_spin.valueChanged.connect(self.propertiesChanged.emit)
+        self.linewidth_spin.valueChanged.connect(self.propertiesChanged.emit)
         
         self.single_color_button.clicked.connect(self.open_single_color_dialog)
         self.marker_edgecolor_button.clicked.connect(self.open_marker_edgecolor_dialog)
@@ -135,7 +138,9 @@ class FormatTab(QWidget):
         return {
             'hide_top_right_spines': self.spines_check.isChecked(),
             'scatter_overlay': self.scatter_overlay_check.isChecked(),
-            'legend_position': self.legend_pos_combo.currentData(), # ★★★ 追加 ★★★
+            # ★★★ 凡例関連のプロパティを返すように修正 ★★★
+            'legend_position': self.legend_pos_combo.currentData(),
+            'legend_title': self.legend_title_edit.text(),
             'marker_style': self.marker_combo.currentData(),
             'marker_edgecolor': self.current_marker_edgecolor,
             'marker_edgewidth': self.marker_edgewidth_spin.value(),

@@ -245,6 +245,13 @@ class ActionHandler:
             QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
             return
 
+        # ▼▼▼ ここからが修正箇所です ▼▼▼
+        # 統計処理の前に、graph_managerと全く同じ型変換を行う
+        df[group_col] = df[group_col].astype(str)
+        if hue_col and hue_col in df.columns:
+            df[hue_col] = df[hue_col].astype(str)
+        # ▲▲▲ ここまでが修正箇所です ▲▲▲
+
         x_values = [str(v) for v in df[group_col].dropna().unique()]
         hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
         
@@ -385,9 +392,15 @@ class ActionHandler:
             if not hue_col or group_col == hue_col:
                 hue_col = None
 
+            # ▼▼▼ ここからが修正箇所です ▼▼▼
+            # 統計処理の前に、graph_managerと全く同じ型変換を行う
+            df[group_col] = df[group_col].astype(str)
+            if hue_col and hue_col in df.columns:
+                df[hue_col] = df[hue_col].astype(str)
+            # ▲▲▲ ここまでが修正箇所です ▲▲▲
+
             facet_col = data_settings.get('facet_col')
 
-            # ★★★ ここからが修正箇所 ★★★
             x_values = [str(v) for v in df[group_col].dropna().unique()]
             hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
 

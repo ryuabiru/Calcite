@@ -8,6 +8,7 @@ from statannotations.Annotator import Annotator
 import traceback
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+import matplotlib.pyplot as plt
 
 class GraphManager:
     def __init__(self, main_window):
@@ -34,37 +35,44 @@ class GraphManager:
             self.replace_canvas(fig)
             self.update_graph_properties(fig, properties)
 
-    def apply_annotations(self, g, df, current_y, current_x, subgroup_col):
-        data_settings = self.main.properties_panel.data_tab.get_current_settings()
-        facet_col = data_settings.get('facet_col')
-        
-        current_annotations = [
-            ann for ann in self.main.statistical_annotations 
-            if ann.get('value_col') == current_y and 
-               ann.get('group_col') == current_x and
-               ann.get('hue_col') == subgroup_col and
-               ann.get('facet_col') == (facet_col if facet_col and facet_col in df.columns else None)
-        ]
-        
-        if not current_annotations: return
+    # ▼▼▼ 消えていたこの関数を元に戻します ▼▼▼
+    def apply_annotations(self, ax, df, data_settings, hue_order, annotations_to_plot):
+        """
+        指定されたax（サブプロット）に、指定されたアノテーションリストを描画する。
+        """
+        if not annotations_to_plot:
+            return
+
         try:
-            for i, (ax_index, subset_df) in enumerate(g.facet_data()):
-                ax_facet = g.axes.flat[i]
-                facet_value = None
-                if facet_col and g.col_names:
-                    col_index = i % len(g.col_names)
-                    facet_value = g.col_names[col_index]
-                annotations_for_this_facet = [ann for ann in current_annotations if ann.get('facet_value') == facet_value]
-                if not annotations_for_this_facet: continue
-                box_pairs = [ann['box_pair'] for ann in annotations_for_this_facet]
-                p_values = [ann['p_value'] for ann in annotations_for_this_facet]
-                if not box_pairs: continue
-                subset_df[current_x] = subset_df[current_x].astype(str)
-                annotator = Annotator(ax_facet, box_pairs, data=subset_df, x=current_x, y=current_y, hue=subgroup_col, hue_order=g.hue_names)
-                pvalue_thresholds = [[1e-4, "****"], [1e-3, "***"], [1e-2, "**"], [0.05, "*"], [1.0, "n.s."]]
-                annotator.configure(text_format='star', loc='inside', verbose=0, pvalue_thresholds=pvalue_thresholds)
-                annotator.set_pvalues(p_values)
-                annotator.annotate()
+            current_y = data_settings.get('y_col')
+            current_x = data_settings.get('x_col')
+            subgroup_col = data_settings.get('subgroup_col')
+            if current_x == subgroup_col:
+                subgroup_col = None
+
+            box_pairs = [ann['box_pair'] for ann in annotations_to_plot]
+            p_values = [ann['p_value'] for ann in annotations_to_plot]
+
+            if not box_pairs:
+                return
+
+            annotator_kwargs = {
+                'ax': ax,
+                'pairs': box_pairs,
+                'data': df,
+                'x': current_x,
+                'y': current_y,
+            }
+            if subgroup_col:
+                annotator_kwargs['hue'] = subgroup_col
+                annotator_kwargs['hue_order'] = hue_order
+            
+            annotator = Annotator(**annotator_kwargs)
+            pvalue_thresholds = [[1e-4, "****"], [1e-3, "***"], [1e-2, "**"], [0.05, "*"], [1.0, "n.s."]]
+            annotator.configure(text_format='star', loc='inside', verbose=0, pvalue_thresholds=pvalue_thresholds)
+            annotator.set_pvalues(p_values)
+            annotator.annotate()
+
         except Exception as e:
             print(f"Annotation Error during plotting: {e}")
             traceback.print_exc()
@@ -77,109 +85,143 @@ class GraphManager:
             return None
 
         visual_hue_col = data_settings.get('subgroup_col')
-        if not visual_hue_col: visual_hue_col = None
-
+        if not visual_hue_col:
+            visual_hue_col = None
+            
         analysis_hue_col = visual_hue_col
-        if current_x == analysis_hue_col: analysis_hue_col = None
-        
-        facet_col = data_settings.get('facet_col')
-        facet_row = data_settings.get('facet_row')
-        if not facet_col: facet_col = None
-        if not facet_row: facet_row = None
-        
-        if visual_hue_col and visual_hue_col in df.columns:
+        if current_x == analysis_hue_col:
+            analysis_hue_col = None
+
+        df[current_x] = df[current_x].astype(str)
+        if visual_hue_col:
             df[visual_hue_col] = df[visual_hue_col].astype(str)
 
-        base_kind = self.main.current_graph_type
-        if base_kind not in ['bar', 'boxplot', 'violinplot', 'scatter', 'pointplot']: # pointplotを追加
-            base_kind = 'scatter'
+        facet_col = data_settings.get('facet_col')
+        facet_row = data_settings.get('facet_row')
 
         try:
-            # --- 1. catplotでグラフの「枠組み」を作成 ---
-            g = sns.catplot(
-                data=df, x=current_x, y=current_y, hue=visual_hue_col,
-                col=facet_col, row=facet_row,
-                height=4, aspect=1.2, sharex=False, sharey=True,
-                kind='strip', alpha=0.0, legend=False
+            subgroup_palette = properties.get('subgroup_colors')
+            
+            # (パレットの型変換処理は変更なし)
+            if subgroup_palette and visual_hue_col and pd.api.types.is_numeric_dtype(df[visual_hue_col]):
+                # This part is complex because the original dtype could be int or float.
+                # We try to convert palette keys back to the original dtype.
+                try:
+                    # Attempt to convert keys to the series' dtype
+                    original_dtype = df[visual_hue_col].dtype
+                    subgroup_palette = {original_dtype.type(k): v for k, v in subgroup_palette.items()}
+                except (ValueError, TypeError):
+                    # Fallback for mixed types or other conversion errors
+                    pass
+
+            if not subgroup_palette:
+                subgroup_palette = None
+
+            row_categories = sorted(df[facet_row].unique()) if facet_row else [None]
+            col_categories = sorted(df[facet_col].unique()) if facet_col else [None]
+            n_rows, n_cols = len(row_categories), len(col_categories)
+
+            fig, axes = plt.subplots(
+                n_rows, n_cols, figsize=(n_cols * 5, n_rows * 4),
+                sharex=False, sharey=True, squeeze=False
             )
 
-            # --- 2. 各サブプロットをループし、グラフを描画 ---
-            for ax in g.axes.flat:
-                original_title = ax.get_title()
-                ax.clear()
-                ax.set_title(original_title)
+            all_relevant_annotations = [
+                ann for ann in self.main.statistical_annotations
+                if ann.get('value_col') == current_y and
+                   ann.get('group_col') == current_x and
+                   ann.get('hue_col') == analysis_hue_col
+            ]
 
-                # 土台となるグラフ（棒、箱ひげ等）を描画
-                if base_kind != 'scatter':
-                    plot_func_map = {
-                        'bar': sns.barplot, 
-                        'boxplot': sns.boxplot, 
-                        'violinplot': sns.violinplot,
-                        'pointplot': sns.pointplot # pointplotをmapに追加
-                    }
-                    plot_func = plot_func_map[base_kind]
+            for i, row_cat in enumerate(row_categories):
+                for j, col_cat in enumerate(col_categories):
+                    ax = axes[i, j]
                     
-                    base_kwargs = {
-                        'data': df, 'x': current_x, 'y': current_y, 'hue': visual_hue_col, 'ax': ax,
-                        'palette': {str(k): v for k, v in properties.get('subgroup_colors', {}).items()} if visual_hue_col else None,
-                        'color': properties.get('single_color') if not visual_hue_col else None
-                    }
+                    subset_df = df.copy()
+                    if facet_row:
+                        subset_df = subset_df[subset_df[facet_row] == row_cat]
+                    if facet_col:
+                        subset_df = subset_df[subset_df[facet_col] == col_cat]
+                    
+                    # ▼▼▼ ここが最後の修正箇所です ▼▼▼
+                    # action_handlerと状態を同期するため、インデックスをリセットする
+                    subset_df = subset_df.reset_index(drop=True)
+                    # ▲▲▲ ここまで ▲▲▲
 
-                    if base_kind == 'boxplot':
-                        base_kwargs['showfliers'] = False
-                    elif base_kind == 'bar':
-                        base_kwargs['edgecolor'] = properties.get('bar_edgecolor', 'black')
-                        base_kwargs['linewidth'] = properties.get('bar_edgewidth', 1.0)
-                        base_kwargs['capsize'] = properties.get('capsize', 4) * 0.01
-                    # --- ▼▼▼ ここに elif base_kind == 'pointplot' があります ▼▼▼ ---
-                    elif base_kind == 'pointplot':
-                        base_kwargs['join'] = True      # 線を結ぶ
-                        base_kwargs['dodge'] = False    # 横にずらさない
-                        base_kwargs['capsize'] = properties.get('capsize', 4) * 0.02
-                        base_kwargs['linestyle'] = properties.get('linestyle', '-')
+                    base_kind = self.main.current_graph_type
+                    
+                    if base_kind != 'scatter':
+                        # (描画ロジックは変更なし)
+                        plot_func_map = {
+                            'bar': sns.barplot, 
+                            'boxplot': sns.boxplot, 
+                            'violin': sns.violinplot, 
+                            'pointplot': sns.pointplot
+                        }
+                        if base_kind in plot_func_map:
+                            base_kwargs = {
+                                'data': subset_df, 'x': current_x, 'y': current_y, 
+                                'hue': visual_hue_col, 'ax': ax,
+                                'palette': subgroup_palette,
+                                'color': properties.get('single_color') if not visual_hue_col else None
+                            }
+                            
+                            if base_kind == 'pointplot':
+                                base_kwargs['join'] = True
+                                base_kwargs['dodge'] = 0.3
+                                base_kwargs['capsize'] = properties.get('capsize', 4) * 0.02
+                                base_kwargs['linestyle'] = properties.get('linestyle', '-')
+                            
+                            plot_func_map[base_kind](**base_kwargs)
 
-                    plot_func(**base_kwargs)
+                    if base_kind == 'scatter' or properties.get('scatter_overlay'):
+                        # (描画ロジックは変更なし)
+                        plot_kwargs = {
+                            'data': subset_df, 'x': current_x, 'y': current_y, 'ax': ax,
+                            'marker': properties.get('marker_style', 'o'),
+                            'edgecolor': properties.get('marker_edgecolor', 'black'),
+                            'linewidth': properties.get('marker_edgewidth', 1.0)
+                        }
+                        if base_kind == 'scatter':
+                            plot_kwargs.update({
+                                'hue': visual_hue_col, 
+                                'palette': subgroup_palette,
+                                'alpha': 1.0, 'legend': False,
+                                'color': properties.get('single_color') if not visual_hue_col else None
+                            })
+                        else:
+                             plot_kwargs.update({'color': 'black', 'alpha': 0.6, 'jitter': 0.2})
+                        sns.stripplot(**plot_kwargs)
 
-                # 個別のデータ点（stripplot）を描画
-                if base_kind == 'scatter' or properties.get('scatter_overlay', False):
-                    stripplot_kwargs = {
-                        'data': df, 'x': current_x, 'y': current_y, 'ax': ax,
-                        'marker': properties.get('marker_style', 'o'),
-                        'edgecolor': 'gray', 'linewidth': 0.5
-                    }
-                    if base_kind == 'scatter':
-                        stripplot_kwargs['hue'] = visual_hue_col
-                        stripplot_kwargs['dodge'] = True
-                        stripplot_kwargs['alpha'] = 1.0
-                        stripplot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()} if visual_hue_col else None
-                        stripplot_kwargs['color'] = properties.get('single_color') if not visual_hue_col else None
-                    else: # 重ね描きの場合
-                        stripplot_kwargs['hue'] = None
-                        stripplot_kwargs['dodge'] = False
-                        stripplot_kwargs['alpha'] = 0.6
-                        stripplot_kwargs['color'] = 'black'
-                        stripplot_kwargs['jitter'] = 0.2
-                    sns.stripplot(**stripplot_kwargs)
+                    title_parts = []
+                    if facet_row: title_parts.append(f"{facet_row} = {row_cat}")
+                    if facet_col: title_parts.append(f"{facet_col} = {col_cat}")
+                    ax.set_title(" | ".join(title_parts))
+                    
+                    annotations_for_this_facet = [
+                        ann for ann in all_relevant_annotations
+                        if ann.get('facet_value') == (col_cat if facet_col else None)
+                    ]
+                    
+                    hue_order = sorted(df[visual_hue_col].unique()) if visual_hue_col else None
+                    self.apply_annotations(ax, subset_df, data_settings, hue_order, annotations_for_this_facet)
 
-            # --- 3. ファセット使用時にX軸ラベルを共有する ---
-            if facet_col or facet_row:
-                shared_xlabel = properties.get('xlabel') or current_x
-                for ax in g.axes.flat:
-                    ax.set_xlabel('')
-                g.fig.supxlabel(shared_xlabel, y=0.02, fontsize=properties.get('xlabel_fontsize', 12))
+            if visual_hue_col:
+                # (凡例ロジックは変更なし)
+                handles, labels = axes[0,0].get_legend_handles_labels()
+                if handles:
+                    by_label = dict(zip(labels, handles))
+                    legend_title = properties.get('legend_title') or visual_hue_col
+                    
+                    legend_pos = properties.get('legend_position', 'best')
+                    if legend_pos == 'best':
+                        legend_pos = 'upper right'
+                    
+                    fig.legend(by_label.values(), by_label.keys(),
+                               title=legend_title,
+                               loc=legend_pos)
 
-            # --- 4. ファセットの区切り線を調整 ---
-            if facet_col:
-                for i, ax_row in enumerate(g.axes):
-                    for j, ax in enumerate(ax_row):
-                        if j > 0:
-                            bottom, top = ax.get_ylim()
-                            extension = (top - bottom) * 0.10 # 10%に設定
-                            ax.spines['left'].set_bounds(bottom - extension, top)
-
-            # --- 5. アノテーションを適用 ---
-            self.apply_annotations(g, df, current_y, current_x, analysis_hue_col)
-            return g.fig
+            return fig
 
         except Exception as e:
             print(f"Graph drawing error: {e}")
@@ -200,9 +242,9 @@ class GraphManager:
     def update_graph_properties(self, fig, properties):
         fig.suptitle(properties.get('title', ''), fontsize=properties.get('title_fontsize', 16))
         for ax in fig.axes:
+            ax.set_xlabel(properties.get('xlabel') or ax.get_xlabel(), fontsize=properties.get('xlabel_fontsize', 12))
+            ax.set_ylabel(properties.get('ylabel') or ax.get_ylabel(), fontsize=properties.get('ylabel_fontsize', 12))
             ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
-            if ax.get_xlabel(): ax.xaxis.label.set_fontsize(properties.get('xlabel_fontsize', 12))
-            if ax.get_ylabel(): ax.yaxis.label.set_fontsize(properties.get('ylabel_fontsize', 12))
             if properties.get('hide_top_right_spines', True):
                 ax.spines['right'].set_visible(False); ax.spines['top'].set_visible(False)
             ax.grid(properties.get('show_grid', False))
@@ -242,9 +284,9 @@ class GraphManager:
                 QMessageBox.critical(self.main, "Error", f"Failed to save graph: {e}")
 
     def clear_annotations(self):
-        if hasattr(self, 'statistical_annotations'): self.main.statistical_annotations.clear()
-        if hasattr(self, 'regression_line_params'): self.main.regression_line_params = None
-        if hasattr(self, 'fit_params'): self.main.fit_params = None
+        self.main.statistical_annotations.clear()
+        self.main.regression_line_params = None
+        self.main.fit_params = None
         self.update_graph()
 
     def _draw_paired_plot_seaborn(self, ax, df, col1, col2, properties):

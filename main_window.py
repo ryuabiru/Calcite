@@ -168,13 +168,25 @@ class MainWindow(QMainWindow):
         toolbar.addAction(histogram_action); action_group.addAction(histogram_action)
 
     def set_graph_type(self, graph_type):
-        self.current_graph_type = graph_type
-        # DataTabにグラフタイプを伝達して、UIを切り替える
-        self.properties_panel.data_tab.set_graph_type(graph_type)
-        # TextTabのペアラベル入力欄の表示を切り替える
-        self.properties_panel.text_tab.update_paired_labels_visibility(graph_type == 'paired_scatter')
-        self.graph_manager.update_graph()
+        # ▼▼▼ ここからが修正箇所です ▼▼▼
+        # 処理中に自動でグラフが更新されるのを防ぐため、一時的にシグナルを切断
+        try:
+            self.properties_panel.propertiesChanged.disconnect(self.graph_manager.update_graph)
+        except (RuntimeError, TypeError):
+            pass # すでに切断されている場合は何もしない
 
+        self.current_graph_type = graph_type
+        # DataTabとTextTabのUIを安全に切り替える
+        self.properties_panel.data_tab.set_graph_type(graph_type)
+        self.properties_panel.text_tab.update_paired_labels_visibility(graph_type == 'paired_scatter')
+        
+        # UIの切り替えが終わったら、シグナルを再接続
+        self.properties_panel.propertiesChanged.connect(self.graph_manager.update_graph)
+        
+        # 最後に、手動でグラフの更新を一度だけトリガーする
+        self.graph_manager.update_graph()
+        # ▲▲▲ ここまでが修正箇所です ▲▲▲
+        
     def edit_header(self, logicalIndex):
         if self.header_editor: self.header_editor.close()
         header = self.table_view.horizontalHeader()
