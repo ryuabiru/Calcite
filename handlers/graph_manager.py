@@ -9,6 +9,7 @@ import traceback
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 class GraphManager:
     def __init__(self, main_window):
@@ -35,11 +36,7 @@ class GraphManager:
             self.replace_canvas(fig)
             self.update_graph_properties(fig, properties)
 
-    # ▼▼▼ 消えていたこの関数を元に戻します ▼▼▼
     def apply_annotations(self, ax, df, data_settings, hue_order, annotations_to_plot):
-        """
-        指定されたax（サブプロット）に、指定されたアノテーションリストを描画する。
-        """
         if not annotations_to_plot:
             return
 
@@ -100,21 +97,17 @@ class GraphManager:
         facet_row = data_settings.get('facet_row')
 
         try:
-            # ▼▼▼ ここからが最終修正箇所です ▼▼▼
             subgroup_palette = {}
             if visual_hue_col:
                 user_colors = properties.get('subgroup_colors', {})
                 unique_hues = sorted(df[visual_hue_col].unique())
                 
-                # 1. まず、全てのカテゴリに対するデフォルトパレットを生成
                 default_colors = sns.color_palette(n_colors=len(unique_hues))
                 subgroup_palette = dict(zip(unique_hues, default_colors))
                 
-                # 2. ユーザー設定の色があれば、それでデフォルトを上書き
                 for category, color in user_colors.items():
                     if category in subgroup_palette:
                         subgroup_palette[category] = color
-            # ▲▲▲ ここまで ▲▲▲
 
             row_categories = sorted(df[facet_row].unique()) if facet_row else [None]
             col_categories = sorted(df[facet_col].unique()) if facet_col else [None]
@@ -154,13 +147,28 @@ class GraphManager:
                             'violin': sns.violinplot, 'pointplot': sns.pointplot
                         }
                         if base_kind in plot_func_map:
-                            plot_func_map[base_kind](
-                                data=subset_df, x=current_x, y=current_y, 
-                                hue=visual_hue_col, ax=ax,
-                                palette=subgroup_palette if subgroup_palette else None,
-                                color=properties.get('single_color') if not visual_hue_col else None,
-                                **plot_kwargs
-                            )
+                            base_kwargs = {
+                                'data': subset_df, 'x': current_x, 'y': current_y, 
+                                'hue': visual_hue_col, 'ax': ax,
+                                'palette': subgroup_palette if subgroup_palette else None,
+                                'color': properties.get('single_color') if not visual_hue_col else None,
+                            }
+                            
+                            if base_kind == 'bar':
+                                base_kwargs.update({
+                                    'edgecolor': properties.get('bar_edgecolor', 'black'),
+                                    'linewidth': properties.get('bar_edgewidth', 1.0),
+                                    'capsize': properties.get('capsize', 4) * 0.01
+                                })
+
+                            if base_kind == 'pointplot':
+                                base_kwargs.update({
+                                    'join': True, 'dodge': 0.3,
+                                    'capsize': properties.get('capsize', 4) * 0.02,
+                                    'linestyle': properties.get('linestyle', '-')
+                                })
+                            
+                            plot_func_map[base_kind](**base_kwargs, **plot_kwargs)
 
                     if base_kind == 'scatter' or properties.get('scatter_overlay'):
                         sns.stripplot(
@@ -191,8 +199,6 @@ class GraphManager:
                 for ax in axes.flat:
                     if ax.get_legend() is not None:
                         ax.get_legend().remove()
-
-                import matplotlib.patches as mpatches
                 
                 legend_title = properties.get('legend_title') or visual_hue_col
                 legend_pos = properties.get('legend_position', 'best')
@@ -201,14 +207,12 @@ class GraphManager:
                 
                 kwargs = {}
                 if legend_pos == 'best':
-                    # デフォルトは「右上」を基準に配置する
                     kwargs['loc'] = 'upper right'
-                    kwargs['bbox_to_anchor'] = (1, 1) # 右上の角(1,1)に凡例の右上を合わせる
+                    kwargs['bbox_to_anchor'] = (1, 1)
                 else:
                     kwargs['loc'] = legend_pos
                 
                 fig.legend(handles=handles, title=legend_title, **kwargs)
-
                 
             return fig
 
@@ -239,18 +243,13 @@ class GraphManager:
             ax.grid(properties.get('show_grid', False))
             if properties.get('x_log_scale'): ax.set_xscale('log')
             if properties.get('y_log_scale'): ax.set_yscale('log')
-            
-        # 凡例がはみ出ないようにレイアウトを調整
-        # rectのrightを小さくして、右側にスペースを確保する
         fig.tight_layout(rect=[0, 0, 0.9, 0.96])
 
     def draw_paired_scatter(self, df, properties, data_settings):
         col1 = data_settings.get('col1')
         col2 = data_settings.get('col2')
         if not (col1 and col2 and col1 != col2): return None
-        fig = Figure(tight_layout=True)
-        FigureCanvas(fig)
-        ax = fig.add_subplot(111)
+        fig, ax = plt.subplots(tight_layout=True)
         try:
             self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
             return fig
@@ -270,7 +269,7 @@ class GraphManager:
         file_path, _ = QFileDialog.getSaveFileName(self.main, "Save Graph", "", "PNG (*.png);;JPEG (*.jpg);;SVG (*.svg);;PDF (*.pdf)")
         if file_path:
             try:
-                self.main.graph_widget.fig.savefig(file_path, dpi=300)
+                self.main.graph_widget.fig.savefig(file_path, dpi=300, bbox_inches='tight')
                 QMessageBox.information(self.main, "Success", f"Graph successfully saved to:\n{file_path}")
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to save graph: {e}")
@@ -305,12 +304,10 @@ class GraphManager:
         if not value_col: return None
         hue_col = data_settings.get('subgroup_col')
         if not hue_col: hue_col = None
-        if hue_col and hue_col in df.columns: df[hue_col] = df[hue_col].astype(str)
-        fig = Figure(tight_layout=True)
-        FigureCanvas(fig)
-        ax = fig.add_subplot(111)
+        fig, ax = plt.subplots(tight_layout=True)
         plot_kwargs = {}
         if hue_col:
+             df[hue_col] = df[hue_col].astype(str)
              plot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()}
         else:
             plot_kwargs['color'] = properties.get('single_color')
