@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import io
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication, QDialog, QVBoxLayout, QTextEdit
-from scipy.stats import ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency, shapiro, spearmanr, mannwhitneyu
+from scipy.stats import ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency, shapiro, spearmanr, mannwhitneyu, wilcoxon
 from scipy.optimize import curve_fit
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 
@@ -16,6 +16,7 @@ from dialogs.anova_dialog import AnovaDialog
 from dialogs.ttest_dialog import TTestDialog
 from dialogs.mannwhitney_dialog import MannWhitneyDialog
 from dialogs.paired_ttest_dialog import PairedTTestDialog
+from dialogs.wilcoxon_dialog import WilcoxonDialog
 from dialogs.correlation_dialog import CorrelationDialog
 from dialogs.fitting_dialog import FittingDialog
 from dialogs.contingency_dialog import ContingencyDialog
@@ -660,6 +661,50 @@ class ActionHandler:
 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform paired t-test: {e}")
+
+    def perform_wilcoxon_test(self):
+        """ウィルコクソンの符号順位検定を実行する。"""
+        if not hasattr(self.main, 'model'): return
+        df = self.main.model._data
+        dialog = WilcoxonDialog(df.columns, self.main)
+
+        if dialog.exec():
+            settings = dialog.get_settings()
+            col1, col2 = settings['col1'], settings['col2']
+            if not col1 or not col2 or col1 == col2:
+                QMessageBox.warning(self.main, "Warning", "Please select two different columns.")
+                return
+            try:
+                data1 = df[col1].dropna()
+                data2 = df[col2].dropna()
+                min_len = min(len(data1), len(data2))
+                if min_len < 2:
+                     QMessageBox.warning(self.main, "Warning", "Not enough paired data to perform the test.")
+                     return
+                
+                # wilcoxonは差がゼロのデータを除外するため、その処理を事前に行う
+                diff = data1[:min_len] - data2[:min_len]
+                nonzero_diff_indices = diff[diff != 0].index
+                
+                if len(nonzero_diff_indices) < 1:
+                    QMessageBox.warning(self.main, "Warning", "No non-zero differences found between the two columns.")
+                    return
+
+                stat, p_value = wilcoxon(data1.loc[nonzero_diff_indices], data2.loc[nonzero_diff_indices])
+
+                result_text = (
+                    f"Wilcoxon Signed-rank test results:\n=====================\n\nComparing:\n- Column 1: '{col1}'\n"
+                    f"- Column 2: '{col2}'\n(n={len(nonzero_diff_indices)} pairs with non-zero difference)\n\n---\n"
+                    f"W-statistic: {stat:.4f}\np-value: {p_value:.4f}\n\n"
+                )
+                if p_value < 0.05:
+                    result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
+                else:
+                    result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
+                self.show_results_dialog("Wilcoxon Signed-rank Test Result", result_text)
+
+            except Exception as e:
+                QMessageBox.critical(self.main, "Error", f"Failed to perform Wilcoxon test: {e}")
 
     def perform_chi_squared_test(self):
         """カイ二乗検定を実行する。"""

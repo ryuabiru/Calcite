@@ -108,10 +108,16 @@ class MainWindow(QMainWindow):
         anova_action.triggered.connect(self.action_handler.perform_one_way_anova)
         analysis_menu.addAction(anova_action)
         analysis_menu.addSeparator()
+
+        # --- Non-parametric Tests ---
         analysis_menu.addSection("Non-parametric Tests")
         mannwhitney_action = QAction("&Mann-Whitney U test...", self)
         mannwhitney_action.triggered.connect(self.action_handler.perform_mannwhitney_test)
         analysis_menu.addAction(mannwhitney_action)
+        wilcoxon_action = QAction("&Wilcoxon signed-rank test...", self)
+        wilcoxon_action.triggered.connect(self.action_handler.perform_wilcoxon_test)
+        analysis_menu.addAction(wilcoxon_action)
+        
         shapiro_test_action = QAction("&Shapiro-Wilk...", self)
         shapiro_test_action.triggered.connect(self.action_handler.perform_shapiro_test)
         analysis_menu.addAction(shapiro_test_action)
