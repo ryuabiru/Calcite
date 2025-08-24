@@ -231,9 +231,7 @@ class GraphManager:
                             ax.spines['left'].set_bounds(bottom - extension, top)
 
             if visual_hue_col:
-                # (凡例のクリア処理などは変更なし)
-                if fig.legends:
-                    fig.legends.clear()
+                # 凡例が重複しないように、既存の凡例をすべてクリア
                 for ax in axes.flat:
                     if ax.get_legend() is not None:
                         ax.get_legend().remove()
@@ -246,16 +244,21 @@ class GraphManager:
                 handles = [mpatches.Patch(color=color, label=label) for label, color in subgroup_palette.items()]
                 
                 # ▼▼▼ ここからが修正箇所です ▼▼▼
+                # 凡例を描画する場所を、一番右上のaxに決定する
+                legend_ax = axes[0, -1]
+                
                 kwargs = {}
                 if legend_pos == 'best':
-                    # デフォルトは常に枠外右上に配置
+                    # デフォルトは、右上axの、さらに外側右上に配置
+                    # loc='upper left'は「凡例の左上隅」を基準点に合わせるという意味
+                    # bbox_to_anchor=(1.02, 1)は「右上axの右上隅から、少し右」という基準点
                     kwargs['loc'] = 'upper left'
                     kwargs['bbox_to_anchor'] = (1.02, 1)
                 else:
-                    # ユーザーが明示的に位置を指定した場合は、それに従う
+                    # ユーザーが明示的に位置を指定した場合は、そのaxの中に配置
                     kwargs['loc'] = legend_pos
                 
-                fig.legend(handles=handles, title=legend_title, **kwargs)
+                legend_ax.legend(handles=handles, title=legend_title, **kwargs)
                 # ▲▲▲ ここまで ▲▲▲
                 
             return fig
@@ -287,7 +290,8 @@ class GraphManager:
             ax.grid(properties.get('show_grid', False))
             if properties.get('x_log_scale'): ax.set_xscale('log')
             if properties.get('y_log_scale'): ax.set_yscale('log')
-        fig.tight_layout(rect=[0, 0, 0.9, 0.96])
+            
+        fig.tight_layout(rect=[0.05, 0.05, 0.90, 0.95])
 
     def draw_paired_scatter(self, df, properties, data_settings):
         col1 = data_settings.get('col1')
