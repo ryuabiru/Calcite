@@ -150,7 +150,12 @@ class MainWindow(QMainWindow):
         violin_action = QAction("Violin Plot", self)
         violin_action.setCheckable(True)
         violin_action.triggered.connect(lambda: self.set_graph_type('violinplot'))
-        toolbar.addAction(violin_action); action_group.addAction(violin_action)
+        toolbar.addAction(violin_action); action_group.addAction(violin_action)\
+        
+        point_action = QAction("Point Plot", self)
+        point_action.setCheckable(True)
+        point_action.triggered.connect(lambda: self.set_graph_type('pointplot'))
+        toolbar.addAction(point_action); action_group.addAction(point_action)
         
         paired_scatter_action = QAction("Paired Scatter", self)
         paired_scatter_action.setCheckable(True)

@@ -91,10 +91,11 @@ class GraphManager:
             df[visual_hue_col] = df[visual_hue_col].astype(str)
 
         base_kind = self.main.current_graph_type
-        if base_kind not in ['bar', 'boxplot', 'violinplot', 'scatter']:
+        if base_kind not in ['bar', 'boxplot', 'violinplot', 'scatter', 'pointplot']: # pointplotを追加
             base_kind = 'scatter'
 
         try:
+            # --- 1. catplotでグラフの「枠組み」を作成 ---
             g = sns.catplot(
                 data=df, x=current_x, y=current_y, hue=visual_hue_col,
                 col=facet_col, row=facet_row,
@@ -102,27 +103,44 @@ class GraphManager:
                 kind='strip', alpha=0.0, legend=False
             )
 
+            # --- 2. 各サブプロットをループし、グラフを描画 ---
             for ax in g.axes.flat:
                 original_title = ax.get_title()
                 ax.clear()
                 ax.set_title(original_title)
 
+                # 土台となるグラフ（棒、箱ひげ等）を描画
                 if base_kind != 'scatter':
-                    plot_func_map = {'bar': sns.barplot, 'boxplot': sns.boxplot, 'violinplot': sns.violinplot}
+                    plot_func_map = {
+                        'bar': sns.barplot, 
+                        'boxplot': sns.boxplot, 
+                        'violinplot': sns.violinplot,
+                        'pointplot': sns.pointplot # pointplotをmapに追加
+                    }
                     plot_func = plot_func_map[base_kind]
+                    
                     base_kwargs = {
                         'data': df, 'x': current_x, 'y': current_y, 'hue': visual_hue_col, 'ax': ax,
                         'palette': {str(k): v for k, v in properties.get('subgroup_colors', {}).items()} if visual_hue_col else None,
                         'color': properties.get('single_color') if not visual_hue_col else None
                     }
+
                     if base_kind == 'boxplot':
                         base_kwargs['showfliers'] = False
                     elif base_kind == 'bar':
                         base_kwargs['edgecolor'] = properties.get('bar_edgecolor', 'black')
                         base_kwargs['linewidth'] = properties.get('bar_edgewidth', 1.0)
                         base_kwargs['capsize'] = properties.get('capsize', 4) * 0.01
+                    # --- ▼▼▼ ここに elif base_kind == 'pointplot' があります ▼▼▼ ---
+                    elif base_kind == 'pointplot':
+                        base_kwargs['join'] = True      # 線を結ぶ
+                        base_kwargs['dodge'] = False    # 横にずらさない
+                        base_kwargs['capsize'] = properties.get('capsize', 4) * 0.02
+                        base_kwargs['linestyle'] = properties.get('linestyle', '-')
+
                     plot_func(**base_kwargs)
 
+                # 個別のデータ点（stripplot）を描画
                 if base_kind == 'scatter' or properties.get('scatter_overlay', False):
                     stripplot_kwargs = {
                         'data': df, 'x': current_x, 'y': current_y, 'ax': ax,
@@ -135,7 +153,7 @@ class GraphManager:
                         stripplot_kwargs['alpha'] = 1.0
                         stripplot_kwargs['palette'] = {str(k): v for k, v in properties.get('subgroup_colors', {}).items()} if visual_hue_col else None
                         stripplot_kwargs['color'] = properties.get('single_color') if not visual_hue_col else None
-                    else:
+                    else: # 重ね描きの場合
                         stripplot_kwargs['hue'] = None
                         stripplot_kwargs['dodge'] = False
                         stripplot_kwargs['alpha'] = 0.6
@@ -143,40 +161,20 @@ class GraphManager:
                         stripplot_kwargs['jitter'] = 0.2
                     sns.stripplot(**stripplot_kwargs)
 
-            # --- 3. 凡例の処理 (リセットされた状態) ---
-            if visual_hue_col:
-                handles, labels = g.axes.flat[0].get_legend_handles_labels()
-                if handles:
-                    num_hues = len(df[visual_hue_col].unique())
-                    g.add_legend(handles=handles[:num_hues], labels=labels[:num_hues], title=visual_hue_col)
-            
-            # --- ▼▼▼ ここからが今回の修正の核心部です ▼▼▼ ---
-            # --- 4. ファセット使用時にX軸ラベルを共有する ---
+            # --- 3. ファセット使用時にX軸ラベルを共有する ---
             if facet_col or facet_row:
-                # ユーザーがテキストタブで設定したX軸ラベル名を取得、なければカラム名を使う
                 shared_xlabel = properties.get('xlabel') or current_x
-                
-                # 全てのサブプロットから個別のX軸ラベルを削除
                 for ax in g.axes.flat:
                     ax.set_xlabel('')
-                    
-                # Figure全体の中央に1つのX軸ラベルを追加
                 g.fig.supxlabel(shared_xlabel, y=0.02, fontsize=properties.get('xlabel_fontsize', 12))
-            # --- ▲▲▲ 修正はここまで ▲▲▲ ---
 
-            # --- 5. ファセットの区切り線を調整 ---
+            # --- 4. ファセットの区切り線を調整 ---
             if facet_col:
-                # FacetGridのAxesは2次元配列で管理されている
                 for i, ax_row in enumerate(g.axes):
                     for j, ax in enumerate(ax_row):
-                        # 2列目以降のグラフに対してのみ処理を実行
                         if j > 0:
-                            # Y軸の描画範囲を取得
                             bottom, top = ax.get_ylim()
-                            # 下に延長する長さを、Y軸全体の高さの2%に設定
-                            extension = (top - bottom) * 0.1
-                            
-                            # 左の枠線(spine)の描画範囲を、下に延長するように再設定
+                            extension = (top - bottom) * 0.10 # 10%に設定
                             ax.spines['left'].set_bounds(bottom - extension, top)
 
             # --- 5. アノテーションを適用 ---
