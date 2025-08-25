@@ -8,6 +8,28 @@ from PySide6.QtCore import Signal
 from functools import partial
 import seaborn as sns
 
+class NoScrollComboBox(QComboBox):
+    """
+    マウスホイールのスクロールイベントを無視するQComboBoxのカスタムクラス。
+    """
+    def wheelEvent(self, e):
+        # wheelEventを何もしないようにオーバーライドする
+        e.ignore()
+
+class NoScrollSpinBox(QSpinBox):
+    """
+    マウスホイールのスクロールイベントを無視するQSpinBoxのカスタムクラス。
+    """
+    def wheelEvent(self, e):
+        e.ignore()
+
+class NoScrollDoubleSpinBox(QDoubleSpinBox):
+    """
+    マウスホイールのスクロールイベントを無視するQDoubleSpinBoxのカスタムクラス。
+    """
+    def wheelEvent(self, e):
+        e.ignore()
+
 class FormatTab(QWidget):
     """フォーマット設定タブのUIとロジック"""
     propertiesChanged = Signal()
@@ -20,14 +42,14 @@ class FormatTab(QWidget):
         self.current_bar_edgecolor = 'black'
         self.subgroup_colors = {}
         self.subgroup_widgets = {}
+        self.current_categories = []
+
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         main_widget = QWidget()
         scroll_area.setWidget(main_widget)
         
-        # ▼▼▼ ここからレイアウト構造を大きく変更 ▼▼▼
-        # 全体をまとめる垂直レイアウト
         main_layout = QVBoxLayout(main_widget)
 
         # --- 1. スタイル設定グループ ---
@@ -47,9 +69,9 @@ class FormatTab(QWidget):
         elements_group = QGroupBox("Graph Elements")
         elements_layout = QFormLayout(elements_group)
 
-        # マーカー設定
         elements_layout.addRow(QLabel("<b>Markers (Scatter/Overlays)</b>"))
         self.marker_combo = QComboBox()
+        self.marker_combo = NoScrollComboBox()
         markers = {'Circle': 'o', 'Square': 's', 'Triangle': '^', 'Diamond': 'D', 'None': 'None'}
         for name, style in markers.items():
             self.marker_combo.addItem(name, style)
@@ -59,33 +81,33 @@ class FormatTab(QWidget):
         self.marker_edgecolor_button.setStyleSheet(f"background-color: {self.current_marker_edgecolor};")
         elements_layout.addRow(QLabel("Edge Color:"), self.marker_edgecolor_button)
 
-        self.marker_edgewidth_spin = QDoubleSpinBox()
+        self.marker_edgewidth_spin = NoScrollDoubleSpinBox()
         self.marker_edgewidth_spin.setRange(0, 10); self.marker_edgewidth_spin.setSingleStep(0.5); self.marker_edgewidth_spin.setValue(1.0)
         elements_layout.addRow(QLabel("Edge Width:"), self.marker_edgewidth_spin)
         
-        # 棒グラフ設定
         elements_layout.addRow(QLabel("<b>Bar Chart</b>"))
         self.bar_edgecolor_button = QPushButton("Select Color")
         self.bar_edgecolor_button.setStyleSheet(f"background-color: {self.current_bar_edgecolor};")
         elements_layout.addRow(QLabel("Edge Color:"), self.bar_edgecolor_button)
 
-        self.bar_edgewidth_spin = QDoubleSpinBox()
+        # ▼▼▼ QDoubleSpinBox を NoScrollDoubleSpinBox に変更 ▼▼▼
+        self.bar_edgewidth_spin = NoScrollDoubleSpinBox()
         self.bar_edgewidth_spin.setRange(0, 10); self.bar_edgewidth_spin.setSingleStep(0.5); self.bar_edgewidth_spin.setValue(1.0)
         elements_layout.addRow(QLabel("Edge Width:"), self.bar_edgewidth_spin)
 
-        self.capsize_spin = QSpinBox()
+        self.capsize_spin = NoScrollSpinBox()
         self.capsize_spin.setRange(0, 20); self.capsize_spin.setValue(4)
         elements_layout.addRow(QLabel("Error Bar Cap Size:"), self.capsize_spin)
 
-        # 線設定
         elements_layout.addRow(QLabel("<b>Line (Regression/Point Plot)</b>"))
-        self.linestyle_combo = QComboBox()
+        self.linestyle_combo = NoScrollComboBox()
         linestyles = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'Dash-Dot': '-.'}
         for name, style in linestyles.items():
             self.linestyle_combo.addItem(name, style)
         elements_layout.addRow(QLabel("Style:"), self.linestyle_combo)
 
-        self.linewidth_spin = QDoubleSpinBox()
+        # ▼▼▼ QDoubleSpinBox を NoScrollDoubleSpinBox に変更 ▼▼▼
+        self.linewidth_spin = NoScrollDoubleSpinBox()
         self.linewidth_spin.setRange(0.5, 10.0); self.linewidth_spin.setSingleStep(0.5); self.linewidth_spin.setValue(1.5)
         elements_layout.addRow(QLabel("Width:"), self.linewidth_spin)
         
@@ -98,13 +120,21 @@ class FormatTab(QWidget):
         self.single_color_button = QPushButton("Select Color")
         color_layout.addRow(QLabel("Single Color:"), self.single_color_button)
         
+        # ▼▼▼ ここからが修正・追加箇所です ▼▼▼
         color_layout.addRow(QLabel("<b>Sub-group Colors</b>"))
-        self.subgroup_color_layout = QFormLayout() # ここは変更なし
+        
+        # パレット選択用のComboBoxを追加
+        self.palette_combo = NoScrollComboBox()
+        palettes = ["default", "deep", "muted", "pastel", "bright", "dark", "colorblind", "Paired", "Set2", "tab10"]
+        self.palette_combo.addItems(palettes)
+        color_layout.addRow(QLabel("Palette:"), self.palette_combo)
+
+        self.subgroup_color_layout = QFormLayout()
         color_layout.addRow(self.subgroup_color_layout)
+        # ▲▲▲ ここまで ▲▲▲
         
         main_layout.addWidget(color_group)
-        main_layout.addStretch() # スペーサーを追加してUIを上によせる
-        # ▲▲▲ ここまで ▲▲▲
+        main_layout.addStretch()
 
         outer_layout = QVBoxLayout(self)
         outer_layout.addWidget(scroll_area)
@@ -114,7 +144,6 @@ class FormatTab(QWidget):
     def connect_signals(self):
         self.spines_check.stateChanged.connect(self.propertiesChanged.emit)
         self.scatter_overlay_check.stateChanged.connect(self.propertiesChanged.emit)
-        # 凡例関連のシグナルは削除
         self.marker_combo.currentIndexChanged.connect(self.propertiesChanged.emit)
         self.linestyle_combo.currentIndexChanged.connect(self.propertiesChanged.emit)
         self.marker_edgewidth_spin.valueChanged.connect(self.propertiesChanged.emit)
@@ -124,12 +153,14 @@ class FormatTab(QWidget):
         self.single_color_button.clicked.connect(self.open_single_color_dialog)
         self.marker_edgecolor_button.clicked.connect(self.open_marker_edgecolor_dialog)
         self.bar_edgecolor_button.clicked.connect(self.open_bar_edgecolor_dialog)
+        # ★★★ パレット選択のシグナルを接続 ★★★
+        self.palette_combo.currentTextChanged.connect(self.on_palette_changed)
+
 
     def get_properties(self):
         return {
             'hide_top_right_spines': self.spines_check.isChecked(),
             'scatter_overlay': self.scatter_overlay_check.isChecked(),
-            # 凡例関連のプロパティは削除
             'marker_style': self.marker_combo.currentData(),
             'marker_edgecolor': self.current_marker_edgecolor,
             'marker_edgewidth': self.marker_edgewidth_spin.value(),
@@ -141,6 +172,16 @@ class FormatTab(QWidget):
             'single_color': self.current_color,
             'subgroup_colors': self.subgroup_colors,
         }
+
+    # ★★★ パレットが変更されたときに呼ばれるメソッドを追加 ★★★
+    def on_palette_changed(self):
+        """
+        パレット選択に応じて、サブグループの色設定を更新する
+        """
+        # 現在表示されているカテゴリを使ってUIを再描画
+        self.update_subgroup_color_ui(self.current_categories)
+        # グラフ本体も更新するように通知
+        self.propertiesChanged.emit()
 
     def open_single_color_dialog(self):
         color = QColorDialog.getColor()
@@ -173,34 +214,41 @@ class FormatTab(QWidget):
             self.propertiesChanged.emit()
 
     def update_subgroup_color_ui(self, categories):
+        # ★★★ メソッドのロジックを全面的に修正 ★★★
+        self.current_categories = categories # 現在のカテゴリを保存
+
+        # 既存のUIをクリア
         while self.subgroup_color_layout.count():
             item = self.subgroup_color_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        
         self.subgroup_widgets.clear()
         
-        if categories:
-            default_colors = sns.color_palette(n_colors=len(categories))
-            hex_colors = [f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}" for r, g, b in default_colors]
-        else:
-            hex_colors = []
+        if not categories:
+            return
 
+        # 選択されたパレットを取得
+        selected_palette = self.palette_combo.currentText()
+        if selected_palette == "default":
+             # "default"の場合は、引数なしでseabornのデフォルトパレットを取得
+            palette = sns.color_palette(n_colors=len(categories))
+        else:
+            palette = sns.color_palette(selected_palette, n_colors=len(categories))
+
+        # パレットの色を16進数文字列に変換
+        hex_colors = [f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}" for r, g, b in palette]
+        
+        # self.subgroup_colorsを新しいパレットの色で完全に上書き
+        self.subgroup_colors.clear()
         for i, category in enumerate(categories):
             str_category = str(category)
-            if str_category not in self.subgroup_colors:
-                self.subgroup_colors[str_category] = hex_colors[i]
+            self.subgroup_colors[str_category] = hex_colors[i]
         
-        current_categories_str = {str(c) for c in categories}
-        for key in list(self.subgroup_colors.keys()):
-            if key not in current_categories_str:
-                del self.subgroup_colors[key]
-
+        # 新しい色設定に基づいてUIを再構築
         for category in categories:
             str_category = str(category)
             button = QPushButton("Select Color")
-            if str_category in self.subgroup_colors:
-                button.setStyleSheet(f"background-color: {self.subgroup_colors[str_category]};")
+            button.setStyleSheet(f"background-color: {self.subgroup_colors[str_category]};")
             
             button.clicked.connect(partial(self.open_subgroup_color_dialog, str_category))
             self.subgroup_color_layout.addRow(QLabel(f"{str_category}:"), button)
