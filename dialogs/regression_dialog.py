@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLabel, QComboBox, QDialogButtonBox
 )
 
-class FittingDialog(QDialog):
+class RegressionDialog(QDialog):
     """
     非線形回帰分析のための設定を行うダイアログ。
     X軸・Y軸の列と、使用するフィッティングモデルを選択させる。
@@ -18,7 +18,7 @@ class FittingDialog(QDialog):
             parent (QWidget, optional): 親ウィジェット。
         """
         super().__init__(parent)
-        self.setWindowTitle("Non-linear Regression")
+        self.setWindowTitle("Regression Analysis")
 
         main_layout = QVBoxLayout(self)
         form_layout = QFormLayout()
@@ -32,7 +32,8 @@ class FittingDialog(QDialog):
         self.x_column_combo.addItems(columns)
         self.y_column_combo.addItems(columns)
         
-        # フィッティングモデルの選択肢を追加（現在はシグモイド曲線のみ）
+        # フィッティングモデルの選択肢を追加
+        self.model_combo.addItem("Linear", "linear")
         self.model_combo.addItem("Sigmoidal (4PL)", "4pl")
 
         # OK/Cancelボタン

@@ -153,12 +153,9 @@ class MainWindow(QMainWindow):
         spearman_action = QAction("&Spearman...", self)
         spearman_action.triggered.connect(self.action_handler.perform_spearman_correlation)
         analysis_menu.addAction(spearman_action)
-        linreg_action = QAction("&Linear Regression...", self)
-        linreg_action.triggered.connect(self.action_handler.perform_linear_regression)
-        analysis_menu.addAction(linreg_action)
-        fitting_action = QAction("&Non-linear Regression...", self)
-        fitting_action.triggered.connect(self.action_handler.perform_fitting)
-        analysis_menu.addAction(fitting_action)
+        regression_action = QAction("&Regression...", self)
+        regression_action.triggered.connect(self.action_handler.perform_regression)
+        analysis_menu.addAction(regression_action)
 
     def _create_toolbar(self):
         toolbar = QToolBar("Graph Type")

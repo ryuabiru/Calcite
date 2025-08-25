@@ -21,7 +21,7 @@ from dialogs.mannwhitney_dialog import MannWhitneyDialog
 from dialogs.paired_ttest_dialog import PairedTTestDialog
 from dialogs.wilcoxon_dialog import WilcoxonDialog
 from dialogs.correlation_dialog import CorrelationDialog
-from dialogs.fitting_dialog import FittingDialog
+from dialogs.regression_dialog import RegressionDialog
 from dialogs.contingency_dialog import ContingencyDialog
 from dialogs.pivot_dialog import PivotDialog
 
@@ -935,72 +935,85 @@ class ActionHandler:
             traceback.print_exc()
 
     # --- Regression Analysis ---
-    
-    def perform_linear_regression(self):
-        """線形回帰分析を実行する。"""
-        if not hasattr(self.main, 'model'): return
-        selected_columns = sorted(list(set(index.column() for index in self.main.table_view.selectionModel().selectedIndexes())))
-        if len(selected_columns) != 2: 
-            QMessageBox.warning(self.main, "Warning", "Please select exactly two columns.")
-            return
-
-        df = self.main.model._data
-        x_col_index, y_col_index = selected_columns
-        x_data, y_data = df.iloc[:, x_col_index].dropna(), df.iloc[:, y_col_index].dropna()
-        
-        slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data)
-
-        self.main.regression_line_params = {
-            "x_line": np.array([x_data.min(), x_data.max()]),
-            "y_line": slope * np.array([x_data.min(), x_data.max()]) + intercept,
-            "r_squared": r_value**2
-        }
-        self.main.fit_params = None
-        self.main.graph_manager.update_graph()
-
     def sigmoid_4pl(self, x, bottom, top, hill_slope, log_ec50):
         """4パラメータロジスティック（4PL）モデルの関数。xとlog_ec50はlog10スケール。"""
         return bottom + (top - bottom) / (1 + 10**((log_ec50 - x) * hill_slope))
 
-    def perform_fitting(self):
-        """非線形回帰分析を実行する。"""
+    def perform_regression(self):
+        """回帰分析ダイアログを表示し、選択されたモデルに基づいて分析を実行する。"""
         if not hasattr(self.main, 'model'): return
         df = self.main.model._data
-        dialog = FittingDialog(df.columns, self.main)
+        
+        # 新しいRegressionDialogを呼び出す
+        dialog = RegressionDialog(df.columns, self.main)
+        
         if dialog.exec():
             settings = dialog.get_settings()
-            x_col, y_col = settings['x_col'], settings['y_col']
-            if not x_col or not y_col: return
+            x_col, y_col, model = settings['x_col'], settings['y_col'], settings['model']
+            
+            if not x_col or not y_col:
+                QMessageBox.warning(self.main, "Warning", "Please select both X and Y columns.")
+                return
+
             try:
-                fit_df = df[[x_col, y_col]].dropna().copy()
-                if (fit_df[x_col] <= 0).any():
-                    QMessageBox.warning(self.main, "Warning", "X-axis column for fitting contains non-positive values.")
-                    return
-                
-                fit_df['log_x'] = np.log10(fit_df[x_col])
-                x_data, y_data = fit_df['log_x'], fit_df[y_col]
+                # --- モデルに応じて処理を分岐 ---
+                if model == 'linear':
+                    # 線形回帰
+                    x_data = df[x_col].dropna()
+                    y_data = df[y_col].dropna()
+                    common_indices = x_data.index.intersection(y_data.index)
+                    x_data = x_data.loc[common_indices]
+                    y_data = y_data.loc[common_indices]
 
-                p0 = [y_data.min(), y_data.max(), 1.0, np.log10(np.median(fit_df[x_col]))]
-                
-                params, _ = curve_fit(self.sigmoid_4pl, x_data, y_data, p0=p0, maxfev=10000)
-                
-                bottom, top, hill_slope, log_ec50 = params
-                ec50 = 10**log_ec50
-                
-                y_pred = self.sigmoid_4pl(x_data, *params)
-                r_squared = 1 - (np.sum((y_data - y_pred) ** 2) / np.sum((y_data - np.mean(y_data)) ** 2))
+                    if len(x_data) < 2:
+                        QMessageBox.warning(self.main, "Warning", "Not enough data for linear regression.")
+                        return
 
-                self.main.fit_params = {"params": params, "r_squared": r_squared, "x_col": x_col, "y_col": y_col, "log_x_data": x_data}
-                self.main.regression_line_params = None
-                self.main.graph_manager.update_graph()
+                    slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data)
 
-                result_text = "Non-linear Regression Results (Sigmoidal 4PL)\n"
-                result_text += "==============================================\n\n"
-                result_text += f"Top: {top:.4f}\n"
-                result_text += f"Bottom: {bottom:.4f}\n"
-                result_text += f"Hill Slope: {hill_slope:.4f}\n"
-                result_text += f"EC50: {ec50:.4f}\n\n"
-                result_text += f"R-squared: {r_squared:.4f}\n"
-                self.main.results_widget.set_results_text("Fitting Result", result_text)
+                    self.main.regression_line_params = {
+                        "x_line": np.array([x_data.min(), x_data.max()]),
+                        "y_line": slope * np.array([x_data.min(), x_data.max()]) + intercept,
+                        "r_squared": r_value**2
+                    }
+                    self.main.fit_params = None
+                    self.main.graph_manager.update_graph()
+                    
+                    result_text = (f"Linear Regression Results\n=========================\n\n"
+                                   f"Y = {slope:.4f} * X + {intercept:.4f}\n"
+                                   f"R-squared: {r_value**2:.4f}\n"
+                                   f"p-value: {p_value:.4f}")
+                    self.main.results_widget.set_results_text(result_text)
+
+                elif model == '4pl':
+                    # 4PL非線形回帰 (以前のロジックを流用)
+                    fit_df = df[[x_col, y_col]].dropna().copy()
+                    if (fit_df[x_col] <= 0).any():
+                        QMessageBox.warning(self.main, "Warning", "X-axis column for 4PL fitting must contain only positive values.")
+                        return
+                    
+                    fit_df['log_x'] = np.log10(fit_df[x_col])
+                    x_data, y_data = fit_df['log_x'], fit_df[y_col]
+
+                    p0 = [y_data.min(), y_data.max(), 1.0, np.log10(np.median(fit_df[x_col]))]
+                    
+                    params, _ = curve_fit(self.sigmoid_4pl, x_data, y_data, p0=p0, maxfev=10000)
+                    
+                    bottom, top, hill_slope, log_ec50 = params
+                    ec50 = 10**log_ec50
+                    
+                    y_pred = self.sigmoid_4pl(x_data, *params)
+                    r_squared = 1 - (np.sum((y_data - y_pred) ** 2) / np.sum((y_data - np.mean(y_data)) ** 2))
+
+                    self.main.fit_params = {"params": params, "r_squared": r_squared, "x_col": x_col, "y_col": y_col, "log_x_data": x_data}
+                    self.main.regression_line_params = None
+                    self.main.graph_manager.update_graph()
+
+                    result_text = ("Non-linear Regression Results (Sigmoidal 4PL)\n==============================================\n\n"
+                                   f"Top: {top:.4f}\nBottom: {bottom:.4f}\n"
+                                   f"Hill Slope: {hill_slope:.4f}\nEC50: {ec50:.4f}\n\n"
+                                   f"R-squared: {r_squared:.4f}\n")
+                    self.main.results_widget.set_results_text(result_text)
+
             except Exception as e:
-                QMessageBox.critical(self.main, "Error", f"Failed to perform fitting: {e}")
+                QMessageBox.critical(self.main, "Error", f"Failed to perform regression: {e}\n\n{traceback.format_exc()}")
