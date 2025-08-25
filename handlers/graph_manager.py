@@ -15,6 +15,10 @@ class GraphManager:
     def __init__(self, main_window):
         self.main = main_window
 
+    def sigmoid_4pl(self, x, bottom, top, hill_slope, log_ec50):
+        """4パラメータロジスティック（4PL）モデルの関数。xとlog_ec50はlog10スケール。"""
+        return bottom + (top - bottom) / (1 + 10**((log_ec50 - x) * hill_slope))
+
     def update_graph(self):
         if not hasattr(self.main, 'model') or self.main.model is None:
             self.clear_canvas()
@@ -89,9 +93,12 @@ class GraphManager:
         if current_x == analysis_hue_col:
             analysis_hue_col = None
 
-        df[current_x] = df[current_x].astype(str)
-        if visual_hue_col:
-            df[visual_hue_col] = df[visual_hue_col].astype(str)
+        # ▼▼▼ 散布図の場合、数値として扱うためastype(str)を条件付きで実行 ▼▼▼
+        if self.main.current_graph_type != 'scatter':
+            df[current_x] = df[current_x].astype(str)
+            if visual_hue_col:
+                df[visual_hue_col] = df[visual_hue_col].astype(str)
+        # ▲▲▲ ここまで ▲▲▲
 
         facet_col = data_settings.get('facet_col')
         facet_row = data_settings.get('facet_row')
@@ -164,7 +171,7 @@ class GraphManager:
                             if base_kind == 'pointplot':
                                 base_kwargs.update({
                                     'join': True, 
-                                    'dodge': False, # サブグループがあっても横にずらさない
+                                    'dodge': False,
                                     'capsize': properties.get('capsize', 4) * 0.02,
                                     'linestyle': properties.get('linestyle', '-')
                                 })
@@ -181,30 +188,47 @@ class GraphManager:
                             'legend': False
                         }
 
-                        # ▼▼▼ ここからが修正箇所です ▼▼▼
-                        # dodge（横ずれ）を適用するかどうかを賢く判断する
                         should_dodge = True
-                        if visual_hue_col == current_x: # xとhueが同じ場合は、dodgeしない
+                        if visual_hue_col == current_x:
                             should_dodge = False
 
+                    if base_kind == 'scatter' or properties.get('scatter_overlay'):
+                        
+                        # ▼▼▼ ここからが修正箇所です ▼▼▼
                         if base_kind == 'scatter':
-                            stripplot_kwargs.update({
+                            # --- 散布図の場合：scatterplotを使用 ---
+                            scatter_kwargs = {
+                                'data': subset_df, 'x': current_x, 'y': current_y, 'ax': ax,
+                                'marker': properties.get('marker_style', 'o'),
+                                'edgecolor': properties.get('marker_edgecolor', 'black'),
+                                'linewidth': properties.get('marker_edgewidth', 1.0),
                                 'hue': visual_hue_col,
                                 'palette': subgroup_palette if subgroup_palette else None,
-                                'alpha': 1.0,
-                                'dodge': should_dodge # 判断結果を適用
-                            })
-                        else: # 重ね描きの場合
+                                'legend': False 
+                            }
+                            sns.scatterplot(**scatter_kwargs)
+                        
+                        else: # --- 重ね描きの場合：これまで通りstripplotを使用 ---
+                            stripplot_kwargs = {
+                                'data': subset_df, 'x': current_x, 'y': current_y, 'ax': ax,
+                                'marker': properties.get('marker_style', 'o'),
+                                'edgecolor': properties.get('marker_edgecolor', 'black'),
+                                'linewidth': properties.get('marker_edgewidth', 1.0),
+                                'legend': False
+                            }
+
+                            should_dodge = True
+                            if visual_hue_col == current_x:
+                                should_dodge = False
+                            
                             stripplot_kwargs.update({
                                 'hue': visual_hue_col,
                                 'palette': subgroup_palette if subgroup_palette else None,
                                 'alpha': 0.6,
-                                'dodge': should_dodge, # 判断結果を適用
+                                'dodge': should_dodge,
                                 'jitter': 0.2
                             })
-                        # ▲▲▲ ここまで ▲▲▲
-
-                        sns.stripplot(**stripplot_kwargs)
+                            sns.stripplot(**stripplot_kwargs)
 
                     title_parts = []
                     if facet_row: title_parts.append(f"{facet_row} = {row_cat}")
@@ -230,36 +254,45 @@ class GraphManager:
                             extension = (top - bottom) * 0.10
                             ax.spines['left'].set_bounds(bottom - extension, top)
 
+            if self.main.current_graph_type == 'scatter' and not (facet_col or facet_row):
+                ax = axes[0, 0]
+                if self.main.regression_line_params:
+                    params = self.main.regression_line_params
+                    r_squared = params.get("r_squared", 0)
+                    ax.plot(params["x_line"], params["y_line"], color='red', linestyle='--', 
+                            label=f'Linear Fit ($R^2$={r_squared:.3f})')
+                if self.main.fit_params:
+                    params_dict = self.main.fit_params
+                    fit_params = params_dict["params"]
+                    log_x_data = params_dict["log_x_data"]
+                    r_squared = params_dict.get("r_squared", 0)
+                    x_smooth_log = np.linspace(log_x_data.min(), log_x_data.max(), 200)
+                    y_smooth = self.sigmoid_4pl(x_smooth_log, *fit_params)
+                    ax.plot(10**x_smooth_log, y_smooth, color='blue', linestyle='--', 
+                            label=f'4PL Fit ($R^2$={r_squared:.3f})')
+                if self.main.regression_line_params or self.main.fit_params:
+                    handles, labels = ax.get_legend_handles_labels()
+                    if handles:
+                        legend_pos = properties.get('legend_position', 'best')
+                        if ax.get_legend() is not None:
+                            ax.get_legend().remove()
+                        ax.legend(handles=handles, loc=legend_pos)
+
             if visual_hue_col:
-                # 凡例が重複しないように、既存の凡例をすべてクリア
                 for ax in axes.flat:
                     if ax.get_legend() is not None:
                         ax.get_legend().remove()
-
-                import matplotlib.patches as mpatches
-                
                 legend_title = properties.get('legend_title') or visual_hue_col
                 legend_pos = properties.get('legend_position', 'best')
-                
                 handles = [mpatches.Patch(color=color, label=label) for label, color in subgroup_palette.items()]
-                
-                # ▼▼▼ ここからが修正箇所です ▼▼▼
-                # 凡例を描画する場所を、一番右上のaxに決定する
                 legend_ax = axes[0, -1]
-                
                 kwargs = {}
                 if legend_pos == 'best':
-                    # デフォルトは、右上axの、さらに外側右上に配置
-                    # loc='upper left'は「凡例の左上隅」を基準点に合わせるという意味
-                    # bbox_to_anchor=(1.02, 1)は「右上axの右上隅から、少し右」という基準点
                     kwargs['loc'] = 'upper left'
                     kwargs['bbox_to_anchor'] = (1.02, 1)
                 else:
-                    # ユーザーが明示的に位置を指定した場合は、そのaxの中に配置
                     kwargs['loc'] = legend_pos
-                
                 legend_ax.legend(handles=handles, title=legend_title, **kwargs)
-                # ▲▲▲ ここまで ▲▲▲
                 
             return fig
 
