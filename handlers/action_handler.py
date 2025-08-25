@@ -35,6 +35,22 @@ class ActionHandler:
     def __init__(self, main_window):
         self.main = main_window
 
+    def save_table_as_csv(self):
+        """現在表示されているテーブルデータをCSVとして保存する"""
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Warning", "No data to save.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(self.main, "Save CSV File", "", "CSV Files (*.csv);;All Files (*)")
+        
+        if file_path:
+            try:
+                df = self.main.model._data
+                df.to_csv(file_path, index=False)
+                QMessageBox.information(self.main, "Success", f"Table successfully saved to:\n{file_path}")
+            except Exception as e:
+                QMessageBox.critical(self.main, "Error", f"Failed to save table: {e}")
+
     def _get_interaction_group_col(self, df, x_col, hue_col):
         """
         【生成】ヘルパー：X軸とサブグループ（hue）から検定用のグループ列を生成する。

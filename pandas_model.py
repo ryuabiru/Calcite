@@ -47,6 +47,23 @@ class PandasModel(QAbstractTableModel):
             return True
         return super().setHeaderData(section, orientation, value, role)
 
+    def sort(self, column, order):
+        """QTableViewからの要求に応じてDataFrameをソートする"""
+        try:
+            col_name = self._data.columns[column]
+            
+            self.layoutAboutToBeChanged.emit()
+            self._data = self._data.sort_values(
+                by=col_name,
+                ascending=(order == Qt.SortOrder.AscendingOrder),
+                kind='mergesort' # 安定ソート
+            ).reset_index(drop=True)
+            self.layoutChanged.emit()
+            
+        except Exception as e:
+            # このエラーは、ユーザーに見える形で表示すべきかもしれません
+            print(f"Sort error: {e}") 
+
     def setData(self, index, value, role):
         """
         ユーザーによってセルのデータが編集されたときに呼び出される。

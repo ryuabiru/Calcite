@@ -126,6 +126,10 @@ class MainWindow(QMainWindow):
         open_action = QAction("&Open CSV...", self)
         open_action.triggered.connect(self.action_handler.open_csv_file)
         file_menu.addAction(open_action)
+        save_table_action = QAction("&Save Table As...", self)
+        save_table_action.triggered.connect(self.action_handler.save_table_as_csv)
+        file_menu.addAction(save_table_action)
+        file_menu.addSeparator() # 見た目の区切り線
         save_graph_action = QAction("&Save Graph As...", self)
         save_graph_action.triggered.connect(self.graph_manager.save_graph)
         file_menu.addAction(save_graph_action)
@@ -238,7 +242,6 @@ class MainWindow(QMainWindow):
         toolbar.addAction(histogram_action); action_group.addAction(histogram_action)
 
     def set_graph_type(self, graph_type):
-        # ▼▼▼ ここからが修正箇所です ▼▼▼
         # 処理中に自動でグラフが更新されるのを防ぐため、一時的にシグナルを切断
         try:
             self.properties_panel.propertiesChanged.disconnect(self.graph_manager.update_graph)
@@ -255,8 +258,7 @@ class MainWindow(QMainWindow):
         
         # 最後に、手動でグラフの更新を一度だけトリガーする
         self.graph_manager.update_graph()
-        # ▲▲▲ ここまでが修正箇所です ▲▲▲
-        
+
     def edit_header(self, logicalIndex):
         if self.header_editor: self.header_editor.close()
         header = self.table_view.horizontalHeader()
