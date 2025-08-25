@@ -1,12 +1,25 @@
 # tabs/text_tab.py
 
-from PySide6.QtWidgets import QWidget, QFormLayout, QLabel, QLineEdit, QSpinBox
+from PySide6.QtWidgets import (
+    QWidget, QFormLayout, QLabel, QLineEdit, 
+    QSpinBox, QScrollArea, QVBoxLayout
+)
 
 class TextTab(QWidget):
     """テキスト設定タブのUIとロジック"""
     def __init__(self, parent=None):
         super().__init__(parent)
-        layout = QFormLayout(self)
+
+        # ▼▼▼ ここからが修正箇所です ▼▼▼
+        # FormatTabと同様に、スクロールエリアをベースにする
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        main_widget = QWidget()
+        scroll_area.setWidget(main_widget)
+
+        # 実際の設定項目はこちらのレイアウトに追加する
+        layout = QFormLayout(main_widget)
+        # ▲▲▲ ここまで ▲▲▲
         
         self.title_edit = QLineEdit()
         self.xaxis_edit = QLineEdit()
@@ -41,6 +54,11 @@ class TextTab(QWidget):
         layout.addRow(QLabel("X-Label Font Size:"), self.xlabel_fontsize_spin)
         layout.addRow(QLabel("Y-Label Font Size:"), self.ylabel_fontsize_spin)
         layout.addRow(QLabel("Ticks Font Size:"), self.ticks_fontsize_spin)
+
+        # ▼▼▼ 最後に、このウィジェット自体のレイアウトを設定 ▼▼▼
+        outer_layout = QVBoxLayout(self)
+        outer_layout.addWidget(scroll_area)
+        # ▲▲▲ ここまで ▲▲▲
 
     def get_properties(self):
         """このタブの設定値を取得する"""

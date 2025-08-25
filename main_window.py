@@ -41,7 +41,6 @@ class MainWindow(QMainWindow):
         self._connect_signals()
 
     def _setup_ui(self):
-        # ▼▼▼ ここからが修正箇所です ▼▼▼
         # メインの分割を水平（左右）にする
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(main_splitter)
@@ -60,7 +59,7 @@ class MainWindow(QMainWindow):
         right_splitter.addWidget(self.graph_widget)
 
         # 右カラムの上下の比率を設定
-        right_splitter.setSizes([250, 400])
+        right_splitter.setSizes([200, 450])
 
         main_splitter.addWidget(right_splitter)
 

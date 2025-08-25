@@ -1,13 +1,24 @@
 # tabs/axes_tab.py
-
-from PySide6.QtWidgets import QWidget, QFormLayout, QLabel, QLineEdit, QHBoxLayout, QCheckBox
+from PySide6.QtWidgets import (
+    QWidget, QFormLayout, QLabel, QLineEdit, 
+    QHBoxLayout, QCheckBox, QScrollArea, QVBoxLayout
+)
 from PySide6.QtGui import QDoubleValidator
 
 class AxesTab(QWidget):
     """軸設定タブのUIとロジック"""
     def __init__(self, parent=None):
         super().__init__(parent)
-        layout = QFormLayout(self)
+        
+        # ▼▼▼ ここからが修正箇所です ▼▼▼
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        main_widget = QWidget()
+        scroll_area.setWidget(main_widget)
+
+        layout = QFormLayout(main_widget)
+        # ▲▲▲ ここまで ▲▲▲
+        
         validator = QDoubleValidator()
         
         self.xmin_edit = QLineEdit(); self.xmin_edit.setValidator(validator)
@@ -33,6 +44,11 @@ class AxesTab(QWidget):
         
         layout.addRow(QLabel("X-Axis Scale:"), self.x_log_scale_check)
         layout.addRow(QLabel("Y-Axis Scale:"), self.y_log_scale_check)
+
+        # ▼▼▼ 最後に、このウィジェット自体のレイアウトを設定 ▼▼▼
+        outer_layout = QVBoxLayout(self)
+        outer_layout.addWidget(scroll_area)
+        # ▲▲▲ ここまで ▲▲▲
 
     def get_properties(self):
         """このタブの設定値を取得する"""
