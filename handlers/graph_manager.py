@@ -93,12 +93,10 @@ class GraphManager:
         if current_x == analysis_hue_col:
             analysis_hue_col = None
 
-        # ▼▼▼ 散布図の場合、数値として扱うためastype(str)を条件付きで実行 ▼▼▼
-        if self.main.current_graph_type != 'scatter':
+        if self.main.current_graph_type not in ['scatter', 'lineplot']:
             df[current_x] = df[current_x].astype(str)
             if visual_hue_col:
                 df[visual_hue_col] = df[visual_hue_col].astype(str)
-        # ▲▲▲ ここまで ▲▲▲
 
         facet_col = data_settings.get('facet_col')
         facet_row = data_settings.get('facet_row')
@@ -147,6 +145,17 @@ class GraphManager:
                     base_kind = self.main.current_graph_type
                     
                     plot_kwargs = {'legend': False}
+
+                    if base_kind == 'lineplot':
+                        sns.lineplot(
+                            data=subset_df, x=current_x, y=current_y,
+                            hue=visual_hue_col, ax=ax,
+                            palette=subgroup_palette if subgroup_palette else None,
+                            color=properties.get('single_color') if not visual_hue_col else None,
+                            linestyle=properties.get('linestyle', '-'),
+                            linewidth=properties.get('linewidth', 1.5),
+                            **plot_kwargs
+                        )
 
                     if base_kind != 'scatter':
                         plot_func_map = {

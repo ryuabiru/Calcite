@@ -101,6 +101,7 @@ class FormatTab(QWidget):
         elements_layout.addRow(QLabel("Error Bar Cap Size:"), self.capsize_spin)
 
         elements_layout.addRow(QLabel("<b>Line (Regression/Point Plot)</b>"))
+        elements_layout.addRow(QLabel("<b>Lines (Point/Line/Fit)</b>"))
         self.linestyle_combo = NoScrollComboBox()
         linestyles = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'Dash-Dot': '-.'}
         for name, style in linestyles.items():

@@ -183,6 +183,11 @@ class MainWindow(QMainWindow):
         violin_action.triggered.connect(lambda: self.set_graph_type('violin'))
         toolbar.addAction(violin_action); action_group.addAction(violin_action)\
         
+        line_action = QAction("Line Plot", self)
+        line_action.setCheckable(True)
+        line_action.triggered.connect(lambda: self.set_graph_type('lineplot'))
+        toolbar.addAction(line_action); action_group.addAction(line_action)
+        
         point_action = QAction("Point Plot", self)
         point_action.setCheckable(True)
         point_action.triggered.connect(lambda: self.set_graph_type('pointplot'))
