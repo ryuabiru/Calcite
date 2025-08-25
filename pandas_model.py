@@ -11,6 +11,8 @@ class PandasModel(QAbstractTableModel):
     def __init__(self, data):
         super().__init__()
         self._data = data
+        self._sort_column = -1
+        self._sort_order = Qt.SortOrder.AscendingOrder
 
     def rowCount(self, parent=None):
         """行数を返す"""
@@ -48,7 +50,7 @@ class PandasModel(QAbstractTableModel):
         return super().setHeaderData(section, orientation, value, role)
 
     def sort(self, column, order):
-        """QTableViewからの要求に応じてDataFrameをソートする"""
+        """DataFrameをソートする"""
         try:
             col_name = self._data.columns[column]
             
@@ -56,26 +58,23 @@ class PandasModel(QAbstractTableModel):
             self._data = self._data.sort_values(
                 by=col_name,
                 ascending=(order == Qt.SortOrder.AscendingOrder),
-                kind='mergesort' # 安定ソート
+                kind='mergesort'
             ).reset_index(drop=True)
             self.layoutChanged.emit()
             
         except Exception as e:
-            # このエラーは、ユーザーに見える形で表示すべきかもしれません
-            print(f"Sort error: {e}") 
+            print(f"Sort error: {e}")
 
     def setData(self, index, value, role):
         """
         ユーザーによってセルのデータが編集されたときに呼び出される。
         """
         if role == Qt.ItemDataRole.EditRole:
-            # 元のデータの型を維持しようと試みる
             try:
                 original_value = self._data.iloc[index.row(), index.column()]
                 value = type(original_value)(value)
                 self._data.iloc[index.row(), index.column()] = value
             except (ValueError, TypeError):
-                # 型変換に失敗した場合は、そのままの値を設定
                 self._data.iloc[index.row(), index.column()] = value
             
             self.dataChanged.emit(index, index)
@@ -97,10 +96,8 @@ class PandasModel(QAbstractTableModel):
         """指定された位置に行を挿入する"""
         self.beginInsertRows(parent, row, row + count - 1)
         
-        # DataFrameの途中に空行を挿入
         df_top = self._data.iloc[:row]
         df_bottom = self._data.iloc[row:]
-        # 空の行を作成（データ型を維持するためNaNではなく空文字で埋める）
         df_new = pd.DataFrame(index=range(count), columns=self._data.columns).fillna('')
         
         self._data = pd.concat([df_top, df_new, df_bottom]).reset_index(drop=True)
@@ -112,7 +109,6 @@ class PandasModel(QAbstractTableModel):
         """指定された位置の行を削除する"""
         self.beginRemoveRows(parent, row, row + count - 1)
         
-        # 指定された行を削除
         self._data.drop(self._data.index[row:row+count], inplace=True)
         self._data.reset_index(drop=True, inplace=True)
         
@@ -123,9 +119,7 @@ class PandasModel(QAbstractTableModel):
         """指定された位置に列を挿入する"""
         self.beginInsertColumns(parent, col, col + count - 1)
 
-        # 新しい列を挿入
         for i in range(count):
-            # 重複しないデフォルトの列名を作成
             new_col_name = f"Unnamed_{len(self._data.columns) + i}"
             self._data.insert(col + i, new_col_name, '')
 
@@ -136,7 +130,6 @@ class PandasModel(QAbstractTableModel):
         """指定された位置の列を削除する"""
         self.beginRemoveColumns(parent, col, col + count - 1)
 
-        # 指定された列を削除
         cols_to_drop = self._data.columns[col:col+count]
         self._data.drop(columns=cols_to_drop, inplace=True)
 

@@ -90,10 +90,9 @@ class MainWindow(QMainWindow):
         self.properties_panel = PropertiesWidget()
         top_right_splitter.addWidget(self.properties_panel)
 
-        self.results_widget = ResultsWidget() # 新しいウィジェットをインスタンス化
+        self.results_widget = ResultsWidget()
         top_right_splitter.addWidget(self.results_widget)
         
-        # プロパティパネルと結果パネルの幅の比率を設定
         top_right_splitter.setSizes([400, 250])
 
         right_splitter.addWidget(top_right_splitter)
@@ -102,22 +101,25 @@ class MainWindow(QMainWindow):
         self.graph_widget = GraphWidget()
         right_splitter.addWidget(self.graph_widget)
 
-        # 右カラムの上下の比率を設定
         right_splitter.setSizes([200, 450])
-
         main_splitter.addWidget(right_splitter)
-
-        # 全体の左右の比率を設定
         main_splitter.setSizes([400, 800])
 
     def _connect_signals(self):
         self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self.show_table_context_menu)
+        self.table_view.horizontalHeader().sectionClicked.connect(self.sort_table)
         self.table_view.horizontalHeader().sectionDoubleClicked.connect(self.edit_header)
         
         self.properties_panel.propertiesChanged.connect(self.graph_manager.update_graph)
         self.properties_panel.graphUpdateRequest.connect(self.graph_manager.update_graph)
         self.properties_panel.subgroupColumnChanged.connect(self.on_subgroup_column_changed)
+        
+    def sort_table(self, logicalIndex):
+        """テーブルを指定された列でソートする"""
+        if hasattr(self, 'model') and self.model is not None:
+            order = self.table_view.horizontalHeader().sortIndicatorOrder()
+            self.model.sort(logicalIndex, order)
 
     def _create_menu_bar(self):
         menu_bar = self.menuBar()
@@ -129,7 +131,7 @@ class MainWindow(QMainWindow):
         save_table_action = QAction("&Save Table As...", self)
         save_table_action.triggered.connect(self.action_handler.save_table_as_csv)
         file_menu.addAction(save_table_action)
-        file_menu.addSeparator() # 見た目の区切り線
+        file_menu.addSeparator()
         save_graph_action = QAction("&Save Graph As...", self)
         save_graph_action.triggered.connect(self.graph_manager.save_graph)
         file_menu.addAction(save_graph_action)
@@ -219,7 +221,7 @@ class MainWindow(QMainWindow):
         violin_action = QAction("Violin Plot", self)
         violin_action.setCheckable(True)
         violin_action.triggered.connect(lambda: self.set_graph_type('violin'))
-        toolbar.addAction(violin_action); action_group.addAction(violin_action)\
+        toolbar.addAction(violin_action); action_group.addAction(violin_action)
         
         line_action = QAction("Line Plot", self)
         line_action.setCheckable(True)
@@ -242,21 +244,17 @@ class MainWindow(QMainWindow):
         toolbar.addAction(histogram_action); action_group.addAction(histogram_action)
 
     def set_graph_type(self, graph_type):
-        # 処理中に自動でグラフが更新されるのを防ぐため、一時的にシグナルを切断
         try:
             self.properties_panel.propertiesChanged.disconnect(self.graph_manager.update_graph)
         except (RuntimeError, TypeError):
-            pass # すでに切断されている場合は何もしない
+            pass
 
         self.current_graph_type = graph_type
-        # DataTabとTextTabのUIを安全に切り替える
         self.properties_panel.data_tab.set_graph_type(graph_type)
         self.properties_panel.text_tab.update_paired_labels_visibility(graph_type == 'paired_scatter')
         
-        # UIの切り替えが終わったら、シグナルを再接続
         self.properties_panel.propertiesChanged.connect(self.graph_manager.update_graph)
         
-        # 最後に、手動でグラフの更新を一度だけトリガーする
         self.graph_manager.update_graph()
 
     def edit_header(self, logicalIndex):
