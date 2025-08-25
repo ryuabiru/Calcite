@@ -347,8 +347,29 @@ class GraphManager:
         if not (col1 and col2 and col1 != col2): return None
         fig, ax = plt.subplots(tight_layout=True)
         try:
-            self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
+            plot_df_long = self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
+
+            if plot_df_long is not None and self.main.paired_annotations:
+                # このプロットに関連するアノテーションのみを抽出
+                annotations_to_plot = [
+                    ann for ann in self.main.paired_annotations
+                    if set(ann['box_pair']) == {col1, col2}
+                ]
+                if annotations_to_plot:
+                    pairs = [ann['box_pair'] for ann in annotations_to_plot]
+                    p_values = [ann['p_value'] for ann in annotations_to_plot]
+                    
+                    annotator = Annotator(
+                        ax, pairs, data=plot_df_long,
+                        x='Condition', y='Value'
+                    )
+                    pvalue_thresholds = [[1e-4, "****"], [1e-3, "***"], [1e-2, "**"], [0.05, "*"], [1.0, "n.s."]]
+                    annotator.configure(text_format='star', loc='outside', verbose=0, pvalue_thresholds=pvalue_thresholds)
+                    annotator.set_pvalues(p_values)
+                    annotator.annotate()
+            
             return fig
+        
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
             return None
@@ -372,6 +393,7 @@ class GraphManager:
 
     def clear_annotations(self):
         self.main.statistical_annotations.clear()
+        self.main.paired_annotations.clear()
         self.main.regression_line_params = None
         self.main.fit_params = None
         self.update_graph()
@@ -379,7 +401,7 @@ class GraphManager:
     def _draw_paired_plot_seaborn(self, ax, df, col1, col2, properties):
         try:
             plot_df = df[[col1, col2]].dropna().copy()
-            if plot_df.empty: return
+            if plot_df.empty: return None
             plot_df['ID'] = range(len(plot_df))
             plot_df_long = pd.melt(plot_df, id_vars='ID', value_vars=[col1, col2], var_name='Condition', value_name='Value')
             label1 = properties.get('paired_label1') or col1
@@ -392,6 +414,7 @@ class GraphManager:
             ax.set_xticklabels([label1, label2])
             handles, labels = ax.get_legend_handles_labels()
             if handles: ax.legend(handles, labels)
+            return plot_df_long
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
             

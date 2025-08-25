@@ -35,6 +35,7 @@ class MainWindow(QMainWindow):
         self.regression_line_params = None
         self.fit_params = None
         self.statistical_annotations = []
+        self.paired_annotations = []
         
         self.action_handler = ActionHandler(self)
         self.graph_manager = GraphManager(self)

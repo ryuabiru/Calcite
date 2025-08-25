@@ -713,6 +713,15 @@ class ActionHandler:
                 
                 t_stat, p_value = ttest_rel(data1[:min_len], data2[:min_len])
 
+                # アノテーション情報を生成
+                annotation = {
+                    "box_pair": (col1, col2),
+                    "p_value": p_value
+                }
+                # 重複しないように追加
+                if annotation not in self.main.paired_annotations:
+                    self.main.paired_annotations.append(annotation)
+
                 result_text = (
                     f"Paired t-test results:\n=====================\n\nComparing:\n- Column 1: '{col1}' (Mean: {data1.mean():.3f})\n"
                     f"- Column 2: '{col2}' (Mean: {data2.mean():.3f})\n\n---\n"
@@ -722,8 +731,11 @@ class ActionHandler:
                     result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
                 else:
                     result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
-                # ★★★ 修正 ★★★
+
                 self.main.results_widget.set_results_text(result_text)
+
+                # グラフの更新をトリガー
+                self.main.graph_manager.update_graph()
 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform paired t-test: {e}")
@@ -757,6 +769,13 @@ class ActionHandler:
 
                 stat, p_value = wilcoxon(data1.loc[nonzero_diff_indices], data2.loc[nonzero_diff_indices])
 
+                annotation = {
+                    "box_pair": (col1, col2),
+                    "p_value": p_value
+                }
+                if annotation not in self.main.paired_annotations:
+                    self.main.paired_annotations.append(annotation)
+
                 result_text = (
                     f"Wilcoxon Signed-rank test results:\n=====================\n\nComparing:\n- Column 1: '{col1}'\n"
                     f"- Column 2: '{col2}'\n(n={len(nonzero_diff_indices)} pairs with non-zero difference)\n\n---\n"
@@ -766,8 +785,10 @@ class ActionHandler:
                     result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
                 else:
                     result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
-                # ★★★ 修正 ★★★
+
                 self.main.results_widget.set_results_text(result_text)
+
+                self.main.graph_manager.update_graph()
 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform Wilcoxon test: {e}")
