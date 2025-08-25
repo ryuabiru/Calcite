@@ -2,44 +2,49 @@
 
 from PySide6.QtWidgets import (
     QWidget, QFormLayout, QLabel, QLineEdit, 
-    QSpinBox, QScrollArea, QVBoxLayout
+    QSpinBox, QScrollArea, QVBoxLayout, QGroupBox, QComboBox
 )
 
 class TextTab(QWidget):
-    """テキスト設定タブのUIとロジック"""
+    """テキストと凡例の設定タブのUIとロジック"""
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # ▼▼▼ ここからが修正箇所です ▼▼▼
-        # FormatTabと同様に、スクロールエリアをベースにする
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         main_widget = QWidget()
         scroll_area.setWidget(main_widget)
 
-        # 実際の設定項目はこちらのレイアウトに追加する
-        layout = QFormLayout(main_widget)
-        # ▲▲▲ ここまで ▲▲▲
+        # 全体をまとめる垂直レイアウト
+        main_layout = QVBoxLayout(main_widget)
+
+        # --- 1. テキストラベル グループ ---
+        text_group = QGroupBox("Labels")
+        text_layout = QFormLayout(text_group)
         
         self.title_edit = QLineEdit()
         self.xaxis_edit = QLineEdit()
         self.yaxis_edit = QLineEdit()
         
-        layout.addRow(QLabel("Title:"), self.title_edit)
-        layout.addRow(QLabel("X-Axis Label:"), self.xaxis_edit)
-        layout.addRow(QLabel("Y-Axis Label:"), self.yaxis_edit)
+        text_layout.addRow(QLabel("Title:"), self.title_edit)
+        text_layout.addRow(QLabel("X-Axis Label:"), self.xaxis_edit)
+        text_layout.addRow(QLabel("Y-Axis Label:"), self.yaxis_edit)
         
         # Paired scatter labels
         self.paired_label1_label = QLabel("Paired Label 1:")
         self.paired_label1_edit = QLineEdit()
         self.paired_label2_label = QLabel("Paired Label 2:")
         self.paired_label2_edit = QLineEdit()
-        layout.addRow(self.paired_label1_label, self.paired_label1_edit)
-        layout.addRow(self.paired_label2_label, self.paired_label2_edit)
+        text_layout.addRow(self.paired_label1_label, self.paired_label1_edit)
+        text_layout.addRow(self.paired_label2_label, self.paired_label2_edit)
         self.paired_widgets = [self.paired_label1_label, self.paired_label1_edit, self.paired_label2_label, self.paired_label2_edit]
         self.update_paired_labels_visibility(False) # Initially hidden
         
-        layout.addRow(QLabel("---"))
+        main_layout.addWidget(text_group)
+
+        # --- 2. フォントサイズ グループ ---
+        font_group = QGroupBox("Font Sizes")
+        font_layout = QFormLayout(font_group)
 
         self.title_fontsize_spin = QSpinBox()
         self.title_fontsize_spin.setRange(6, 48); self.title_fontsize_spin.setValue(16)
@@ -50,15 +55,37 @@ class TextTab(QWidget):
         self.ticks_fontsize_spin = QSpinBox()
         self.ticks_fontsize_spin.setRange(6, 48); self.ticks_fontsize_spin.setValue(10)
         
-        layout.addRow(QLabel("Title Font Size:"), self.title_fontsize_spin)
-        layout.addRow(QLabel("X-Label Font Size:"), self.xlabel_fontsize_spin)
-        layout.addRow(QLabel("Y-Label Font Size:"), self.ylabel_fontsize_spin)
-        layout.addRow(QLabel("Ticks Font Size:"), self.ticks_fontsize_spin)
+        font_layout.addRow(QLabel("Title:"), self.title_fontsize_spin)
+        font_layout.addRow(QLabel("X-Label:"), self.xlabel_fontsize_spin)
+        font_layout.addRow(QLabel("Y-Label:"), self.ylabel_fontsize_spin)
+        font_layout.addRow(QLabel("Ticks:"), self.ticks_fontsize_spin)
+        
+        main_layout.addWidget(font_group)
+        
+        # --- 3. 凡例グループ (ここからが追加/移設箇所) ---
+        legend_group = QGroupBox("Legend")
+        legend_layout = QFormLayout(legend_group)
+        
+        self.legend_pos_combo = QComboBox()
+        positions = {
+            "Automatic (Outside Right)": "best",
+            "Upper Right": "upper right",
+            "Upper Left": "upper left",
+            "Lower Right": "lower right",
+            "Lower Left": "lower left",
+        }
+        for name, key in positions.items():
+            self.legend_pos_combo.addItem(name, key)
+        self.legend_title_edit = QLineEdit()
 
-        # ▼▼▼ 最後に、このウィジェット自体のレイアウトを設定 ▼▼▼
+        legend_layout.addRow(QLabel("Position:"), self.legend_pos_combo)
+        legend_layout.addRow(QLabel("Title:"), self.legend_title_edit)
+        
+        main_layout.addWidget(legend_group)
+        main_layout.addStretch() # スペーサー
+
         outer_layout = QVBoxLayout(self)
         outer_layout.addWidget(scroll_area)
-        # ▲▲▲ ここまで ▲▲▲
 
     def get_properties(self):
         """このタブの設定値を取得する"""
@@ -72,6 +99,9 @@ class TextTab(QWidget):
             'xlabel_fontsize': self.xlabel_fontsize_spin.value(),
             'ylabel_fontsize': self.ylabel_fontsize_spin.value(),
             'ticks_fontsize': self.ticks_fontsize_spin.value(),
+            # 凡例のプロパティを追加
+            'legend_position': self.legend_pos_combo.currentData(),
+            'legend_title': self.legend_title_edit.text(),
         }
 
     def update_paired_labels_visibility(self, visible):

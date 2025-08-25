@@ -11,7 +11,6 @@ from tabs.axes_tab import AxesTab
 class PropertiesWidget(QWidget):
     propertiesChanged = Signal()
     graphUpdateRequest = Signal()
-    # DataTabのシグナルを中継する
     subgroupColumnChanged = Signal(str)
 
     def __init__(self, parent=None):
@@ -26,7 +25,9 @@ class PropertiesWidget(QWidget):
 
         tab_widget.addTab(self.data_tab, "データ")
         tab_widget.addTab(self.format_tab, "フォーマット")
-        tab_widget.addTab(self.text_tab, "テキスト")
+        # ▼▼▼ タブ名を変更 ▼▼▼
+        tab_widget.addTab(self.text_tab, "テキストと凡例")
+        # ▲▲▲ ここまで ▲▲▲
         tab_widget.addTab(self.axes_tab, "軸")
 
         update_button = QPushButton("Update Graph")
@@ -39,31 +40,29 @@ class PropertiesWidget(QWidget):
 
     def connect_signals(self):
         """各タブからのシグナルを接続する"""
-        # DataTab -> FormatTab (サブグループUI更新のため)
         self.data_tab.subgroupColumnChanged.connect(self.format_tab.update_subgroup_color_ui)
-        # DataTab -> MainWindow (グラフ更新のトリガーのため)
         self.data_tab.subgroupColumnChanged.connect(self.subgroupColumnChanged.emit)
 
-        # 各タブの変更をpropertiesChangedシグナルとして中継
         self.format_tab.propertiesChanged.connect(self.propertiesChanged.emit)
         
         # TextTab
         self.text_tab.title_edit.editingFinished.connect(self.propertiesChanged.emit)
         self.text_tab.xaxis_edit.editingFinished.connect(self.propertiesChanged.emit)
         self.text_tab.yaxis_edit.editingFinished.connect(self.propertiesChanged.emit)
-        # valueChangedシグナルは引数を持つため、lambdaでラップする
         self.text_tab.title_fontsize_spin.valueChanged.connect(lambda val: self.propertiesChanged.emit())
         self.text_tab.xlabel_fontsize_spin.valueChanged.connect(lambda val: self.propertiesChanged.emit())
         self.text_tab.ylabel_fontsize_spin.valueChanged.connect(lambda val: self.propertiesChanged.emit())
         self.text_tab.ticks_fontsize_spin.valueChanged.connect(lambda val: self.propertiesChanged.emit())
+        # ▼▼▼ 新しく移設した凡例ウィジェットのシグナルを接続 ▼▼▼
+        self.text_tab.legend_pos_combo.currentIndexChanged.connect(self.propertiesChanged.emit)
+        self.text_tab.legend_title_edit.editingFinished.connect(self.propertiesChanged.emit)
+        # ▲▲▲ ここまで ▲▲▲
 
         # AxesTab
         self.axes_tab.xmin_edit.editingFinished.connect(self.propertiesChanged.emit)
         self.axes_tab.xmax_edit.editingFinished.connect(self.propertiesChanged.emit)
         self.axes_tab.ymin_edit.editingFinished.connect(self.propertiesChanged.emit)
         self.axes_tab.ymax_edit.editingFinished.connect(self.propertiesChanged.emit)
-
-        # stateChangedシグナルは引数を持つため、lambdaでラップする
         self.axes_tab.grid_check.stateChanged.connect(lambda state: self.propertiesChanged.emit())
         self.axes_tab.x_log_scale_check.stateChanged.connect(lambda state: self.propertiesChanged.emit())
         self.axes_tab.y_log_scale_check.stateChanged.connect(lambda state: self.propertiesChanged.emit())
@@ -71,10 +70,6 @@ class PropertiesWidget(QWidget):
     def get_properties(self):
         """全てのタブから設定値を取得し、一つの辞書に統合して返す"""
         props = {}
-        # データ選択タブの値は、GraphManagerが直接参照する
-        # props.update(self.data_tab.get_properties())
-        
-        # 他のタブから設定値を取得
         props.update(self.format_tab.get_properties())
         props.update(self.text_tab.get_properties())
         props.update(self.axes_tab.get_properties())

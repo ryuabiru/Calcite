@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QFormLayout, QLabel, QComboBox, QPushButton, QColorDialog,
-    QScrollArea, QCheckBox, QSpinBox, QDoubleSpinBox, QVBoxLayout, QLineEdit
+    QScrollArea, QCheckBox, QSpinBox, QDoubleSpinBox, QVBoxLayout, QGroupBox
 )
 from PySide6.QtCore import Signal
 from functools import partial
@@ -26,86 +26,85 @@ class FormatTab(QWidget):
         main_widget = QWidget()
         scroll_area.setWidget(main_widget)
         
-        layout = QFormLayout(main_widget)
+        # ▼▼▼ ここからレイアウト構造を大きく変更 ▼▼▼
+        # 全体をまとめる垂直レイアウト
+        main_layout = QVBoxLayout(main_widget)
+
+        # --- 1. スタイル設定グループ ---
+        style_group = QGroupBox("Graph Style")
+        style_layout = QFormLayout(style_group)
         
-        layout.addRow(QLabel("<b>Graph Style Settings</b>"))
         self.spines_check = QCheckBox("Remove Top/Right Axis Lines")
         self.spines_check.setChecked(True)
-        layout.addRow(self.spines_check)
-        layout.addRow(QLabel("---"))
-
-        layout.addRow(QLabel("<b>Overlays</b>"))
-        self.scatter_overlay_check = QCheckBox("Show individual points (on Bar/Box/Violin)")
-        layout.addRow(self.scatter_overlay_check)
-
-        layout.addRow(QLabel("---"))
+        style_layout.addRow(self.spines_check)
         
-        layout.addRow(QLabel("<b>Legend</b>"))
-        self.legend_pos_combo = QComboBox()
-        positions = {
-            "Automatic (Outside Right)": "best", # デフォルトの挙動
-            "Upper Right": "upper right",
-            "Upper Left": "upper left",
-            "Lower Right": "lower right",
-            "Lower Left": "lower left",
-        }
-        for name, key in positions.items():
-            self.legend_pos_combo.addItem(name, key)
-        self.legend_title_edit = QLineEdit()
+        self.scatter_overlay_check = QCheckBox("Show individual points (on Bar/Box/Violin)")
+        style_layout.addRow(QLabel("Overlays:"), self.scatter_overlay_check)
+        
+        main_layout.addWidget(style_group)
+        
+        # --- 2. グラフ要素グループ ---
+        elements_group = QGroupBox("Graph Elements")
+        elements_layout = QFormLayout(elements_group)
 
-        layout.addRow(QLabel("Position:"), self.legend_pos_combo)
-        layout.addRow(QLabel("Title:"), self.legend_title_edit)
-        layout.addRow(QLabel("---"))
-
-        # ... (以降のコードは変更なし) ...
-        layout.addRow(QLabel("<b>Marker Settings (for Scatter/Overlays)</b>"))
+        # マーカー設定
+        elements_layout.addRow(QLabel("<b>Markers (Scatter/Overlays)</b>"))
         self.marker_combo = QComboBox()
         markers = {'Circle': 'o', 'Square': 's', 'Triangle': '^', 'Diamond': 'D', 'None': 'None'}
         for name, style in markers.items():
             self.marker_combo.addItem(name, style)
-        layout.addRow(QLabel("Marker Style:"), self.marker_combo)
+        elements_layout.addRow(QLabel("Style:"), self.marker_combo)
         
         self.marker_edgecolor_button = QPushButton("Select Color")
         self.marker_edgecolor_button.setStyleSheet(f"background-color: {self.current_marker_edgecolor};")
-        layout.addRow(QLabel("Marker Edge Color:"), self.marker_edgecolor_button)
+        elements_layout.addRow(QLabel("Edge Color:"), self.marker_edgecolor_button)
 
         self.marker_edgewidth_spin = QDoubleSpinBox()
         self.marker_edgewidth_spin.setRange(0, 10); self.marker_edgewidth_spin.setSingleStep(0.5); self.marker_edgewidth_spin.setValue(1.0)
-        layout.addRow(QLabel("Marker Edge Width:"), self.marker_edgewidth_spin)
-        layout.addRow(QLabel("---"))
+        elements_layout.addRow(QLabel("Edge Width:"), self.marker_edgewidth_spin)
         
-        layout.addRow(QLabel("<b>Bar Chart Settings</b>"))
+        # 棒グラフ設定
+        elements_layout.addRow(QLabel("<b>Bar Chart</b>"))
         self.bar_edgecolor_button = QPushButton("Select Color")
         self.bar_edgecolor_button.setStyleSheet(f"background-color: {self.current_bar_edgecolor};")
-        layout.addRow(QLabel("Bar Edge Color:"), self.bar_edgecolor_button)
+        elements_layout.addRow(QLabel("Edge Color:"), self.bar_edgecolor_button)
 
         self.bar_edgewidth_spin = QDoubleSpinBox()
         self.bar_edgewidth_spin.setRange(0, 10); self.bar_edgewidth_spin.setSingleStep(0.5); self.bar_edgewidth_spin.setValue(1.0)
-        layout.addRow(QLabel("Bar Edge Width:"), self.bar_edgewidth_spin)
+        elements_layout.addRow(QLabel("Edge Width:"), self.bar_edgewidth_spin)
 
         self.capsize_spin = QSpinBox()
         self.capsize_spin.setRange(0, 20); self.capsize_spin.setValue(4)
-        layout.addRow(QLabel("Error Bar Cap Size:"), self.capsize_spin)
-        layout.addRow(QLabel("---"))
+        elements_layout.addRow(QLabel("Error Bar Cap Size:"), self.capsize_spin)
 
-        layout.addRow(QLabel("<b>Regression Line Settings</b>"))
+        # 線設定
+        elements_layout.addRow(QLabel("<b>Line (Regression/Point Plot)</b>"))
         self.linestyle_combo = QComboBox()
         linestyles = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'Dash-Dot': '-.'}
         for name, style in linestyles.items():
             self.linestyle_combo.addItem(name, style)
-        layout.addRow(QLabel("Line Style:"), self.linestyle_combo)
+        elements_layout.addRow(QLabel("Style:"), self.linestyle_combo)
 
         self.linewidth_spin = QDoubleSpinBox()
         self.linewidth_spin.setRange(0.5, 10.0); self.linewidth_spin.setSingleStep(0.5); self.linewidth_spin.setValue(1.5)
-        layout.addRow(QLabel("Line Width:"), self.linewidth_spin)
-        layout.addRow(QLabel("---"))
+        elements_layout.addRow(QLabel("Width:"), self.linewidth_spin)
+        
+        main_layout.addWidget(elements_group)
 
-        layout.addRow(QLabel("<b>Color Settings</b>"))
+        # --- 3. カラー設定グループ ---
+        color_group = QGroupBox("Color")
+        color_layout = QFormLayout(color_group)
+        
         self.single_color_button = QPushButton("Select Color")
-        layout.addRow(QLabel("Graph Color (Single):"), self.single_color_button)
-        self.subgroup_color_layout = QFormLayout()
-        layout.addRow(QLabel("Graph Color (Sub-group):"))
-        layout.addRow(self.subgroup_color_layout)
+        color_layout.addRow(QLabel("Single Color:"), self.single_color_button)
+        
+        color_layout.addRow(QLabel("<b>Sub-group Colors</b>"))
+        self.subgroup_color_layout = QFormLayout() # ここは変更なし
+        color_layout.addRow(self.subgroup_color_layout)
+        
+        main_layout.addWidget(color_group)
+        main_layout.addStretch() # スペーサーを追加してUIを上によせる
+        # ▲▲▲ ここまで ▲▲▲
 
         outer_layout = QVBoxLayout(self)
         outer_layout.addWidget(scroll_area)
@@ -115,8 +114,7 @@ class FormatTab(QWidget):
     def connect_signals(self):
         self.spines_check.stateChanged.connect(self.propertiesChanged.emit)
         self.scatter_overlay_check.stateChanged.connect(self.propertiesChanged.emit)
-        self.legend_pos_combo.currentIndexChanged.connect(self.propertiesChanged.emit)
-        self.legend_title_edit.editingFinished.connect(self.propertiesChanged.emit)
+        # 凡例関連のシグナルは削除
         self.marker_combo.currentIndexChanged.connect(self.propertiesChanged.emit)
         self.linestyle_combo.currentIndexChanged.connect(self.propertiesChanged.emit)
         self.marker_edgewidth_spin.valueChanged.connect(self.propertiesChanged.emit)
@@ -131,8 +129,7 @@ class FormatTab(QWidget):
         return {
             'hide_top_right_spines': self.spines_check.isChecked(),
             'scatter_overlay': self.scatter_overlay_check.isChecked(),
-            'legend_position': self.legend_pos_combo.currentData(),
-            'legend_title': self.legend_title_edit.text(),
+            # 凡例関連のプロパティは削除
             'marker_style': self.marker_combo.currentData(),
             'marker_edgecolor': self.current_marker_edgecolor,
             'marker_edgewidth': self.marker_edgewidth_spin.value(),
