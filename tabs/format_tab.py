@@ -40,6 +40,7 @@ class FormatTab(QWidget):
         self.current_color = None
         self.current_marker_edgecolor = 'black'
         self.current_bar_edgecolor = 'black'
+        self.current_regression_color = 'red'
         self.subgroup_colors = {}
         self.subgroup_widgets = {}
         self.current_categories = []
@@ -111,6 +112,9 @@ class FormatTab(QWidget):
         self.linewidth_spin.setRange(0.5, 10.0); self.linewidth_spin.setSingleStep(0.5); self.linewidth_spin.setValue(1.5)
         elements_layout.addRow(QLabel("Width:"), self.linewidth_spin)
         
+        self.regression_color_button = QPushButton("Select Color")
+        elements_layout.addRow(QLabel("Fit Line Color:"), self.regression_color_button)
+
         main_layout.addWidget(elements_group)
 
         # --- 3. カラー設定グループ ---
@@ -153,7 +157,7 @@ class FormatTab(QWidget):
         self.single_color_button.clicked.connect(self.open_single_color_dialog)
         self.marker_edgecolor_button.clicked.connect(self.open_marker_edgecolor_dialog)
         self.bar_edgecolor_button.clicked.connect(self.open_bar_edgecolor_dialog)
-        # ★★★ パレット選択のシグナルを接続 ★★★
+        self.regression_color_button.clicked.connect(self.open_regression_color_dialog)
         self.palette_combo.currentTextChanged.connect(self.on_palette_changed)
 
 
@@ -170,10 +174,17 @@ class FormatTab(QWidget):
             'linestyle': self.linestyle_combo.currentData(),
             'linewidth': self.linewidth_spin.value(),
             'single_color': self.current_color,
+            'regression_color': self.current_regression_color,
             'subgroup_colors': self.subgroup_colors,
         }
 
-    # ★★★ パレットが変更されたときに呼ばれるメソッドを追加 ★★★
+    def open_regression_color_dialog(self):
+        color = QColorDialog.getColor()
+        if color.isValid():
+            self.current_regression_color = color.name()
+            self.regression_color_button.setStyleSheet(f"background-color: {self.current_regression_color};")
+            self.propertiesChanged.emit()
+
     def on_palette_changed(self):
         """
         パレット選択に応じて、サブグループの色設定を更新する

@@ -259,7 +259,10 @@ class GraphManager:
                 if self.main.regression_line_params:
                     params = self.main.regression_line_params
                     r_squared = params.get("r_squared", 0)
-                    ax.plot(params["x_line"], params["y_line"], color='red', linestyle='--', 
+                    ax.plot(params["x_line"], params["y_line"], 
+                            color=properties.get('regression_color', 'red'), 
+                            linestyle=properties.get('linestyle', '--'), 
+                            linewidth=properties.get('linewidth', 1.5),
                             label=f'Linear Fit ($R^2$={r_squared:.3f})')
                 if self.main.fit_params:
                     params_dict = self.main.fit_params
@@ -268,7 +271,10 @@ class GraphManager:
                     r_squared = params_dict.get("r_squared", 0)
                     x_smooth_log = np.linspace(log_x_data.min(), log_x_data.max(), 200)
                     y_smooth = self.sigmoid_4pl(x_smooth_log, *fit_params)
-                    ax.plot(10**x_smooth_log, y_smooth, color='blue', linestyle='--', 
+                    ax.plot(10**x_smooth_log, y_smooth, 
+                            color=properties.get('regression_color', 'red'), # 参照先を統一
+                            linestyle=properties.get('linestyle', '--'), 
+                            linewidth=properties.get('linewidth', 1.5),
                             label=f'4PL Fit ($R^2$={r_squared:.3f})')
                 if self.main.regression_line_params or self.main.fit_params:
                     handles, labels = ax.get_legend_handles_labels()
