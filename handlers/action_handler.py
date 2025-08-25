@@ -24,7 +24,7 @@ from dialogs.correlation_dialog import CorrelationDialog
 from dialogs.regression_dialog import RegressionDialog
 from dialogs.contingency_dialog import ContingencyDialog
 from dialogs.pivot_dialog import PivotDialog
-from dialogs.filter_dialog import FilterDialog
+from dialogs.advanced_filter_dialog import AdvancedFilterDialog
 
 import traceback
 
@@ -232,66 +232,73 @@ class ActionHandler:
 
     # --- Statistical Analysis ---
 
-    def show_filter_dialog(self):
-        """フィルタリング条件を設定するダイアログを表示する"""
+    def show_advanced_filter_dialog(self):
+        """高度なフィルタリング条件を設定するダイアログを表示する"""
         if not hasattr(self.main, 'model') or self.main.model is None:
             QMessageBox.warning(self.main, "Warning", "Please load data first.")
             return
 
         df = self.main.model._data
-        dialog = FilterDialog(df, self.main)
+        dialog = AdvancedFilterDialog(df, self.main)
         
         if dialog.exec():
             settings = dialog.get_settings()
-            if not settings or str(settings['value']) == '':
-                QMessageBox.warning(self.main, "Warning", "Invalid or empty value for the filter condition.")
+            if not settings:
+                QMessageBox.warning(self.main, "Warning", "One or more filter conditions are incomplete or invalid.")
                 return
-            self.apply_filter(settings)
+            self.apply_advanced_filter(settings)
 
-    def apply_filter(self, settings):
-        """指定された条件に基づいてデータをフィルタリングし、新しいウィンドウで結果を表示する"""
-        query_str = "" # エラーメッセージ用に初期化
+    def apply_advanced_filter(self, settings):
+        """指定された複数条件に基づいてデータをフィルタリングする"""
+        query_parts = []
         try:
             df = self.main.model._data.copy()
-            col = settings['column']
-            op = settings['operator']
-            val = settings['value']
+            
+            # --- 翻訳担当のコアロジック ---
+            for i, condition in enumerate(settings):
+                col = condition['column']
+                op = condition['operator']
+                val = condition['value']
 
-            # クエリ文字列を安全に構築
-            if isinstance(val, str):
-                query_val = f'"{val}"' # 文字列の場合はダブルクォートで囲む
-            else:
-                query_val = str(val)
+                # 値を安全にクエリ文字列用にフォーマット
+                query_val = f'"{val}"' if isinstance(val, str) else str(val)
 
-            # 演算子の種類に応じてクエリ文字列の形式を切り替える
-            if op in ["contains", "not contains", "startswith", "endswith"]:
-                if op == "not contains":
-                    # 'not contains'は直接サポートされていないため、boolで判定
-                    query_str = f'`{col}`.str.contains({query_val}) == False'
+                # 個々の条件式を作成
+                if op in ["contains", "not contains", "startswith", "endswith"]:
+                    if op == "not contains":
+                        part = f'~`{col}`.str.contains({query_val})'
+                    else:
+                        part = f'`{col}`.str.{op}({query_val})'
                 else:
-                    query_str = f'`{col}`.str.{op}({query_val})'
-            else:
-                # 標準的な比較演算子
-                query_str = f'`{col}` {op} {query_val}'
+                    part = f'`{col}` {op} {query_val}'
 
-            new_df = df.query(query_str, engine='python').reset_index(drop=True)
+                # 最初の条件でなければ、AND/ORで連結する
+                if i > 0:
+                    connector = condition['connector']
+                    query_parts.append(f" {connector} ({part})")
+                else:
+                    query_parts.append(f"({part})")
+            
+            final_query = "".join(query_parts)
+            
+            new_df = df.query(final_query, engine='python').reset_index(drop=True)
 
             if new_df.empty:
                 QMessageBox.information(self.main, "Info", "The filter returned no data.")
                 return
 
-            # 新しいウィンドウで結果を表示 (DataFrameを直接渡す方式)
+            # 新しいウィンドウで結果を表示
             new_window = self.main.__class__(data=new_df)
             new_window.setWindowTitle(self.main.windowTitle() + " [Filtered]")
             new_window.show()
 
             app = QApplication.instance()
-            if not hasattr(app, 'main_windows'):
-                app.main_windows = []
+            if not hasattr(app, 'main_windows'): app.main_windows = []
             app.main_windows.append(new_window)
 
         except Exception as e:
-            QMessageBox.critical(self.main, "Error", f"Failed to apply filter: {e}\n\nAttempted Query: {query_str}")
+            final_query_str = "".join(query_parts)
+            QMessageBox.critical(self.main, "Error", f"Failed to apply filter: {e}\n\nAttempted Query: {final_query_str}")
             traceback.print_exc()
 
     def perform_t_test(self):

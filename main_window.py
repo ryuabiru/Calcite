@@ -146,7 +146,7 @@ class MainWindow(QMainWindow):
         pivot_action.triggered.connect(self.action_handler.show_pivot_dialog)
         data_menu.addAction(pivot_action)
         filter_action = QAction("&Filter...", self)
-        filter_action.triggered.connect(self.action_handler.show_filter_dialog)
+        filter_action.triggered.connect(self.action_handler.show_advanced_filter_dialog)
         data_menu.addAction(filter_action)
         calculate_action = QAction("&Calculate New Column...", self)
         calculate_action.triggered.connect(self.action_handler.show_calculate_dialog)
