@@ -3,9 +3,9 @@
 import pandas as pd
 import numpy as np
 import io
-from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication, QDialog, QVBoxLayout, QTextEdit
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication, QVBoxLayout
 from scipy.stats import (ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency, 
-                         shapiro, spearmanr, mannwhitneyu, wilcoxon, kruskal)
+                        shapiro, spearmanr, mannwhitneyu, wilcoxon, kruskal)
 from scipy.optimize import curve_fit
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 import scikit_posthocs as sp
@@ -73,6 +73,7 @@ class ActionHandler:
                 self.main.model = PandasModel(df)
                 self.main.table_view.setModel(self.main.model)
                 self.main.properties_panel.set_columns(df.columns)
+                self.main.results_widget.clear_results() # ★★★ 追加 ★★★
 
                 # GraphManagerのupdate_graphに接続する
                 self.main.table_view.selectionModel().selectionChanged.connect(self.main.graph_manager.update_graph)
@@ -94,6 +95,7 @@ class ActionHandler:
             self.main.model = PandasModel(df)
             self.main.table_view.setModel(self.main.model)
             self.main.properties_panel.set_columns(df.columns)
+            self.main.results_widget.clear_results() # ★★★ 追加 ★★★
             
             self.main.table_view.selectionModel().selectionChanged.connect(self.main.graph_manager.update_graph)
             self.main.model.dataChanged.connect(self.main.graph_manager.update_graph)
@@ -250,12 +252,9 @@ class ActionHandler:
             QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
             return
 
-        # ▼▼▼ ここからが修正箇所です ▼▼▼
-        # 統計処理の前に、graph_managerと全く同じ型変換を行う
         df[group_col] = df[group_col].astype(str)
         if hue_col and hue_col in df.columns:
             df[hue_col] = df[hue_col].astype(str)
-        # ▲▲▲ ここまでが修正箇所です ▲▲▲
 
         x_values = [str(v) for v in df[group_col].dropna().unique()]
         hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
@@ -274,13 +273,6 @@ class ActionHandler:
             if g1_cond == g2_cond:
                  QMessageBox.warning(self.main, "Warning", "Please select two different groups.")
                  return
-
-            # --- ★★★ PRINTデバッグ (1) ★★★ ---
-            print("--- TTestDialog Selection ---")
-            print(f"Group 1 Condition: {g1_cond}")
-            print(f"Group 2 Condition: {g2_cond}")
-            # --- デバッグここまで ---
-
             try:
                 if hue_col:
                     g1_name = f"{g1_cond['x']}{self._UNIQUE_SEPARATOR}{g1_cond['hue']}"
@@ -296,17 +288,10 @@ class ActionHandler:
                         subset_df = df[df[facet_col] == category].reset_index(drop=True)
                         effective_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
                         
-                        # --- ★★★ PRINTデバッグ (2) ★★★ ---
-                        print(f"\n--- Debugging Facet Category: {category} ---")
-                        print(f"Internal group names to find: g1='{g1_name}', g2='{g2_name}'")
-                        print(f"Unique groups in this subset: {effective_groups.unique()}")
-                        # --- デバッグここまで ---
-
                         group1_values = subset_df.loc[effective_groups == g1_name, value_col].dropna()
                         group2_values = subset_df.loc[effective_groups == g2_name, value_col].dropna()
 
                         if group1_values.empty or group2_values.empty:
-                            print(f"-> Skipping facet {category}: One or both groups have no data.")
                             continue
                         
                         _, p_value = ttest_ind(group1_values, group2_values, nan_policy='omit')
@@ -321,9 +306,6 @@ class ActionHandler:
                         }
                         if annotation not in self.main.statistical_annotations:
                             self.main.statistical_annotations.append(annotation)
-                            # --- ★★★ PRINTデバッグ (3) ★★★ ---
-                            print(f"-> Annotation CREATED for facet {category}: {annotation}")
-                            # --- デバッグここまで ---
                 
                 else: # ファセットなし
                     effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
@@ -346,9 +328,6 @@ class ActionHandler:
                     }
                     if annotation not in self.main.statistical_annotations:
                         self.main.statistical_annotations.append(annotation)
-                        # --- ★★★ PRINTデバッグ (3) ★★★ ---
-                        print(f"-> Annotation CREATED (no facet): {annotation}")
-                        # --- デバッグここまで ---
                     
                     g1_display_name = f"{group_col}={g1_cond['x']}" + (f", {hue_col}={g1_cond['hue']}" if hue_col and g1_cond.get('hue') else "")
                     g2_display_name = f"{group_col}={g2_cond['x']}" + (f", {hue_col}={g2_cond['hue']}" if hue_col and g2_cond.get('hue') else "")
@@ -366,7 +345,8 @@ class ActionHandler:
                         result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
                     else:
                         result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
-                    self.show_results_dialog("t-test Result", result_text)
+                    # ★★★ 修正 ★★★
+                    self.main.results_widget.set_results_text(result_text)
 
                 self.main.graph_manager.update_graph()
 
@@ -484,7 +464,8 @@ class ActionHandler:
                         result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
                     else:
                         result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
-                    self.show_results_dialog("Mann-Whitney U Test Result", result_text)
+                    # ★★★ 修正 ★★★
+                    self.main.results_widget.set_results_text(result_text)
 
                 self.main.graph_manager.update_graph()
 
@@ -515,12 +496,9 @@ class ActionHandler:
             if not hue_col or group_col == hue_col:
                 hue_col = None
 
-            # ▼▼▼ ここからが修正箇所です ▼▼▼
-            # 統計処理の前に、graph_managerと全く同じ型変換を行う
             df[group_col] = df[group_col].astype(str)
             if hue_col and hue_col in df.columns:
                 df[hue_col] = df[hue_col].astype(str)
-            # ▲▲▲ ここまでが修正箇所です ▲▲▲
 
             facet_col = data_settings.get('facet_col')
 
@@ -530,8 +508,6 @@ class ActionHandler:
             if not x_values:
                 QMessageBox.warning(self.main, "Warning", "The selected X-Axis column has no data.")
                 return
-
-            # 新しいAnovaDialogを正しい引数で呼び出す
             dialog = AnovaDialog(x_values, hue_values, group_col, hue_col, self.main)
             
             if dialog.exec():
@@ -542,7 +518,6 @@ class ActionHandler:
                     return
                 
                 effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
-                # ★★★ ここまでが修正箇所 ★★★
 
                 results_summary = []
 
@@ -561,7 +536,7 @@ class ActionHandler:
                         _, p_value = f_oneway(*samples)
                         
                         results_summary.append(f"--- Facet: {facet_col} = {category} ---\n"
-                                             f"F-statistic: _, p-value: {p_value:.4f}\n") # F-statは省略
+                                             f"F-statistic: _, p-value: {p_value:.4f}\n")
 
                         if p_value < 0.05 and len(samples) >= 2:
                             selected_data_indices = current_facet_groups.isin(selected_groups)
@@ -621,7 +596,8 @@ class ActionHandler:
                 
                 if results_summary:
                     final_summary = "One-way ANOVA Results\n======================\n\n" + "\n".join(results_summary)
-                    self.show_results_dialog("ANOVA Result", final_summary)
+                    # ★★★ 修正 ★★★
+                    self.main.results_widget.set_results_text(final_summary)
 
                 self.main.graph_manager.update_graph()
 
@@ -660,7 +636,8 @@ class ActionHandler:
                     result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
                 else:
                     result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
-                self.show_results_dialog("Paired t-test Result", result_text)
+                # ★★★ 修正 ★★★
+                self.main.results_widget.set_results_text(result_text)
 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform paired t-test: {e}")
@@ -685,7 +662,6 @@ class ActionHandler:
                      QMessageBox.warning(self.main, "Warning", "Not enough paired data to perform the test.")
                      return
                 
-                # wilcoxonは差がゼロのデータを除外するため、その処理を事前に行う
                 diff = data1[:min_len] - data2[:min_len]
                 nonzero_diff_indices = diff[diff != 0].index
                 
@@ -704,7 +680,8 @@ class ActionHandler:
                     result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
                 else:
                     result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
-                self.show_results_dialog("Wilcoxon Signed-rank Test Result", result_text)
+                # ★★★ 修正 ★★★
+                self.main.results_widget.set_results_text(result_text)
 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform Wilcoxon test: {e}")
@@ -750,7 +727,6 @@ class ActionHandler:
 
                 results_summary = []
 
-                # --- ファセット処理 ---
                 if facet_col and facet_col in df.columns:
                     for category in df[facet_col].dropna().unique():
                         subset_df = df[df[facet_col] == category].copy()
@@ -764,7 +740,6 @@ class ActionHandler:
                         results_summary.append(f"--- Facet: {facet_col} = {category} ---")
                         results_summary.append(f"Kruskal-Wallis H-statistic: {h_stat:.4f}, p-value: {p_value:.4f}")
 
-                        # --- Dunn's Post-hoc Test ---
                         if p_value < 0.05 and len(samples) > 2:
                             posthoc_df = sp.posthoc_dunn(subset_df, val_col=value_col, group_col=interaction_col_name)
                             results_summary.append("\nDunn's Post-hoc Test (p-values):\n" + posthoc_df.to_string())
@@ -795,7 +770,6 @@ class ActionHandler:
                         posthoc_df = sp.posthoc_dunn(df, val_col=value_col, group_col=interaction_col_name)
                         results_summary.append("\nDunn's Post-hoc Test (p-values):\n" + posthoc_df.to_string())
                         
-                        # アノテーション生成ロジック
                         for group1 in posthoc_df.columns:
                             for group2, p_adj in posthoc_df.loc[group1].items():
                                 if group1 != group2 and pd.notna(p_adj) and p_adj < 0.05:
@@ -811,7 +785,8 @@ class ActionHandler:
 
                 if results_summary:
                     final_summary = "Kruskal-Wallis Test Results\n======================\n\n" + "\n".join(results_summary)
-                    self.show_results_dialog("Kruskal-Wallis Test Result", final_summary)
+                    # ★★★ 修正 ★★★
+                    self.main.results_widget.set_results_text(final_summary)
 
                 self.main.graph_manager.update_graph()
 
@@ -841,7 +816,7 @@ class ActionHandler:
                     result_text += f"Conclusion: There is a statistically significant association between '{rows_col}' and '{cols_col}' (p < 0.05)."
                 else:
                     result_text += f"Conclusion: There is no statistically significant association between '{rows_col}' and '{cols_col}' (p >= 0.05)."
-                self.show_results_dialog("Chi-squared Test Result", result_text)
+                self.main.results_widget.set_results_text("Chi-squared Test Result", result_text)
                 
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform Chi-squared test: {e}")
@@ -892,8 +867,7 @@ class ActionHandler:
                 else:
                     result_text += "Conclusion: There is no statistically significant correlation."
                 
-                self.show_results_dialog("Spearman's Correlation Result", result_text)
-
+                self.main.results_widget.set_results_text("Spearman's Correlation Result", result_text)
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform Spearman's correlation: {e}")
                 traceback.print_exc()
@@ -955,8 +929,7 @@ class ActionHandler:
                 result_text += "-----------------------------------------\n"
 
             # 結果をダイアログで表示
-            self.show_results_dialog("Normality Test Results", result_text)
-
+            self.main.results_widget.set_results_text("Normality Test Results", result_text)
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to perform Shapiro-Wilk test: {e}")
             traceback.print_exc()
@@ -1028,26 +1001,6 @@ class ActionHandler:
                 result_text += f"Hill Slope: {hill_slope:.4f}\n"
                 result_text += f"EC50: {ec50:.4f}\n\n"
                 result_text += f"R-squared: {r_squared:.4f}\n"
-                self.show_results_dialog("Fitting Result", result_text)
-
+                self.main.results_widget.set_results_text("Fitting Result", result_text)
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform fitting: {e}")
-    
-    # --- Helper Methods ---
-    def show_results_dialog(self, title, text):
-        """解析結果などを表示するための汎用的なダイアログを表示する。"""
-        dialog = QDialog(self.main)
-        dialog.setWindowTitle(title)
-        dialog.setMinimumSize(400, 300)
-        
-        layout = QVBoxLayout(dialog)
-        text_edit = QTextEdit()
-        text_edit.setReadOnly(True)
-        text_edit.setText(text)
-        
-        font = text_edit.font()
-        font.setFamily("Courier New")
-        text_edit.setFont(font)
-        
-        layout.addWidget(text_edit)
-        dialog.exec()

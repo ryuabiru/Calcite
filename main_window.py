@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt
 # --- Local Imports ---
 from graph_widget import GraphWidget
 from properties_widget import PropertiesWidget
+from results_widget import ResultsWidget
 
 # --- Handlers ---
 from handlers.action_handler import ActionHandler
@@ -52,9 +53,21 @@ class MainWindow(QMainWindow):
         # --- 右カラム（ここは垂直に分割）---
         right_splitter = QSplitter(Qt.Orientation.Vertical)
         
-        self.properties_panel = PropertiesWidget()
-        right_splitter.addWidget(self.properties_panel)
+        # --- 右カラムの上段（ここは水平に分割）---
+        top_right_splitter = QSplitter(Qt.Orientation.Horizontal)
 
+        self.properties_panel = PropertiesWidget()
+        top_right_splitter.addWidget(self.properties_panel)
+
+        self.results_widget = ResultsWidget() # 新しいウィジェットをインスタンス化
+        top_right_splitter.addWidget(self.results_widget)
+        
+        # プロパティパネルと結果パネルの幅の比率を設定
+        top_right_splitter.setSizes([400, 250])
+
+        right_splitter.addWidget(top_right_splitter)
+
+        # --- 右カラムの下段 ---
         self.graph_widget = GraphWidget()
         right_splitter.addWidget(self.graph_widget)
 
@@ -64,8 +77,7 @@ class MainWindow(QMainWindow):
         main_splitter.addWidget(right_splitter)
 
         # 全体の左右の比率を設定
-        main_splitter.setSizes([350, 650])
-        # ▲▲▲ ここまで ▲▲▲
+        main_splitter.setSizes([400, 800])
 
     def _connect_signals(self):
         self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
