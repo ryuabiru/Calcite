@@ -24,6 +24,7 @@ from dialogs.correlation_dialog import CorrelationDialog
 from dialogs.regression_dialog import RegressionDialog
 from dialogs.contingency_dialog import ContingencyDialog
 from dialogs.pivot_dialog import PivotDialog
+from dialogs.filter_dialog import FilterDialog
 
 import traceback
 
@@ -230,6 +231,68 @@ class ActionHandler:
             QMessageBox.critical(self.main, "Error", f"Failed to pivot data: {e}")
 
     # --- Statistical Analysis ---
+
+    def show_filter_dialog(self):
+        """フィルタリング条件を設定するダイアログを表示する"""
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Warning", "Please load data first.")
+            return
+
+        df = self.main.model._data
+        dialog = FilterDialog(df, self.main)
+        
+        if dialog.exec():
+            settings = dialog.get_settings()
+            if not settings or str(settings['value']) == '':
+                QMessageBox.warning(self.main, "Warning", "Invalid or empty value for the filter condition.")
+                return
+            self.apply_filter(settings)
+
+    def apply_filter(self, settings):
+        """指定された条件に基づいてデータをフィルタリングし、新しいウィンドウで結果を表示する"""
+        query_str = "" # エラーメッセージ用に初期化
+        try:
+            df = self.main.model._data.copy()
+            col = settings['column']
+            op = settings['operator']
+            val = settings['value']
+
+            # クエリ文字列を安全に構築
+            if isinstance(val, str):
+                query_val = f'"{val}"' # 文字列の場合はダブルクォートで囲む
+            else:
+                query_val = str(val)
+
+            # 演算子の種類に応じてクエリ文字列の形式を切り替える
+            if op in ["contains", "not contains", "startswith", "endswith"]:
+                if op == "not contains":
+                    # 'not contains'は直接サポートされていないため、boolで判定
+                    query_str = f'`{col}`.str.contains({query_val}) == False'
+                else:
+                    query_str = f'`{col}`.str.{op}({query_val})'
+            else:
+                # 標準的な比較演算子
+                query_str = f'`{col}` {op} {query_val}'
+
+            new_df = df.query(query_str, engine='python').reset_index(drop=True)
+
+            if new_df.empty:
+                QMessageBox.information(self.main, "Info", "The filter returned no data.")
+                return
+
+            # 新しいウィンドウで結果を表示 (DataFrameを直接渡す方式)
+            new_window = self.main.__class__(data=new_df)
+            new_window.setWindowTitle(self.main.windowTitle() + " [Filtered]")
+            new_window.show()
+
+            app = QApplication.instance()
+            if not hasattr(app, 'main_windows'):
+                app.main_windows = []
+            app.main_windows.append(new_window)
+
+        except Exception as e:
+            QMessageBox.critical(self.main, "Error", f"Failed to apply filter: {e}\n\nAttempted Query: {query_str}")
+            traceback.print_exc()
 
     def perform_t_test(self):
         """表示されているグラフのデータに基づいて独立t検定を実行する。"""
