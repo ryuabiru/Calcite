@@ -368,6 +368,8 @@ class GraphManager:
                     annotator.set_pvalues(p_values)
                     annotator.annotate()
             
+            self.update_graph_properties(fig, properties)
+            
             return fig
         
         except Exception as e:
@@ -404,17 +406,47 @@ class GraphManager:
             if plot_df.empty: return None
             plot_df['ID'] = range(len(plot_df))
             plot_df_long = pd.melt(plot_df, id_vars='ID', value_vars=[col1, col2], var_name='Condition', value_name='Value')
+            
+            # 1. 専用のラベルを取得（なければ元の列名を使用）
             label1 = properties.get('paired_label1') or col1
             label2 = properties.get('paired_label2') or col2
-            sns.lineplot(data=plot_df_long, x='Condition', y='Value', units='ID', estimator=None, color='gray', alpha=0.5, ax=ax)
-            sns.scatterplot(data=plot_df_long, x='Condition', y='Value', color=properties.get('single_color', 'black'), marker=properties.get('marker_style', 'o'), edgecolor=properties.get('marker_edgecolor', 'black'), linewidth=properties.get('marker_edgewidth', 1.0), ax=ax, legend=False)
+            
+            # 2. 線のスタイルをプロパティから適用
+            sns.lineplot(data=plot_df_long, x='Condition', y='Value', units='ID', 
+                         estimator=None, color='gray', alpha=0.5, ax=ax,
+                         linestyle=properties.get('linestyle', '-'),
+                         linewidth=properties.get('linewidth', 1.5))
+            
+            # 3. マーカーのスタイルをプロパティから適用
+            sns.scatterplot(data=plot_df_long, x='Condition', y='Value', 
+                            color=properties.get('single_color', 'black'), 
+                            marker=properties.get('marker_style', 'o'), 
+                            edgecolor=properties.get('marker_edgecolor', 'black'), 
+                            linewidth=properties.get('marker_edgewidth', 1.0), 
+                            ax=ax, legend=False)
+            
             mean_df = plot_df_long.groupby('Condition')['Value'].mean().reindex([col1, col2])
             ax.plot(mean_df.index, mean_df.values, color='red', marker='_', markersize=20, mew=2.5, linestyle='None', label='Mean')
+            
+            # 4. X軸の目盛りラベルを設定
             ax.set_xticks([0, 1])
             ax.set_xticklabels([label1, label2])
+            
+            # 5. X軸のメインラベルは不要なので消去
+            ax.set_xlabel('')
+            
+            # 6. 凡例の位置をプロパティから適用
             handles, labels = ax.get_legend_handles_labels()
-            if handles: ax.legend(handles, labels)
+            if handles:
+                legend_pos = properties.get('legend_position', 'best')
+                # 'best'は枠外配置に対応していないため、手動で調整
+                if legend_pos == 'best':
+                    ax.legend(handles=handles, labels=labels, loc='upper left', bbox_to_anchor=(1.02, 1))
+                else:
+                    ax.legend(handles=handles, labels=labels, loc=legend_pos)
+                    
             return plot_df_long
+        
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
             
