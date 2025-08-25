@@ -114,8 +114,8 @@ class GraphManager:
                     if category in subgroup_palette:
                         subgroup_palette[category] = color
 
-            row_categories = sorted(df[facet_row].unique()) if facet_row else [None]
-            col_categories = sorted(df[facet_col].unique()) if facet_col else [None]
+            row_categories = df[facet_row].unique() if facet_row else [None]
+            col_categories = df[facet_col].unique() if facet_col else [None]
             n_rows, n_cols = len(row_categories), len(col_categories)
 
             fig, axes = plt.subplots(
