@@ -11,17 +11,20 @@ from PySide6.QtCore import Qt
 from graph_widget import GraphWidget
 from properties_widget import PropertiesWidget
 from results_widget import ResultsWidget
+from pandas_model import PandasModel
 
 # --- Handlers ---
 from handlers.action_handler import ActionHandler
 from handlers.graph_manager import GraphManager
+
+import pandas as pd
 
 class MainWindow(QMainWindow):
     """
     アプリケーションのメインウィンドウ。
     UIの配置と、各ハンドラーへの処理の委譲を担当する。
     """
-    def __init__(self):
+    def __init__(self, data=None):
         super().__init__()
         self.setWindowTitle("demo")
         self.setGeometry(100, 100, 1000, 650)
@@ -40,6 +43,34 @@ class MainWindow(QMainWindow):
         self._create_menu_bar()
         self._create_toolbar()
         self._connect_signals()
+        
+        if data is not None:
+            self.load_dataframe(data)
+
+    def load_dataframe(self, df):
+        """
+        指定されたPandas DataFrameをアプリケーションに読み込む
+        """
+        if not isinstance(df, pd.DataFrame):
+            QMessageBox.critical(self, "Error", "Invalid data type. A Pandas DataFrame is required.")
+            return
+
+        try:
+            self.model = PandasModel(df)
+            self.table_view.setModel(self.model)
+            self.properties_panel.set_columns(df.columns)
+            self.results_widget.clear_results()
+
+            # グラフ更新のためのシグナルを接続
+            self.table_view.selectionModel().selectionChanged.connect(self.graph_manager.update_graph)
+            self.model.dataChanged.connect(self.graph_manager.update_graph)
+            self.model.headerDataChanged.connect(self.graph_manager.update_graph)
+            
+            # 初期グラフを描画
+            self.graph_manager.update_graph()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error loading DataFrame: {e}")
 
     def _setup_ui(self):
         # メインの分割を水平（左右）にする
