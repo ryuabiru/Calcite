@@ -124,16 +124,17 @@ class GraphManager:
                 for j, col_cat in enumerate(col_categories):
                     ax = axes[i, j]
                     facet_selector = pd.Series(True, index=df_processed.index)
+                    
                     if facet_row: facet_selector &= (df_processed[facet_row] == row_cat)
                     if facet_col: facet_selector &= (df_processed[facet_col] == col_cat)
                     original_subset_df = df_processed[facet_selector]
-
+                    
                     if original_subset_df.empty:
                         ax.set_title(f"No data for {row_cat} | {col_cat}"); continue
                     
                     plot_df = original_subset_df
                     print(f"\n--- Drawing Facet (Row: {row_cat}, Col: {col_cat}) ---")
-
+                    
                     if base_kind == 'summary_scatter':
                         print("[Layer 1] Preparing data for Summary Scatter...")
                         group_cols = [current_x]
@@ -156,7 +157,7 @@ class GraphManager:
                         if base_kind in ['pointplot', 'lineplot']: base_kwargs.update({'linestyle': properties.get('linestyle', '-'), 'linewidth': properties.get('linewidth', 1.5)})
                         if base_kind == 'pointplot': base_kwargs.update({'dodge': True, 'capsize': properties.get('capsize', 4) * 0.02})
                         base_plot_map[base_kind](**base_kwargs, legend=False)
-
+                        
                     if base_kind in ['scatter', 'summary_scatter']:
                         print(f"[Layer 3] Drawing Scatter Plot: {base_kind}")
                         scatter_kwargs = {'data': plot_df, 'x': current_x, 'y': current_y, 'ax': ax, 'marker': properties.get('marker_style', 'o'), 'edgecolor': properties.get('marker_edgecolor', 'black'), 'linewidth': properties.get('marker_edgewidth', 1.0)}
@@ -180,7 +181,7 @@ class GraphManager:
                         if not original_subset_df.empty:
                             sns.stripplot(data=original_subset_df, x=current_x, y=current_y, hue=visual_hue_col, ax=ax, jitter=0.2, alpha=0.6, palette=subgroup_palette, marker=properties.get('marker_style', 'o'), edgecolor=properties.get('marker_edgecolor', 'black'), linewidth=properties.get('marker_edgewidth', 1.0), legend=False, dodge=True)
                             print(" -> stripplot called with dodge=True.")
-
+                            
                     title_parts = []; 
                     if facet_row: title_parts.append(f"{facet_row} = {row_cat}"); 
                     if facet_col: title_parts.append(f"{facet_col} = {col_cat}")
@@ -188,7 +189,18 @@ class GraphManager:
                     annotations_for_this_facet = [ann for ann in all_relevant_annotations if ann.get('facet_value') == (col_cat if facet_col else None)]
                     hue_order = sorted(df_processed[visual_hue_col].unique()) if visual_hue_col else None
                     self.apply_annotations(ax, df_processed, data_settings, hue_order, annotations_for_this_facet)
-
+                    
+            is_faceted = n_rows > 1 or n_cols > 1
+            if is_faceted:
+                print("Faceted plot detected. Applying shared X-axis label.") # デバッグ用
+                # ユーザー指定のラベルがあればそれを使用、なければ列名をデフォルトに
+                shared_xlabel = properties.get('xlabel') or current_x
+                # 各サブプロットのX軸ラベルを消去
+                for ax in axes.flat:
+                    ax.set_xlabel('')
+                # 図全体の中央にX軸ラベルを配置
+                fig.supxlabel(shared_xlabel, fontsize=properties.get('xlabel_fontsize', 12))
+                
             if visual_hue_col:
                 legend_title = properties.get('legend_title') or visual_hue_col; legend_pos = properties.get('legend_position', 'best'); handles = [mpatches.Patch(color=color, label=label) for label, color in subgroup_palette.items()]; kwargs = {'loc': 'upper left', 'bbox_to_anchor': (1.02, 1)} if legend_pos == 'best' else {'loc': legend_pos}; fig.legend(handles=handles, title=legend_title, **kwargs)
             if base_kind in ['scatter', 'summary_scatter'] and not (facet_col or facet_row):
@@ -222,9 +234,19 @@ class GraphManager:
 
     def update_graph_properties(self, fig, properties):
         fig.suptitle(properties.get('title', ''), fontsize=properties.get('title_fontsize', 16))
+        
+        is_faceted = len(fig.axes) > 1
+
+        print(f"Updating properties. Faceted plot: {is_faceted}") # デバッグ用
+
         for ax in fig.axes:
-            ax.set_xlabel(properties.get('xlabel') or ax.get_xlabel(), fontsize=properties.get('xlabel_fontsize', 12))
+            # ファセットグラフではない場合にのみ、個別のX軸ラベルを設定する
+            if not is_faceted:
+                ax.set_xlabel(properties.get('xlabel') or ax.get_xlabel(), fontsize=properties.get('xlabel_fontsize', 12))
+            
+            # Y軸ラベルは常に個別で設定（sharey=Trueのため）
             ax.set_ylabel(properties.get('ylabel') or ax.get_ylabel(), fontsize=properties.get('ylabel_fontsize', 12))
+            
             ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
             if properties.get('hide_top_right_spines', True):
                 ax.spines['right'].set_visible(False); ax.spines['top'].set_visible(False)
