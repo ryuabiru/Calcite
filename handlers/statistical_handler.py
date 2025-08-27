@@ -655,6 +655,8 @@ class StatisticalHandler:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform Wilcoxon test: {e}")
 
 
+
+    def perform_chi_squared_test(self):
         """カイ二乗検定を実行する。"""
         if not hasattr(self.main, 'model'): return
         df = self.main.model._data

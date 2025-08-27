@@ -4,8 +4,6 @@ import pandas as pd
 import numpy as np
 import io
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication, QVBoxLayout
-from scipy.stats import (ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency, 
-                        shapiro, spearmanr, mannwhitneyu, wilcoxon, kruskal)
 from scipy.optimize import curve_fit
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 import scikit_posthocs as sp
