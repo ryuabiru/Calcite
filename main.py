@@ -14,7 +14,6 @@ def main(data=None):
     # ▼▼▼ 警告を解消するため、インスタンス作成前に設定を移動 ▼▼▼
     # PySide6のバージョンによっては、これらの設定が起動時に必要
     if not QApplication.instance():
-        QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling)
         QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     
     app = QApplication.instance() or QApplication(sys.argv)
