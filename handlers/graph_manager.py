@@ -84,7 +84,30 @@ class GraphManager:
         if not current_x or not current_y:
             self.clear_canvas()
             return None
+        
+        # Summary Scatterの場合、データを要約する
+        if self.main.current_graph_type == 'summary_scatter':
+            group_cols = [current_x]
+            visual_hue_col = data_settings.get('subgroup_col')
+            if visual_hue_col and visual_hue_col != current_x:
+                group_cols.append(visual_hue_col)
+            
+            # 平均値(mean)と標準誤差(sem)を同時に計算
+            summary_stats = df.groupby(group_cols, as_index=False).agg(
+                mean_y=(current_y, 'mean'),
+                err_y=(current_y, 'sem')  # sem = Standard Error of the Mean
+            )
+            # 後続の処理のために、列名を元のY軸の列名に戻す
+            summary_stats.rename(columns={'mean_y': current_y}, inplace=True)
+            plot_df = summary_stats
 
+            # --- デバッグプリント：要約されたデータフレームを確認 ---
+            print("Summarized DataFrame for plotting (with errors):")
+            print(plot_df.head())
+        else:
+            # それ以外のグラフタイプでは、元のデータフレームをコピーして使用
+            plot_df = df.copy()
+        
         visual_hue_col = data_settings.get('subgroup_col')
         if not visual_hue_col:
             visual_hue_col = None
@@ -92,15 +115,15 @@ class GraphManager:
         analysis_hue_col = visual_hue_col
         if current_x == analysis_hue_col:
             analysis_hue_col = None
-
-        if self.main.current_graph_type not in ['scatter', 'lineplot']:
-            df[current_x] = df[current_x].astype(str)
+            
+        if self.main.current_graph_type not in ['scatter', 'summary_scatter', 'lineplot']:
+            plot_df[current_x] = plot_df[current_x].astype(str)
             if visual_hue_col:
-                df[visual_hue_col] = df[visual_hue_col].astype(str)
-
+                plot_df[visual_hue_col] = plot_df[visual_hue_col].astype(str)
+                
         facet_col = data_settings.get('facet_col')
         facet_row = data_settings.get('facet_row')
-
+        
         try:
             subgroup_palette = {}
             if visual_hue_col:
@@ -113,28 +136,28 @@ class GraphManager:
                 for category, color in user_colors.items():
                     if category in subgroup_palette:
                         subgroup_palette[category] = color
-
+                        
             row_categories = df[facet_row].unique() if facet_row else [None]
             col_categories = df[facet_col].unique() if facet_col else [None]
             n_rows, n_cols = len(row_categories), len(col_categories)
-
+            
             fig, axes = plt.subplots(
                 n_rows, n_cols, figsize=(n_cols * 5, n_rows * 4),
                 sharex=False, sharey=True, squeeze=False
             )
-
+            
             all_relevant_annotations = [
                 ann for ann in self.main.statistical_annotations
                 if ann.get('value_col') == current_y and
-                   ann.get('group_col') == current_x and
-                   ann.get('hue_col') == analysis_hue_col
+                    ann.get('group_col') == current_x and
+                    ann.get('hue_col') == analysis_hue_col
             ]
-
+            
             for i, row_cat in enumerate(row_categories):
                 for j, col_cat in enumerate(col_categories):
                     ax = axes[i, j]
                     
-                    subset_df = df.copy()
+                    subset_df = plot_df.copy()
                     if facet_row:
                         subset_df = subset_df[subset_df[facet_row] == row_cat]
                     if facet_col:
@@ -144,68 +167,57 @@ class GraphManager:
 
                     base_kind = self.main.current_graph_type
                     
+                    # --- デバッグプリント：これから何を描画しようとしているか表示 ---
+                    print(f"Attempting to draw '{base_kind}' plot in facet: {ax.get_title()}")
+
                     plot_kwargs = {'legend': False}
 
-                    if base_kind == 'lineplot':
-                        sns.lineplot(
-                            data=subset_df, x=current_x, y=current_y,
-                            hue=visual_hue_col, ax=ax,
-                            palette=subgroup_palette if subgroup_palette else None,
-                            color=properties.get('single_color') if not visual_hue_col else None,
-                            linestyle=properties.get('linestyle', '-'),
-                            linewidth=properties.get('linewidth', 1.5),
-                            **plot_kwargs
-                        )
+                    # ▼▼▼ ここからが修正箇所です ▼▼▼
 
-                    if base_kind != 'scatter':
-                        plot_func_map = {
-                            'bar': sns.barplot, 'boxplot': sns.boxplot, 
-                            'violin': sns.violinplot, 'pointplot': sns.pointplot
+                    # --- Step 1: ベースとなるグラフを描画 (散布図系以外) ---
+                    plot_func_map = {
+                        'bar': sns.barplot, 'boxplot': sns.boxplot, 
+                        'violin': sns.violinplot, 'pointplot': sns.pointplot,
+                        'lineplot': sns.lineplot # lineplotもここに追加
+                    }
+                    if base_kind in plot_func_map:
+                        base_kwargs = {
+                            'data': subset_df, 'x': current_x, 'y': current_y, 
+                            'hue': visual_hue_col, 'ax': ax,
+                            'palette': subgroup_palette if subgroup_palette else None,
+                            'color': properties.get('single_color') if not visual_hue_col else None,
                         }
-                        if base_kind in plot_func_map:
-                            base_kwargs = {
-                                'data': subset_df, 'x': current_x, 'y': current_y, 
-                                'hue': visual_hue_col, 'ax': ax,
-                                'palette': subgroup_palette if subgroup_palette else None,
-                                'color': properties.get('single_color') if not visual_hue_col else None,
-                            }
-                            
-                            if base_kind == 'bar':
-                                base_kwargs.update({
-                                    'edgecolor': properties.get('bar_edgecolor', 'black'),
-                                    'linewidth': properties.get('bar_edgewidth', 1.0),
-                                    'capsize': properties.get('capsize', 4) * 0.01
-                                })
-
-                            if base_kind == 'pointplot':
-                                base_kwargs.update({
-                                    'join': True, 
-                                    'dodge': False,
-                                    'capsize': properties.get('capsize', 4) * 0.02,
-                                    'linestyle': properties.get('linestyle', '-')
-                                })
-                            
-                            plot_func_map[base_kind](**base_kwargs, **plot_kwargs)
-
-                    if base_kind == 'scatter' or properties.get('scatter_overlay'):
                         
-                        stripplot_kwargs = {
-                            'data': subset_df, 'x': current_x, 'y': current_y, 'ax': ax,
-                            'marker': properties.get('marker_style', 'o'),
-                            'edgecolor': properties.get('marker_edgecolor', 'black'),
-                            'linewidth': properties.get('marker_edgewidth', 1.0),
-                            'legend': False
-                        }
-
-                        should_dodge = True
-                        if visual_hue_col == current_x:
-                            should_dodge = False
-
-                    if base_kind == 'scatter' or properties.get('scatter_overlay'):
+                        # (各グラフタイプごとの詳細設定は変更なし)
+                        if base_kind == 'bar':
+                            base_kwargs.update({
+                                'edgecolor': properties.get('bar_edgecolor', 'black'),
+                                'linewidth': properties.get('bar_edgewidth', 1.0),
+                                'capsize': properties.get('capsize', 4) * 0.01
+                            })
+                        if base_kind == 'pointplot':
+                             base_kwargs.update({
+                                'join': True, 
+                                'dodge': True, # Point plotではdodgeを有効にする
+                                'capsize': properties.get('capsize', 4) * 0.02,
+                                'linestyle': properties.get('linestyle', '-')
+                            })
+                        if base_kind == 'lineplot':
+                            base_kwargs.update({
+                                'linestyle': properties.get('linestyle', '-'),
+                                'linewidth': properties.get('linewidth', 1.5),
+                            })
                         
-                        # ▼▼▼ ここからが修正箇所です ▼▼▼
-                        if base_kind == 'scatter':
-                            # --- 散布図の場合：scatterplotを使用 ---
+                        plot_func_map[base_kind](**base_kwargs, **plot_kwargs)
+                        print(f" -> Successfully drew base plot: {base_kind}") # デバッグ用
+
+                    # --- Step 2: 散布図系グラフ、または重ね描きを描画 ---
+                    
+                    # 散布図系のグラフ、または「Show individual points」がONの場合
+                    if base_kind in ['scatter', 'summary_scatter'] or properties.get('scatter_overlay'):
+                        
+                        # グラフタイプが 'scatter' または 'summary_scatter' の場合
+                        if base_kind in ['scatter', 'summary_scatter']:
                             scatter_kwargs = {
                                 'data': subset_df, 'x': current_x, 'y': current_y, 'ax': ax,
                                 'marker': properties.get('marker_style', 'o'),
@@ -216,28 +228,40 @@ class GraphManager:
                                 'legend': False 
                             }
                             sns.scatterplot(**scatter_kwargs)
-                        
-                        else: # --- 重ね描きの場合：これまで通りstripplotを使用 ---
+                            print(f" -> Successfully drew scatter plot: {base_kind}") # デバッグ用
+
+                            # Summary Scatter の場合はエラーバーを追加
+                            if base_kind == 'summary_scatter':
+                                if visual_hue_col:
+                                    for hue_val, grp in subset_df.groupby(visual_hue_col):
+                                        ax.errorbar(x=grp[current_x], y=grp[current_y], yerr=grp['err_y'],
+                                                    fmt='none', capsize=properties.get('capsize', 4),
+                                                    ecolor=subgroup_palette.get(hue_val, 'black'))
+                                else:
+                                    ax.errorbar(x=subset_df[current_x], y=subset_df[current_y], yerr=subset_df['err_y'],
+                                                fmt='none', capsize=properties.get('capsize', 4),
+                                                ecolor=properties.get('marker_edgecolor', 'black'))
+                                print("   -> Added error bars.") # デバッグ用
+
+                        # 「Show individual points」がONの場合 (重ね描き)
+                        else:
                             stripplot_kwargs = {
-                                'data': subset_df, 'x': current_x, 'y': current_y, 'ax': ax,
+                                'data': df[df.index.isin(subset_df.index)], # ★元のdfからsubsetする
+                                'x': current_x, 'y': current_y, 'ax': ax,
                                 'marker': properties.get('marker_style', 'o'),
                                 'edgecolor': properties.get('marker_edgecolor', 'black'),
                                 'linewidth': properties.get('marker_edgewidth', 1.0),
-                                'legend': False
-                            }
-
-                            should_dodge = True
-                            if visual_hue_col == current_x:
-                                should_dodge = False
-                            
-                            stripplot_kwargs.update({
+                                'legend': False,
                                 'hue': visual_hue_col,
                                 'palette': subgroup_palette if subgroup_palette else None,
                                 'alpha': 0.6,
-                                'dodge': should_dodge,
+                                'dodge': True,
                                 'jitter': 0.2
-                            })
+                            }
                             sns.stripplot(**stripplot_kwargs)
+                            print(" -> Successfully drew scatter overlay.") # デバッグ用
+                    
+                    # ▲▲▲ ここまでが修正箇所です ▲▲▲
 
                     title_parts = []
                     if facet_row: title_parts.append(f"{facet_row} = {row_cat}")
@@ -247,14 +271,14 @@ class GraphManager:
                     annotations_for_this_facet = [ann for ann in all_relevant_annotations if ann.get('facet_value') == (col_cat if facet_col else None)]
                     hue_order = sorted(df[visual_hue_col].unique()) if visual_hue_col else None
                     self.apply_annotations(ax, subset_df, data_settings, hue_order, annotations_for_this_facet)
-
+                    
             is_faceted = n_rows > 1 or n_cols > 1
             if is_faceted:
                 shared_xlabel = properties.get('xlabel') or current_x
                 for ax in axes.flat:
                     ax.set_xlabel('')
                 fig.supxlabel(shared_xlabel, y=0.02)
-
+                
                 for i in range(n_rows):
                     for j in range(n_cols):
                         if j > 0:
@@ -262,8 +286,8 @@ class GraphManager:
                             bottom, top = ax.get_ylim()
                             extension = (top - bottom) * 0.10
                             ax.spines['left'].set_bounds(bottom - extension, top)
-
-            if self.main.current_graph_type == 'scatter' and not (facet_col or facet_row):
+                            
+            if self.main.current_graph_type == ['scatter', 'summary_scatter'] and not (facet_col or facet_row):
                 ax = axes[0, 0]
                 if self.main.regression_line_params:
                     params = self.main.regression_line_params
@@ -292,7 +316,7 @@ class GraphManager:
                         if ax.get_legend() is not None:
                             ax.get_legend().remove()
                         ax.legend(handles=handles, loc=legend_pos)
-
+                        
             if visual_hue_col:
                 for ax in axes.flat:
                     if ax.get_legend() is not None:
@@ -310,11 +334,12 @@ class GraphManager:
                 legend_ax.legend(handles=handles, title=legend_title, **kwargs)
                 
             return fig
-
+        
         except Exception as e:
             print(f"Graph drawing error: {e}")
             traceback.print_exc()
             return None
+
 
     def replace_canvas(self, new_fig):
         if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:

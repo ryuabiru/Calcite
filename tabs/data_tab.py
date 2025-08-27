@@ -37,8 +37,14 @@ class DataTab(QWidget):
 
     def set_graph_type(self, graph_type):
         """表示するUIをグラフタイプに応じて切り替える"""
-        if graph_type in ['scatter', 'bar', 'histogram', 'boxplot', 'violin', 'pointplot', 'lineplot']:
+        
+        # --- デバッグプリント ---
+        print(f"DataTab received graph_type: {graph_type}")
+
+        # ★★★ このリストに 'summary_scatter' を追加します ★★★
+        if graph_type in ['scatter', 'summary_scatter', 'bar', 'histogram', 'boxplot', 'violin', 'pointplot', 'lineplot']:
             self.stacked_widget.setCurrentWidget(self.tidy_tab)
+            print("--> Switched to TidyDataTab") # デバッグ用
 
             if graph_type == 'histogram':
                 self.tidy_tab.y_axis_label.setText("Value Column:")
@@ -48,8 +54,10 @@ class DataTab(QWidget):
                 self.tidy_tab.y_axis_label.setText("Y-Axis (Value):")
                 self.tidy_tab.x_axis_label.setVisible(True)
                 self.tidy_tab.x_axis_combo.setVisible(True)
+        
         elif graph_type == 'paired_scatter':
             self.stacked_widget.setCurrentWidget(self.paired_tab)
+            print("--> Switched to PairedDataTab") # デバッグ用
 
     def set_columns(self, columns):
         """両方のタブのコンボボックスの選択肢を更新する"""

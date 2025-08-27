@@ -230,6 +230,12 @@ class MainWindow(QMainWindow):
         scatter_action.triggered.connect(lambda: self.set_graph_type('scatter'))
         toolbar.addAction(scatter_action); action_group.addAction(scatter_action)
         
+        summary_scatter_action = QAction("Summary Scatter", self)
+        summary_scatter_action.setCheckable(True)
+        summary_scatter_action.triggered.connect(lambda: self.set_graph_type('summary_scatter'))
+        toolbar.addAction(summary_scatter_action)
+        action_group.addAction(summary_scatter_action)
+        
         bar_action = QAction("Bar Chart", self)
         bar_action.setCheckable(True)
         bar_action.triggered.connect(lambda: self.set_graph_type('bar'))
