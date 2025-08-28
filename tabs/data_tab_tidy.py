@@ -3,6 +3,8 @@
 from PySide6.QtWidgets import QWidget, QFormLayout, QLabel, QComboBox
 from PySide6.QtCore import Signal
 
+from .format_tab import NoScrollComboBox
+
 class TidyDataTab(QWidget):
     """
     Tidy Data形式（Y軸, X軸, サブグループ）のためのデータ選択UI。
@@ -16,10 +18,10 @@ class TidyDataTab(QWidget):
         layout = QFormLayout(self)
         
         # ウィジェットを作成
-        self.y_axis_combo = QComboBox()
-        self.x_axis_combo = QComboBox()
-        self.subgroup_combo = QComboBox()
-        self.facet_col_combo = QComboBox() # 列で分割
+        self.y_axis_combo = NoScrollComboBox()
+        self.x_axis_combo = NoScrollComboBox()
+        self.subgroup_combo = NoScrollComboBox()
+        self.facet_col_combo = NoScrollComboBox() # 列で分割
         
         # ★★★ ラベルにもselfを付けてアクセス可能にする ★★★
         self.y_axis_label = QLabel("Y-Axis (Value):")

@@ -6,6 +6,8 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox
 )
 
+from .format_tab import NoScrollComboBox, NoScrollSpinBox, NoScrollDoubleSpinBox
+
 class TextTab(QWidget):
     """テキストと凡例の設定タブのUIとロジック"""
     def __init__(self, parent=None):
@@ -47,13 +49,13 @@ class TextTab(QWidget):
         font_group = QGroupBox("Font Sizes")
         font_layout = QFormLayout(font_group)
 
-        self.title_fontsize_spin = QSpinBox()
+        self.title_fontsize_spin = NoScrollSpinBox()
         self.title_fontsize_spin.setRange(6, 48); self.title_fontsize_spin.setValue(16)
-        self.xlabel_fontsize_spin = QSpinBox()
+        self.xlabel_fontsize_spin = NoScrollSpinBox()
         self.xlabel_fontsize_spin.setRange(6, 48); self.xlabel_fontsize_spin.setValue(12)
-        self.ylabel_fontsize_spin = QSpinBox()
+        self.ylabel_fontsize_spin = NoScrollSpinBox()
         self.ylabel_fontsize_spin.setRange(6, 48); self.ylabel_fontsize_spin.setValue(12)
-        self.ticks_fontsize_spin = QSpinBox()
+        self.ticks_fontsize_spin = NoScrollSpinBox()
         self.ticks_fontsize_spin.setRange(6, 48); self.ticks_fontsize_spin.setValue(10)
         
         font_layout.addRow(QLabel("Title:"), self.title_fontsize_spin)
@@ -67,7 +69,7 @@ class TextTab(QWidget):
         legend_group = QGroupBox("Legend")
         legend_layout = QFormLayout(legend_group)
         
-        self.legend_pos_combo = QComboBox()
+        self.legend_pos_combo = NoScrollComboBox()
         positions = {
             "Automatic": "best",
             "Upper Right": "upper right",
@@ -80,7 +82,7 @@ class TextTab(QWidget):
             self.legend_pos_combo.addItem(name, key)
         self.legend_title_edit = QLineEdit()
         
-        self.legend_alpha_spin = QDoubleSpinBox()
+        self.legend_alpha_spin = NoScrollDoubleSpinBox()
         self.legend_alpha_spin.setRange(0.0, 1.0) # 0.0 (透明) から 1.0 (不透明)
         self.legend_alpha_spin.setSingleStep(0.1)
         self.legend_alpha_spin.setValue(1.0) # デフォルトは不透明

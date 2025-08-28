@@ -2,6 +2,8 @@
 
 from PySide6.QtWidgets import QWidget, QFormLayout, QLabel, QComboBox
 
+from .format_tab import NoScrollComboBox
+
 class PairedDataTab(QWidget):
     """
     ペアデータ形式（比較する2列）のためのデータ選択UI。
@@ -11,8 +13,8 @@ class PairedDataTab(QWidget):
         layout = QFormLayout(self)
         
         # ウィジェットを作成
-        self.col1_combo = QComboBox()
-        self.col2_combo = QComboBox()
+        self.col1_combo = NoScrollComboBox()
+        self.col2_combo = NoScrollComboBox()
         
         # レイアウトにウィジェットを追加
         layout.addRow(QLabel("Column 1 (e.g., Before):"), self.col1_combo)
