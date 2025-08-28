@@ -1,2 +1,6 @@
+# Python cache
 __pycache__/
 */__pycache__/
+
+# Personal files
+開発ログ.md
