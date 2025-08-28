@@ -212,19 +212,41 @@ class GraphManager:
             if visual_hue_col:
                 print("Consolidating legend...")
                 handles, labels = [], []
-                
-                # --- Step 1: 常に材料を回収し、既存の凡例を消去する ---
+
+                # --- Step 1: 既存の凡例をすべてクリア ---
                 for ax in axes.flat:
-                    h, l = ax.get_legend_handles_labels()
-                    for i, label in enumerate(l):
-                        if label not in labels:
-                            labels.append(label); handles.append(h[i])
-                    # サブプロットに自動生成された凡例は、問答無用で削除
                     if ax.get_legend() is not None:
                         ax.get_legend().remove()
-                print(" -> All subplot legends cleared.") # デバッグ用
+                print(" -> All subplot legends cleared.")
 
-                # --- Step 2: 'hide'でなければ、統合した凡例を再描画する ---
+                # --- Step 2: グラフタイプに応じて凡例の「部品」を生成 ---
+                base_kind = self.main.current_graph_type
+                
+                # Bar, Box, Violinの場合は、凡例の部品を手動で作成する
+                if base_kind in ['bar', 'boxplot', 'violin']:
+                    print(" -> Manually creating patch handles for legend.")
+                    hue_categories = sorted(df_processed[visual_hue_col].unique())
+                    palette = properties.get('subgroup_colors', {})
+                    
+                    for category in hue_categories:
+                        str_category = str(category)
+                        color = palette.get(str_category, 'black')
+                        patch = mpatches.Patch(color=color, label=str_category)
+                        if str_category not in labels:
+                            handles.append(patch)
+                            labels.append(str_category)
+
+                # それ以外のグラフタイプは、自動生成された部品を収集する
+                else:
+                    print(" -> Collecting handles from axes.")
+                    for ax in axes.flat:
+                        h, l = ax.get_legend_handles_labels()
+                        for i, label in enumerate(l):
+                            if label not in labels:
+                                labels.append(label)
+                                handles.append(h[i])
+
+                # --- Step 3: 収集・作成した部品を使って凡例を描画 ---
                 if properties.get('legend_position') != 'hide' and handles:
                     legend_title = properties.get('legend_title') or visual_hue_col
                     legend_pos = properties.get('legend_position', 'best')
@@ -237,10 +259,11 @@ class GraphManager:
                         title=legend_title,
                         loc=legend_pos
                     )
-                    leg.get_frame().set_alpha(legend_alpha)
+                    if leg:
+                        leg.get_frame().set_alpha(legend_alpha)
                     print(f" -> In-plot legend re-created with alpha={legend_alpha}.")
                 else:
-                    print(" -> Legend hidden by user setting or no handles found.") # デバッグ用
+                    print(" -> Legend hidden by user setting or no handles found.")
 
             is_faceted = n_cols > 1
             if is_faceted:
