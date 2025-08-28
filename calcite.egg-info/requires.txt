@@ -1,9 +1,0 @@
-PySide6
-pandas
-numpy
-seaborn
-scipy
-statsmodels
-scikit-posthocs
-statannotations
-matplotlib

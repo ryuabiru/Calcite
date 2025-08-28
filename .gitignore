@@ -4,3 +4,8 @@ __pycache__/
 
 # Personal files
 開発ログ.md
+
+# for PyPI
+dist
+*.egg-info
+build
