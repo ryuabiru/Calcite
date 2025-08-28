@@ -301,3 +301,42 @@ class ActionHandler:
             final_query_str = "".join(query_parts)
             QMessageBox.critical(self.main, "Error", f"Failed to apply filter: {e}\n\nAttempted Query: {final_query_str}")
             traceback.print_exc()
+
+
+    def create_table_from_selection(self):
+        """
+        テーブルで選択されている行を抽出し、新しいウィンドウで表示する。
+        """
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Warning", "No data available.")
+            return
+
+        selection_model = self.main.table_view.selectionModel()
+        selected_rows = selection_model.selectedRows()
+
+        if not selected_rows:
+            QMessageBox.warning(self.main, "Warning", "Please select one or more rows to create a new table.")
+            return
+
+        try:
+            # 選択された行のインデックス（番号）を取得し、重複をなくしてソートする
+            row_indices = sorted(list(set(index.row() for index in selected_rows)))
+            
+            # 元のデータフレームから、選択された行を番号で抽出する
+            original_df = self.main.model._data
+            new_df = original_df.iloc[row_indices].copy().reset_index(drop=True)
+
+            # 既存のロジックを再利用して、新しいウィンドウを生成・表示
+            new_window = self.main.__class__(data=new_df)
+            new_window.setWindowTitle(self.main.windowTitle() + " [Subset]")
+            new_window.show()
+
+            # 新しいウィンドウをアプリケーションの管理リストに追加
+            app = QApplication.instance()
+            if not hasattr(app, 'main_windows'):
+                app.main_windows = []
+            app.main_windows.append(new_window)
+
+        except Exception as e:
+            QMessageBox.critical(self.main, "Error", f"Failed to create new table from selection: {e}")
+            traceback.print_exc()

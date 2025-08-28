@@ -311,10 +311,14 @@ class MainWindow(QMainWindow):
     def show_table_context_menu(self, position):
         if not hasattr(self, 'model'): return
         menu = QMenu()
+        create_table_action = QAction("Create New Table from Selection", self)
+        create_table_action.triggered.connect(self.action_handler.create_table_from_selection)
         insert_row_action = QAction("Insert Row Above", self); insert_row_action.triggered.connect(self.insert_row)
         remove_row_action = QAction("Remove Selected Row(s)", self); remove_row_action.triggered.connect(self.remove_row)
         insert_col_action = QAction("Insert Column Left", self); insert_col_action.triggered.connect(self.insert_col)
         remove_col_action = QAction("Remove Selected Column(s)", self); remove_col_action.triggered.connect(self.remove_col)
+        menu.addAction(create_table_action)
+        menu.addSeparator()
         menu.addAction(insert_row_action); menu.addAction(remove_row_action)
         menu.addSeparator()
         menu.addAction(insert_col_action); menu.addAction(remove_col_action)
