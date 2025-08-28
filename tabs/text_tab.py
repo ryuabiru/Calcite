@@ -2,7 +2,8 @@
 
 from PySide6.QtWidgets import (
     QWidget, QFormLayout, QLabel, QLineEdit, 
-    QSpinBox, QScrollArea, QVBoxLayout, QGroupBox, QComboBox
+    QSpinBox, QScrollArea, QVBoxLayout, QGroupBox, QComboBox,
+    QDoubleSpinBox
 )
 
 class TextTab(QWidget):
@@ -68,24 +69,32 @@ class TextTab(QWidget):
         
         self.legend_pos_combo = QComboBox()
         positions = {
-            "Automatic (Outside Right)": "best",
+            "Automatic": "best",
             "Upper Right": "upper right",
             "Upper Left": "upper left",
             "Lower Right": "lower right",
             "Lower Left": "lower left",
+            "Hide Legend": "hide"
         }
         for name, key in positions.items():
             self.legend_pos_combo.addItem(name, key)
         self.legend_title_edit = QLineEdit()
-
+        
+        self.legend_alpha_spin = QDoubleSpinBox()
+        self.legend_alpha_spin.setRange(0.0, 1.0) # 0.0 (透明) から 1.0 (不透明)
+        self.legend_alpha_spin.setSingleStep(0.1)
+        self.legend_alpha_spin.setValue(1.0) # デフォルトは不透明
+        
         legend_layout.addRow(QLabel("Position:"), self.legend_pos_combo)
         legend_layout.addRow(QLabel("Title:"), self.legend_title_edit)
+        legend_layout.addRow(QLabel("Background Alpha:"), self.legend_alpha_spin)
         
         main_layout.addWidget(legend_group)
         main_layout.addStretch() # スペーサー
-
+        
         outer_layout = QVBoxLayout(self)
         outer_layout.addWidget(scroll_area)
+
 
     def get_properties(self):
         """このタブの設定値を取得する"""
@@ -102,6 +111,7 @@ class TextTab(QWidget):
             # 凡例のプロパティを追加
             'legend_position': self.legend_pos_combo.currentData(),
             'legend_title': self.legend_title_edit.text(),
+            'legend_alpha': self.legend_alpha_spin.value(),
         }
 
     def update_paired_labels_visibility(self, visible):
