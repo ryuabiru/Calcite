@@ -113,7 +113,7 @@ class GraphManager:
             print(f"DEBUG: Determined X-axis order: {x_order}")
             
             subgroup_palette = properties.get('subgroup_colors', {})
-            col_categories = sorted(df_processed[facet_col].unique()) if facet_col else [None]
+            col_categories = df_processed[facet_col].unique() if facet_col else [None]
             n_rows, n_cols = 1, len(col_categories)
 
             fig, axes = plt.subplots(
@@ -154,6 +154,11 @@ class GraphManager:
                 if base_kind in base_plot_map:
                     print(f"[Layer 2] Drawing Base Plot: {base_kind}")
                     base_kwargs = {'data': plot_df, 'x': current_x, 'y': current_y, 'ax': ax, 'order': x_order}
+                    
+                    if base_kind in ['bar', 'boxplot', 'violin', 'pointplot']:
+                        base_kwargs['order'] = x_order
+                        print(f"DEBUG: Setting order for {base_kind}")
+                    
                     if visual_hue_col:
                         base_kwargs['hue'] = visual_hue_col
                         base_kwargs['palette'] = subgroup_palette
@@ -163,7 +168,11 @@ class GraphManager:
                     if base_kind == 'bar': base_kwargs.update({'edgecolor': properties.get('bar_edgecolor', 'black'), 'linewidth': properties.get('bar_edgewidth', 1.0), 'capsize': properties.get('capsize', 4) * 0.01})
                     if base_kind in ['pointplot', 'lineplot']: base_kwargs.update({'linestyle': properties.get('linestyle', '-'), 'linewidth': properties.get('linewidth', 1.5)})
                     if base_kind == 'pointplot': base_kwargs.update({'capsize': properties.get('capsize', 4) * 0.02})
-                    # ★★★ legend=False を削除 ★★★
+                    
+                    if base_kind == 'lineplot' and 'order' in base_kwargs:
+                        print("DEBUG: Defensively removing 'order' key for lineplot.")
+                        del base_kwargs['order']
+                    
                     base_plot_map[base_kind](**base_kwargs)
 
                 if base_kind in ['scatter', 'summary_scatter']:
@@ -174,8 +183,7 @@ class GraphManager:
                         'edgecolor': properties.get('marker_edgecolor', 'black'),
                         'linewidth': properties.get('marker_edgewidth', 1.0),
                         's': properties.get('marker_size', 5.0)**2,
-                        'alpha': properties.get('marker_alpha', 1.0),
-                        'order': x_order
+                        'alpha': properties.get('marker_alpha', 1.0)
                     }
                     if visual_hue_col:
                         scatter_kwargs['hue'] = visual_hue_col; scatter_kwargs['palette'] = subgroup_palette
