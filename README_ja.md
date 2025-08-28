@@ -47,7 +47,7 @@ e.g.
 Python 3.10以上が必要です。
 
 ```bash
-pip install git+[https://github.com/ryuabiru/calcite.git](https://github.com/ryuabiru/calcite.git)
+pip install calcite
 ```
 
 ## 🚀 クイックスタート

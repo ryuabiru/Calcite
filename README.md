@@ -47,7 +47,7 @@ This project is currently under development. The installation method is as follo
 Python 3.10 or higher is required.
 
 ```bash
-pip install git+https://github.com/ryuabiru/calcite.git
+pip install calcite
 ```
 
 ## 🚀 Quick Start
