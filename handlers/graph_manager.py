@@ -151,7 +151,7 @@ class GraphManager:
                         if single_color: base_kwargs['color'] = single_color
                     if base_kind == 'bar': base_kwargs.update({'edgecolor': properties.get('bar_edgecolor', 'black'), 'linewidth': properties.get('bar_edgewidth', 1.0), 'capsize': properties.get('capsize', 4) * 0.01})
                     if base_kind in ['pointplot', 'lineplot']: base_kwargs.update({'linestyle': properties.get('linestyle', '-'), 'linewidth': properties.get('linewidth', 1.5)})
-                    if base_kind == 'pointplot': base_kwargs.update({'dodge': True, 'capsize': properties.get('capsize', 4) * 0.02})
+                    if base_kind == 'pointplot': base_kwargs.update({'capsize': properties.get('capsize', 4) * 0.02})
                     # ★★★ legend=False を削除 ★★★
                     base_plot_map[base_kind](**base_kwargs)
 
@@ -180,13 +180,17 @@ class GraphManager:
                             ax.errorbar(x=plot_df[current_x], y=plot_df[current_y], yerr=plot_df['err_y'], fmt='none', capsize=properties.get('capsize', 4), ecolor=properties.get('marker_edgecolor', 'black'))
                         print(" -> Added error bars.")
 
-                if properties.get('scatter_overlay') and base_kind in base_plot_map:
+                if properties.get('scatter_overlay') and (base_kind in base_plot_map or base_kind == 'summary_scatter'):
                     print("[Layer 4] Drawing Overlay Points...")
                     if not original_subset_df.empty:
                         # ▼▼▼ サブグループの有無に基づく、必然的な条件分岐を適用します ▼▼▼
+                        should_dodge = bool(analysis_hue_col) and base_kind != 'pointplot'
+                        
+                        print(f"DEBUG: base_kind='{base_kind}', analysis_hue_col='{analysis_hue_col}', should_dodge={should_dodge}")
+                        
                         sns.stripplot(
                             data=original_subset_df, x=current_x, y=current_y,
-                            hue=visual_hue_col, # 色分けは常にvisual_hue_col
+                            hue=visual_hue_col,
                             ax=ax,
                             jitter=True,
                             alpha=properties.get('marker_alpha', 0.6),
@@ -195,7 +199,7 @@ class GraphManager:
                             edgecolor=properties.get('marker_edgecolor', 'black'),
                             linewidth=properties.get('marker_edgewidth', 1.0),
                             s=properties.get('marker_size', 5.0),
-                            dodge=bool(analysis_hue_col) # 位置分割はanalysis_hue_colの有無
+                            dodge=should_dodge
                         )
                         print(" -> stripplot called with dodge=True.")
                 
@@ -376,7 +380,8 @@ class GraphManager:
             if properties.get('y_log_scale'): ax.set_yscale('log')
             
         # 凡例などを考慮してレイアウトを自動調整
-        fig.tight_layout()
+        print("DEBUG: Calling fig.tight_layout() with padding.")
+        fig.tight_layout(pad=1.5)
 
 
     def clear_canvas(self):
