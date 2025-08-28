@@ -223,6 +223,10 @@ class MainWindow(QMainWindow):
         shapiro_test_action.triggered.connect(self.action_handler.statistical_handler.perform_shapiro_test)
         analysis_menu.addAction(shapiro_test_action)
 
+        help_menu = menu_bar.addMenu("Help")
+        license_action = QAction("Licenses...", self)
+        license_action.triggered.connect(self.action_handler.show_license_dialog)
+        help_menu.addAction(license_action)
 
     def _create_toolbar(self):
         toolbar = QToolBar("Graph Type")

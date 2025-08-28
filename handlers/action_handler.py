@@ -3,29 +3,24 @@
 import pandas as pd
 import numpy as np
 import io
+import os
+import traceback
+
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication, QVBoxLayout
 from scipy.optimize import curve_fit
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 import scikit_posthocs as sp
 
 from pandas_model import PandasModel
+
 # --- Dialogs ---
 from dialogs.restructure_dialog import RestructureDialog
 from dialogs.calculate_dialog import CalculateDialog
-from dialogs.anova_dialog import AnovaDialog
-from dialogs.kruskal_dialog import KruskalDialog
-from dialogs.ttest_dialog import TTestDialog
-from dialogs.mannwhitney_dialog import MannWhitneyDialog
-from dialogs.paired_ttest_dialog import PairedTTestDialog
-from dialogs.wilcoxon_dialog import WilcoxonDialog
-from dialogs.correlation_dialog import CorrelationDialog
-from dialogs.regression_dialog import RegressionDialog
-from dialogs.contingency_dialog import ContingencyDialog
 from dialogs.pivot_dialog import PivotDialog
 from dialogs.advanced_filter_dialog import AdvancedFilterDialog
-from handlers.statistical_handler import StatisticalHandler
+from dialogs.license_dialog import LicenseDialog
 
-import traceback
+from handlers.statistical_handler import StatisticalHandler
 
 class ActionHandler:
     
@@ -310,14 +305,14 @@ class ActionHandler:
         if not hasattr(self.main, 'model') or self.main.model is None:
             QMessageBox.warning(self.main, "Warning", "No data available.")
             return
-
+        
         selection_model = self.main.table_view.selectionModel()
         selected_rows = selection_model.selectedRows()
-
+        
         if not selected_rows:
             QMessageBox.warning(self.main, "Warning", "Please select one or more rows to create a new table.")
             return
-
+        
         try:
             # 選択された行のインデックス（番号）を取得し、重複をなくしてソートする
             row_indices = sorted(list(set(index.row() for index in selected_rows)))
@@ -325,18 +320,63 @@ class ActionHandler:
             # 元のデータフレームから、選択された行を番号で抽出する
             original_df = self.main.model._data
             new_df = original_df.iloc[row_indices].copy().reset_index(drop=True)
-
+            
             # 既存のロジックを再利用して、新しいウィンドウを生成・表示
             new_window = self.main.__class__(data=new_df)
             new_window.setWindowTitle(self.main.windowTitle() + " [Subset]")
             new_window.show()
-
+            
             # 新しいウィンドウをアプリケーションの管理リストに追加
             app = QApplication.instance()
             if not hasattr(app, 'main_windows'):
                 app.main_windows = []
             app.main_windows.append(new_window)
-
+            
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to create new table from selection: {e}")
+            traceback.print_exc()
+
+
+    def show_license_dialog(self):
+        """
+        サードパーティライブラリのライセンス情報を表示するダイアログを開く。
+        """
+        try:
+            
+            other_licenses = []
+            base_path = os.path.dirname(os.path.abspath(__file__))
+            license_dir = os.path.join(base_path, '..', 'LICENSES')
+
+            if os.path.isdir(license_dir):
+                for filename in sorted(os.listdir(license_dir)):
+                    if filename.endswith(".txt"):
+                        lib_name = filename.replace("LICENSES_", "").replace(".txt", "")
+                        with open(os.path.join(license_dir, filename), 'r', encoding='utf-8') as f:
+                            content = f.read()
+                            other_licenses.append(
+                                f"----------------------------------------\n"
+                                f"{lib_name.capitalize()}\n"
+                                f"----------------------------------------\n"
+                                f"{content}\n"
+                            )
+            
+            pyside6_license = (
+                "----------------------------------------\n"
+                "PySide6 (LGPL v3)\n"
+                "----------------------------------------\n"
+                "This application uses PySide6, which is licensed under the GNU Lesser General Public License (LGPL), version 3.\n\n"
+                "Under the terms of the LGPL, you have the right to access the source code of PySide6 and to replace the library with your own modified version.\n\n"
+                "You can obtain the source code for PySide6 from its official repository:\n"
+                "<a href='https://code.qt.io/cgit/pyside/pyside-setup.git/'>https://code.qt.io/cgit/pyside/pyside-setup.git/</a>\n\n"
+            )
+            
+            # --- 3. すべてのライセンス情報を結合してダイアログを表示 ---
+            final_text_content = "\n".join(other_licenses) + pyside6_license
+            final_html = final_text_content.replace("\n", "<br>")
+            
+            dialog = LicenseDialog(final_html, self.main)
+            dialog.exec()
+            
+        except Exception as e:
+            QMessageBox.critical(self.main, "Error", f"Could not display licenses: {e}")
             traceback.print_exc()
