@@ -131,98 +131,97 @@ class MainWindow(QMainWindow):
         
         menu_bar = self.menuBar()
         
+        # ▼▼▼ ここからメニュー全体の定義を修正します ▼▼▼
         # File Menu
-        file_menu = menu_bar.addMenu("&File")
-        open_action = QAction("&Open CSV...", self)
+        file_menu = menu_bar.addMenu("File")
+        open_action = QAction("Open CSV...", self)
         open_action.triggered.connect(self.action_handler.open_csv_file)
         file_menu.addAction(open_action)
-        save_table_action = QAction("&Save Table As...", self)
+        save_table_action = QAction("Save Table As...", self)
         save_table_action.triggered.connect(self.action_handler.save_table_as_csv)
         file_menu.addAction(save_table_action)
         file_menu.addSeparator()
-        save_graph_action = QAction("&Save Graph As...", self)
+        save_graph_action = QAction("Save Graph As...", self)
         save_graph_action.triggered.connect(self.graph_manager.save_graph)
         file_menu.addAction(save_graph_action)
         
         # Edit Menu
-        edit_menu = menu_bar.addMenu("&Edit")
-        paste_action = QAction("&Paste", self)
+        edit_menu = menu_bar.addMenu("Edit")
+        paste_action = QAction("Paste from Clipboard", self)
         paste_action.triggered.connect(self.action_handler.paste_from_clipboard)
         edit_menu.addAction(paste_action)
-        
         edit_menu.addSeparator()
         clear_graph_action = QAction("Clear Graph", self)
         clear_graph_action.triggered.connect(self.graph_manager.clear_graph)
         edit_menu.addAction(clear_graph_action)
-        
         clear_annotations_action = QAction("Clear Annotations", self)
         clear_annotations_action.triggered.connect(self.graph_manager.clear_annotations)
         edit_menu.addAction(clear_annotations_action)
         
         # Data Menu
-        data_menu = menu_bar.addMenu("&Data")
-        restructure_action = QAction("&Restructure (Wide to Long)...", self)
+        data_menu = menu_bar.addMenu("Data")
+        restructure_action = QAction("Restructure (Wide to Long)...", self)
         restructure_action.triggered.connect(self.action_handler.show_restructure_dialog)
         data_menu.addAction(restructure_action)
         pivot_action = QAction("Pivot (Long to Wide)...", self)
         pivot_action.triggered.connect(self.action_handler.show_pivot_dialog)
         data_menu.addAction(pivot_action)
-        filter_action = QAction("&Filter...", self)
+        filter_action = QAction("Filter...", self)
         filter_action.triggered.connect(self.action_handler.show_advanced_filter_dialog)
         data_menu.addAction(filter_action)
-        calculate_action = QAction("&Calculate New Column...", self)
+        calculate_action = QAction("Calculate New Column...", self)
         calculate_action.triggered.connect(self.action_handler.show_calculate_dialog)
         data_menu.addAction(calculate_action)
         
-        # Analysis Menu
-        analysis_menu = menu_bar.addMenu("&Analysis")
-        ttest_action = QAction("&Independent t-test...", self)
+        # Analysis Menu (提案に基づき再構成)
+        analysis_menu = menu_bar.addMenu("Analysis")
+        
+        analysis_menu.addSection("Compare Means / Medians")
+        ttest_action = QAction("Independent t-test...", self)
         ttest_action.triggered.connect(self.action_handler.statistical_handler.perform_t_test)
         analysis_menu.addAction(ttest_action)
         
-        paired_ttest_action = QAction("&Paired t-test...", self)
+        paired_ttest_action = QAction("Paired t-test...", self)
         paired_ttest_action.triggered.connect(self.action_handler.statistical_handler.perform_paired_t_test)
         analysis_menu.addAction(paired_ttest_action)
         
-        anova_action = QAction("&One-way ANOVA...", self)
+        anova_action = QAction("One-way ANOVA...", self)
         anova_action.triggered.connect(self.action_handler.statistical_handler.perform_one_way_anova)
         analysis_menu.addAction(anova_action)
         
         analysis_menu.addSeparator()
-        
-        # --- Non-parametric Tests ---
         analysis_menu.addSection("Non-parametric Tests")
-        mannwhitney_action = QAction("&Mann-Whitney U test...", self)
+        mannwhitney_action = QAction("Mann-Whitney U test...", self)
         mannwhitney_action.triggered.connect(self.action_handler.statistical_handler.perform_mannwhitney_test)
         analysis_menu.addAction(mannwhitney_action)
         
-        wilcoxon_action = QAction("&Wilcoxon signed-rank test...", self)
+        wilcoxon_action = QAction("Wilcoxon signed-rank test...", self)
         wilcoxon_action.triggered.connect(self.action_handler.statistical_handler.perform_wilcoxon_test)
         analysis_menu.addAction(wilcoxon_action)
         
-        kruskal_action = QAction("&Kruskal-Wallis test...", self)
+        kruskal_action = QAction("Kruskal-Wallis test...", self)
         kruskal_action.triggered.connect(self.action_handler.statistical_handler.perform_kruskal_test)
         analysis_menu.addAction(kruskal_action)
         
-        shapiro_test_action = QAction("&Shapiro-Wilk...", self)
-        shapiro_test_action.triggered.connect(self.action_handler.statistical_handler.perform_shapiro_test)
-        analysis_menu.addAction(shapiro_test_action)
-        
         analysis_menu.addSeparator()
-        
-        chi_squared_action = QAction("&Chi-squared Test...", self)
-        chi_squared_action.triggered.connect(self.action_handler.statistical_handler.perform_chi_squared_test)
-        analysis_menu.addAction(chi_squared_action)
-        
-        analysis_menu.addSeparator()
-        
-        spearman_action = QAction("&Spearman...", self)
+        analysis_menu.addSection("Assess Associations & Relationships")
+        spearman_action = QAction("Correlation (Spearman)...", self)
         spearman_action.triggered.connect(self.action_handler.statistical_handler.perform_spearman_correlation)
         analysis_menu.addAction(spearman_action)
-        
-        regression_action = QAction("&Regression...", self)
+
+        chi_squared_action = QAction("Chi-squared Test...", self)
+        chi_squared_action.triggered.connect(self.action_handler.statistical_handler.perform_chi_squared_test)
+        analysis_menu.addAction(chi_squared_action)
+
+        regression_action = QAction("Regression...", self)
         regression_action.triggered.connect(self.action_handler.statistical_handler.perform_regression)
         analysis_menu.addAction(regression_action)
+
+        analysis_menu.addSeparator()
+        analysis_menu.addSection("Distribution Tests")
+        shapiro_test_action = QAction("Shapiro-Wilk Normality Test...", self)
+        shapiro_test_action.triggered.connect(self.action_handler.statistical_handler.perform_shapiro_test)
+        analysis_menu.addAction(shapiro_test_action)
 
 
     def _create_toolbar(self):

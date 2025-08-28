@@ -107,10 +107,6 @@ class FormatTab(QWidget):
         self.bar_edgewidth_spin.setRange(0, 10); self.bar_edgewidth_spin.setSingleStep(0.5); self.bar_edgewidth_spin.setValue(1.0)
         bar_layout.addRow(QLabel("Edge Width:"), self.bar_edgewidth_spin)
 
-        self.capsize_spin = NoScrollSpinBox()
-        self.capsize_spin.setRange(0, 20); self.capsize_spin.setValue(4)
-        bar_layout.addRow(QLabel("Error Bar Cap Size:"), self.capsize_spin)
-
         elements_layout.addWidget(bar_sub_group)
 
         # --- 2c. Error Bars のサブグループ ---

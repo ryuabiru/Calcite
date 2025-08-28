@@ -71,12 +71,12 @@ class TextTab(QWidget):
         
         self.legend_pos_combo = NoScrollComboBox()
         positions = {
+            "Hide Legend": "hide",
             "Automatic": "best",
             "Upper Right": "upper right",
             "Upper Left": "upper left",
             "Lower Right": "lower right",
             "Lower Left": "lower left",
-            "Hide Legend": "hide"
         }
         for name, key in positions.items():
             self.legend_pos_combo.addItem(name, key)
