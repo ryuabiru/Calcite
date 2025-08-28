@@ -60,7 +60,7 @@ pip install git+https://github.com/ryuabiru/calcite.git
 
 2. Import data using **File \> Open CSV...** or paste from your clipboard using **Edit \> Paste**.
 
-   - **💡 Tidy Data format is recommended**
+   - **💡 Tidy Data format (=long) is recommended**
    - Calcite is designed around the principles of **Tidy Data**. This is a data structure where:
      - **Each variable forms a column** (e.g., "Genotype", "Concentration", "Measurement").
      - **Each observation forms a row**.
