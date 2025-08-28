@@ -37,10 +37,11 @@ class FormatTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         
-        self.current_color = None
+        self.current_marker_facecolor = 'white' # マーカーの塗りつぶし色
         self.current_marker_edgecolor = 'black'
         self.current_bar_edgecolor = 'black'
         self.current_regression_color = 'red'
+        self.current_color = None # サブグループなしの場合の単色
         self.subgroup_colors = {}
         self.subgroup_widgets = {}
         self.current_categories = []
@@ -53,82 +54,104 @@ class FormatTab(QWidget):
         
         main_layout = QVBoxLayout(main_widget)
 
-        # --- 1. スタイル設定グループ ---
-        style_group = QGroupBox("Graph Style")
+        # --- 1. 全体スタイル グループ (Matplotlibベース) ---
+        style_group = QGroupBox("Global Style")
         style_layout = QFormLayout(style_group)
         
         self.spines_check = QCheckBox("Remove Top/Right Axis Lines")
         self.spines_check.setChecked(True)
         style_layout.addRow(self.spines_check)
         
-        self.scatter_overlay_check = QCheckBox("Show individual points (on Bar/Box/Violin)")
-        style_layout.addRow(QLabel("Overlays:"), self.scatter_overlay_check)
-        
         main_layout.addWidget(style_group)
-        
-        # --- 2. グラフ要素グループ ---
-        elements_group = QGroupBox("Graph Elements")
-        elements_layout = QFormLayout(elements_group)
 
-        elements_layout.addRow(QLabel("<b>Markers (Scatter/Overlays)</b>"))
-        self.marker_combo = QComboBox()
-        self.marker_combo = NoScrollComboBox()
+        # --- 2. 個別要素 グループ (Seabornベース) ---
+        elements_group = QGroupBox("Plot Elements")
+        elements_layout = QVBoxLayout(elements_group) # 垂直レイアウトに変更
+
+        # --- 2a. Markers のサブグループ ---
+        marker_sub_group = QGroupBox("Markers (for Scatter, Overlay, etc.)")
+        marker_layout = QFormLayout(marker_sub_group)
+
+        self.marker_style_combo = NoScrollComboBox()
         markers = {'Circle': 'o', 'Square': 's', 'Triangle': '^', 'Diamond': 'D', 'None': 'None'}
         for name, style in markers.items():
-            self.marker_combo.addItem(name, style)
-        elements_layout.addRow(QLabel("Style:"), self.marker_combo)
+            self.marker_style_combo.addItem(name, style)
+        marker_layout.addRow(QLabel("Style:"), self.marker_style_combo)
+
+        self.marker_size_spin = NoScrollDoubleSpinBox()
+        self.marker_size_spin.setRange(1, 20); self.marker_size_spin.setSingleStep(0.5); self.marker_size_spin.setValue(5.0)
+        marker_layout.addRow(QLabel("Size:"), self.marker_size_spin)
+
+        self.marker_alpha_spin = NoScrollDoubleSpinBox()
+        self.marker_alpha_spin.setRange(0.0, 1.0); self.marker_alpha_spin.setSingleStep(0.1); self.marker_alpha_spin.setValue(1.0)
+        marker_layout.addRow(QLabel("Alpha (Transparency):"), self.marker_alpha_spin)
+
+        self.marker_facecolor_button = QPushButton("Select Color")
+        self.marker_facecolor_button.setStyleSheet(f"background-color: {self.current_marker_facecolor};")
+        marker_layout.addRow(QLabel("Face Color:"), self.marker_facecolor_button)
         
         self.marker_edgecolor_button = QPushButton("Select Color")
         self.marker_edgecolor_button.setStyleSheet(f"background-color: {self.current_marker_edgecolor};")
-        elements_layout.addRow(QLabel("Edge Color:"), self.marker_edgecolor_button)
+        marker_layout.addRow(QLabel("Edge Color:"), self.marker_edgecolor_button)
 
         self.marker_edgewidth_spin = NoScrollDoubleSpinBox()
         self.marker_edgewidth_spin.setRange(0, 10); self.marker_edgewidth_spin.setSingleStep(0.5); self.marker_edgewidth_spin.setValue(1.0)
-        elements_layout.addRow(QLabel("Edge Width:"), self.marker_edgewidth_spin)
+        marker_layout.addRow(QLabel("Edge Width:"), self.marker_edgewidth_spin)
         
-        elements_layout.addRow(QLabel("<b>Bar Chart</b>"))
+        elements_layout.addWidget(marker_sub_group)
+
+        # --- 2b. Bars のサブグループ ---
+        bar_sub_group = QGroupBox("Bars (for Bar Chart)")
+        bar_layout = QFormLayout(bar_sub_group)
+        
         self.bar_edgecolor_button = QPushButton("Select Color")
         self.bar_edgecolor_button.setStyleSheet(f"background-color: {self.current_bar_edgecolor};")
-        elements_layout.addRow(QLabel("Edge Color:"), self.bar_edgecolor_button)
+        bar_layout.addRow(QLabel("Edge Color:"), self.bar_edgecolor_button)
 
-        # ▼▼▼ QDoubleSpinBox を NoScrollDoubleSpinBox に変更 ▼▼▼
         self.bar_edgewidth_spin = NoScrollDoubleSpinBox()
         self.bar_edgewidth_spin.setRange(0, 10); self.bar_edgewidth_spin.setSingleStep(0.5); self.bar_edgewidth_spin.setValue(1.0)
-        elements_layout.addRow(QLabel("Edge Width:"), self.bar_edgewidth_spin)
+        bar_layout.addRow(QLabel("Edge Width:"), self.bar_edgewidth_spin)
 
         self.capsize_spin = NoScrollSpinBox()
         self.capsize_spin.setRange(0, 20); self.capsize_spin.setValue(4)
-        elements_layout.addRow(QLabel("Error Bar Cap Size:"), self.capsize_spin)
+        bar_layout.addRow(QLabel("Error Bar Cap Size:"), self.capsize_spin)
 
-        elements_layout.addRow(QLabel("<b>Line (Regression/Point Plot)</b>"))
-        elements_layout.addRow(QLabel("<b>Lines (Point/Line/Fit)</b>"))
+        elements_layout.addWidget(bar_sub_group)
+
+        # --- 2c. Lines のサブグループ ---
+        line_sub_group = QGroupBox("Lines (for Line, Point, Fit)")
+        line_layout = QFormLayout(line_sub_group)
+
         self.linestyle_combo = NoScrollComboBox()
         linestyles = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'Dash-Dot': '-.'}
         for name, style in linestyles.items():
             self.linestyle_combo.addItem(name, style)
-        elements_layout.addRow(QLabel("Style:"), self.linestyle_combo)
+        line_layout.addRow(QLabel("Style:"), self.linestyle_combo)
 
-        # ▼▼▼ QDoubleSpinBox を NoScrollDoubleSpinBox に変更 ▼▼▼
         self.linewidth_spin = NoScrollDoubleSpinBox()
         self.linewidth_spin.setRange(0.5, 10.0); self.linewidth_spin.setSingleStep(0.5); self.linewidth_spin.setValue(1.5)
-        elements_layout.addRow(QLabel("Width:"), self.linewidth_spin)
+        line_layout.addRow(QLabel("Width:"), self.linewidth_spin)
         
         self.regression_color_button = QPushButton("Select Color")
-        elements_layout.addRow(QLabel("Fit Line Color:"), self.regression_color_button)
+        self.regression_color_button.setStyleSheet(f"background-color: {self.current_regression_color};")
+        line_layout.addRow(QLabel("Fit Line Color:"), self.regression_color_button)
 
+        elements_layout.addWidget(line_sub_group)
+        
         main_layout.addWidget(elements_group)
 
         # --- 3. カラー設定グループ ---
-        color_group = QGroupBox("Color")
+        color_group = QGroupBox("Color Palette")
         color_layout = QFormLayout(color_group)
         
-        self.single_color_button = QPushButton("Select Color")
-        color_layout.addRow(QLabel("Single Color:"), self.single_color_button)
+        self.scatter_overlay_check = QCheckBox("Show individual points (on Bar/Box/Violin)")
+        color_layout.addRow(QLabel("Overlays:"), self.scatter_overlay_check)
         
-        # ▼▼▼ ここからが修正・追加箇所です ▼▼▼
+        self.single_color_button = QPushButton("Select Color")
+        color_layout.addRow(QLabel("Single Color (if no Sub-group):"), self.single_color_button)
+        
         color_layout.addRow(QLabel("<b>Sub-group Colors</b>"))
         
-        # パレット選択用のComboBoxを追加
         self.palette_combo = NoScrollComboBox()
         palettes = ["default", "deep", "muted", "pastel", "bright", "dark", "colorblind", "Paired", "Set2", "tab10"]
         self.palette_combo.addItems(palettes)
@@ -136,7 +159,6 @@ class FormatTab(QWidget):
 
         self.subgroup_color_layout = QFormLayout()
         color_layout.addRow(self.subgroup_color_layout)
-        # ▲▲▲ ここまで ▲▲▲
         
         main_layout.addWidget(color_group)
         main_layout.addStretch()
@@ -150,13 +172,16 @@ class FormatTab(QWidget):
         self.spines_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
         self.scatter_overlay_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
         self.marker_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
-        self.linestyle_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
+        self.marker_edgecolor_button.clicked.connect(self.open_marker_edgecolor_dialog)
         self.marker_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        self.marker_facecolor_button.clicked.connect(self.open_marker_facecolor_dialog)
+        self.marker_size_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        self.marker_alpha_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
+        self.linestyle_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
         self.bar_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
         self.capsize_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
         self.linewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
         self.single_color_button.clicked.connect(self.open_single_color_dialog)
-        self.marker_edgecolor_button.clicked.connect(self.open_marker_edgecolor_dialog)
         self.bar_edgecolor_button.clicked.connect(self.open_bar_edgecolor_dialog)
         self.regression_color_button.clicked.connect(self.open_regression_color_dialog)
         self.palette_combo.currentTextChanged.connect(self.on_palette_changed)
@@ -166,16 +191,27 @@ class FormatTab(QWidget):
         return {
             'hide_top_right_spines': self.spines_check.isChecked(),
             'scatter_overlay': self.scatter_overlay_check.isChecked(),
-            'marker_style': self.marker_combo.currentData(),
+            
+            # Marker properties
+            'marker_style': self.marker_style_combo.currentData(),
+            'marker_facecolor': self.current_marker_facecolor,
             'marker_edgecolor': self.current_marker_edgecolor,
             'marker_edgewidth': self.marker_edgewidth_spin.value(),
+            'marker_size': self.marker_size_spin.value(),
+            'marker_alpha': self.marker_alpha_spin.value(),
+
+            # Bar properties
             'bar_edgecolor': self.current_bar_edgecolor,
             'bar_edgewidth': self.bar_edgewidth_spin.value(),
             'capsize': self.capsize_spin.value(),
+
+            # Line properties
             'linestyle': self.linestyle_combo.currentData(),
             'linewidth': self.linewidth_spin.value(),
-            'single_color': self.current_color,
             'regression_color': self.current_regression_color,
+            
+            # Color properties
+            'single_color': self.current_color,
             'subgroup_colors': self.subgroup_colors,
         }
 
@@ -207,6 +243,13 @@ class FormatTab(QWidget):
         if color.isValid():
             self.current_marker_edgecolor = color.name()
             self.marker_edgecolor_button.setStyleSheet(f"background-color: {self.current_marker_edgecolor};")
+            self.propertiesChanged.emit()
+
+    def open_marker_facecolor_dialog(self):
+        color = QColorDialog.getColor()
+        if color.isValid():
+            self.current_marker_facecolor = color.name()
+            self.marker_facecolor_button.setStyleSheet(f"background-color: {self.current_marker_facecolor};")
             self.propertiesChanged.emit()
 
     def open_bar_edgecolor_dialog(self):
