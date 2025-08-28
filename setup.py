@@ -1,14 +1,13 @@
 import setuptools
 
-# README.mdを読み込み、パッケージの詳しい説明として設定します
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="calcite",  # ★重要：他の人と被らないユニークな名前に！
+    name="calcite",
     version="0.1.0",
-    author="R. Abiru", # あなたのお名前
-    author_email="", # あなたのメールアドレス
+    author="R. Abiru",
+    author_email="",
     description="A desktop application for data analysis and publication-quality graphing.",
     long_description=long_description,
     long_description_content_type="text/markdown",
