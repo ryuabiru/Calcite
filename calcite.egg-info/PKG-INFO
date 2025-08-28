@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: calcite
-Version: 0.1.0
+Version: 0.1.1
 Summary: A desktop application for data analysis and publication-quality graphing.
 Home-page: https://github.com/ryuabiru/calcite
 Author: R. Abiru
@@ -77,7 +77,7 @@ This project is currently under development. The installation method is as follo
 Python 3.10 or higher is required.
 
 ```bash
-pip install git+https://github.com/ryuabiru/calcite.git
+pip install calcite
 ```
 
 ## 🚀 Quick Start
@@ -86,6 +86,22 @@ pip install git+https://github.com/ryuabiru/calcite.git
 
     ```bash
     calcite
+    ```
+
+    or
+
+    ``` python
+    import pandas as pd
+    from calcite.main import plot
+
+    data = {
+        'Category': ['A', 'A', 'B', 'B'],
+        'Value': [10, 12, 15, 17]
+    }
+    df = pd.DataFrame(data)
+    # -----------------------------
+    
+    plot(data=df)
     ```
 
 2. Import data using **File \> Open CSV...** or paste from your clipboard using **Edit \> Paste**.
