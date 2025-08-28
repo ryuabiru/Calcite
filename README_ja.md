@@ -60,7 +60,7 @@ pip install git+[https://github.com/ryuabiru/calcite.git](https://github.com/ryu
 
 2. **File \> Open CSV...** または **Edit \> Paste** でデータをインポートします。
 
-   - **💡 Tidy Data形式を推奨します**
+   - **💡 Tidy Data形式 (=Long-form) を推奨します**
    - Calciteは\*\*Tidy Data（整然データ）\*\*の考え方に基づいて設計されています。これは、以下のような構造を持つデータ形式です。
      - **1つの列が1つの変数を表す**（例：「遺伝子型」「薬剤濃度」「測定値」）
      - **1つの行が1つの観測（測定）を表す**

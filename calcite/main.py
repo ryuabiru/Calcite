@@ -7,7 +7,7 @@ from .main_window import MainWindow
 import seaborn as sns
 import pandas as pd
 
-def main(data=None):
+def plot(data=None):
     """
     Calciteアプリケーションを起動します。
     """
@@ -27,4 +27,4 @@ def main(data=None):
         app.exec()
 
 if __name__ == "__main__":
-    main()
+    plot()

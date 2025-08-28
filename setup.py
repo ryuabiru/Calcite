@@ -32,7 +32,7 @@ setuptools.setup(
     # 'calcite'コマンドでアプリを起動する
     entry_points={
         "console_scripts": [
-            "calcite=calcite.main:main",
+            "calcite=calcite.main:plot",
         ],
     },
     
