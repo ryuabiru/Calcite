@@ -135,7 +135,14 @@ class GraphManager:
                     print("[Layer 1] Preparing data...")
                     group_cols = [current_x]
                     if visual_hue_col and visual_hue_col != current_x: group_cols.append(visual_hue_col)
-                    summary_stats = original_subset_df.groupby(group_cols, as_index=False).agg(mean_y=(current_y, 'mean'), err_y=(current_y, 'sem'))
+                    
+                    error_agg_func = properties.get('error_bar_type', 'sem') # デフォルトはsem
+                    print(f"DEBUG: Using '{error_agg_func}' for error bar calculation.")
+                    
+                    summary_stats = original_subset_df.groupby(group_cols, as_index=False).agg(
+                        mean_y=(current_y, 'mean'),
+                        err_y=(current_y, error_agg_func) # ここでsemかstdを切り替え
+                    )
                     summary_stats.rename(columns={'mean_y': current_y}, inplace=True)
                     plot_df = summary_stats
                     print(" -> Data summarized.")

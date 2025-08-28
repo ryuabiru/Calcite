@@ -113,7 +113,23 @@ class FormatTab(QWidget):
 
         elements_layout.addWidget(bar_sub_group)
 
+        # --- 2c. Error Bars のサブグループ ---
+        error_bar_sub_group = QGroupBox("Error Bars (for Summary Scatter, etc.)")
+        error_bar_layout = QFormLayout(error_bar_sub_group)
+
+        self.error_bar_combo = NoScrollComboBox()
+        self.error_bar_combo.addItem("SEM (Standard Error)", "sem")
+        self.error_bar_combo.addItem("SD (Standard Deviation)", "std")
+        error_bar_layout.addRow(QLabel("Type:"), self.error_bar_combo)
+        
+        self.capsize_spin = NoScrollSpinBox()
+        self.capsize_spin.setRange(0, 20); self.capsize_spin.setValue(4)
+        error_bar_layout.addRow(QLabel("Cap Size:"), self.capsize_spin)
+
+        elements_layout.addWidget(error_bar_sub_group)
+        
         # --- 2c. Lines のサブグループ ---
+        
         line_sub_group = QGroupBox("Lines (for Line, Point, Fit)")
         line_layout = QFormLayout(line_sub_group)
 
@@ -179,6 +195,7 @@ class FormatTab(QWidget):
         self.bar_edgecolor_button.clicked.connect(self.open_bar_edgecolor_dialog)
         self.regression_color_button.clicked.connect(self.open_regression_color_dialog)
         self.palette_combo.currentTextChanged.connect(self.on_palette_changed)
+        self.error_bar_combo.currentIndexChanged.connect(lambda:self.propertiesChanged.emit())
 
 
     def get_properties(self):
@@ -197,7 +214,11 @@ class FormatTab(QWidget):
             'bar_edgecolor': self.current_bar_edgecolor,
             'bar_edgewidth': self.bar_edgewidth_spin.value(),
             'capsize': self.capsize_spin.value(),
-
+            
+            # error bar
+            'capsize': self.capsize_spin.value(),
+            'error_bar_type': self.error_bar_combo.currentData(),
+            
             # Line properties
             'linestyle': self.linestyle_combo.currentData(),
             'linewidth': self.linewidth_spin.value(),
@@ -271,7 +292,7 @@ class FormatTab(QWidget):
         # 選択されたパレットを取得
         selected_palette = self.palette_combo.currentText()
         if selected_palette == "default":
-             # "default"の場合は、引数なしでseabornのデフォルトパレットを取得
+            # "default"の場合は、引数なしでseabornのデフォルトパレットを取得
             palette = sns.color_palette(n_colors=len(categories))
         else:
             palette = sns.color_palette(selected_palette, n_colors=len(categories))
