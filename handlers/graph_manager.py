@@ -282,15 +282,53 @@ class GraphManager:
                 for ax in axes.flat: ax.set_xlabel('')
                 fig.supxlabel(shared_xlabel, fontsize=properties.get('xlabel_fontsize', 12))
 
+            # ▼▼▼ メソッドの末尾近くにある、このブロックを修正します ▼▼▼
             if base_kind in ['scatter', 'summary_scatter'] and not is_faceted:
                 ax = axes[0, 0]
+
                 if self.main.regression_line_params:
-                    # (回帰分析の描画ロジックは変更なし)
-                    pass
+                    params_dict = self.main.regression_line_params
+                    # サブグループごとに描画するか、単一で描画するかを判断
+                    if params_dict and 'x_line' not in params_dict: # サブグループごとのデータ
+                        for group_name, params in params_dict.items():
+                            color = properties.get('subgroup_colors', {}).get(str(group_name), 'red')
+                            ax.plot(params["x_line"], params["y_line"], color=color,
+                                    linestyle=properties.get('linestyle', '--'), linewidth=properties.get('linewidth', 1.5),
+                                    label=f"{group_name} Fit (R²={params['r_squared']:.3f})")
+                        ax.legend()
+                    elif 'x_line' in params_dict: # 単一のデータ
+                        params = params_dict
+                        ax.plot(params["x_line"], params["y_line"], color=properties.get('regression_color', 'red'),
+                                linestyle=properties.get('linestyle', '--'), linewidth=properties.get('linewidth', 1.5),
+                                label=f"Linear Fit (R²={params['r_squared']:.3f})")
+                        ax.legend()
+
+                # ▼▼▼ 4PL非線形回帰の描画ロジックを修正 ▼▼▼
                 if self.main.fit_params:
-                    # (回帰分析の描画ロジックは変更なし)
-                    pass
-                # 回帰分析の凡例は、この後 update_graph_properties で描画
+                    params_dict = self.main.fit_params
+                    if params_dict and 'params' not in params_dict: # サブグループごとのデータ
+                        for group_name, params_info in params_dict.items():
+                            fit_params = params_info["params"]
+                            x_min, x_max = params_info["log_x_data"].min(), params_info["log_x_data"].max()
+                            x_fit = np.linspace(x_min, x_max, 200)
+                            y_fit = self.sigmoid_4pl(x_fit, *fit_params)
+                            color = properties.get('subgroup_colors', {}).get(str(group_name), 'red')
+                            
+                            ax.plot(10**x_fit, y_fit, color=color,
+                                    linestyle=properties.get('linestyle', '--'), linewidth=properties.get('linewidth', 1.5),
+                                    label=f"{group_name} 4PL (R²={params_info['r_squared']:.3f})")
+                        ax.legend()
+                    elif 'params' in params_dict: # 単一のデータ
+                        params_info = params_dict
+                        fit_params = params_info["params"]
+                        x_min, x_max = params_info["log_x_data"].min(), params_info["log_x_data"].max()
+                        x_fit = np.linspace(x_min, x_max, 200)
+                        y_fit = self.sigmoid_4pl(x_fit, *fit_params)
+                        
+                        ax.plot(10**x_fit, y_fit, color=properties.get('regression_color', 'red'),
+                                linestyle=properties.get('linestyle', '--'), linewidth=properties.get('linewidth', 1.5),
+                                label=f"4PL Fit (R²={params_info['r_squared']:.3f})")
+                        ax.legend()
             
             return fig
         except Exception as e:

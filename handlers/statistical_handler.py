@@ -821,65 +821,69 @@ class StatisticalHandler:
                 QMessageBox.warning(self.main, "Warning", "Please select both X and Y columns.")
                 return
             
+            data_settings = self.main.properties_panel.data_tab.get_current_settings()
+            subgroup_col = data_settings.get('subgroup_col')
+
+            if subgroup_col == x_col: # X軸と同じなら分析上は無視
+                subgroup_col = None
+
             try:
-                # --- モデルに応じて処理を分岐 ---
-                if model == 'linear':
-                    # 線形回帰
-                    x_data = df[x_col].dropna()
-                    y_data = df[y_col].dropna()
-                    common_indices = x_data.index.intersection(y_data.index)
-                    x_data = x_data.loc[common_indices]
-                    y_data = y_data.loc[common_indices]
-                    
-                    if len(x_data) < 2:
-                        QMessageBox.warning(self.main, "Warning", "Not enough data for linear regression.")
-                        return
-                    
-                    slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data)
-                    
-                    self.main.regression_line_params = {
-                        "x_line": np.array([x_data.min(), x_data.max()]),
-                        "y_line": slope * np.array([x_data.min(), x_data.max()]) + intercept,
-                        "r_squared": r_value**2
-                    }
-                    self.main.fit_params = None
-                    self.main.graph_manager.update_graph()
-                    
-                    result_text = (f"Linear Regression Results\n=========================\n\n"
-                                    f"Y = {slope:.4f} * X + {intercept:.4f}\n"
-                                    f"R-squared: {r_value**2:.4f}\n"
-                                    f"p-value: {p_value:.4f}")
-                    self.main.results_widget.set_results_text(result_text)
-                    
-                elif model == '4pl':
-                    # 4PL非線形回帰 (以前のロジックを流用)
-                    fit_df = df[[x_col, y_col]].dropna().copy()
-                    if (fit_df[x_col] <= 0).any():
-                        QMessageBox.warning(self.main, "Warning", "X-axis column for 4PL fitting must contain only positive values.")
-                        return
-                    
-                    fit_df['log_x'] = np.log10(fit_df[x_col])
-                    x_data, y_data = fit_df['log_x'], fit_df[y_col]
-                    
-                    p0 = [y_data.min(), y_data.max(), 1.0, np.log10(np.median(fit_df[x_col]))]
-                    
-                    params, _ = curve_fit(self.sigmoid_4pl, x_data, y_data, p0=p0, maxfev=10000)
-                    
-                    bottom, top, hill_slope, log_ec50 = params
-                    ec50 = 10**log_ec50
-                    
-                    y_pred = self.sigmoid_4pl(x_data, *params)
-                    r_squared = 1 - (np.sum((y_data - y_pred) ** 2) / np.sum((y_data - np.mean(y_data)) ** 2))
-                    
-                    self.main.fit_params = {"params": params, "r_squared": r_squared, "x_col": x_col, "y_col": y_col, "log_x_data": x_data}
-                    self.main.regression_line_params = None
-                    self.main.graph_manager.update_graph()
-                    
-                    result_text = ("Non-linear Regression Results (Sigmoidal 4PL)\n==============================================\n\n"
-                                f"Top: {top:.4f}\nBottom: {bottom:.4f}\n"
-                                f"Hill Slope: {hill_slope:.4f}\nEC50: {ec50:.4f}\n\n"
-                                f"R-squared: {r_squared:.4f}\n")
-                    self.main.results_widget.set_results_text(result_text)
-                    
+                # 毎回パラメータを初期化
+                self.main.regression_line_params = {}
+                self.main.fit_params = {}
+                results_text_parts = []
+
+                # フィット対象のグループリストを作成 (サブグループがなければ[None])
+                groups_to_fit = [None]
+                if subgroup_col and subgroup_col in df.columns:
+                    groups_to_fit = sorted(df[subgroup_col].dropna().unique())
+
+                for group in groups_to_fit:
+                    subset_df = df
+                    if group is not None:
+                        subset_df = df[df[subgroup_col] == group]
+                        results_text_parts.append(f"\n--- Sub-group: {group} ---")
+
+                    if model == 'linear':
+                        x_data = subset_df[x_col].dropna(); y_data = subset_df[y_col].dropna()
+                        common_indices = x_data.index.intersection(y_data.index)
+                        x_data = x_data.loc[common_indices]; y_data = y_data.loc[common_indices]
+                        
+                        if len(x_data) < 2: continue
+                        
+                        slope, intercept, r_value, p_value, _ = linregress(x_data, y_data)
+                        result = {
+                            "x_line": np.array([x_data.min(), x_data.max()]),
+                            "y_line": slope * np.array([x_data.min(), x_data.max()]) + intercept,
+                            "r_squared": r_value**2
+                        }
+                        if group is not None: self.main.regression_line_params[group] = result
+                        else: self.main.regression_line_params = result
+                        
+                        results_text_parts.append(f"Y = {slope:.4f} * X + {intercept:.4f}\nR-squared: {r_value**2:.4f}, p-value: {p_value:.4f}")
+
+                    elif model == '4pl':
+                        fit_df = subset_df[[x_col, y_col]].dropna().copy()
+                        if (fit_df[x_col] <= 0).any(): continue
+                        
+                        fit_df['log_x'] = np.log10(fit_df[x_col])
+                        x_data, y_data = fit_df['log_x'], fit_df[y_col]
+                        
+                        p0 = [y_data.min(), y_data.max(), 1.0, np.median(x_data)]
+                        params, _ = curve_fit(self.sigmoid_4pl, x_data, y_data, p0=p0, maxfev=10000)
+                        y_pred = self.sigmoid_4pl(x_data, *params)
+                        r_squared = 1 - (np.sum((y_data - y_pred)**2) / np.sum((y_data - np.mean(y_data))**2))
+                        
+                        result = {"params": params, "r_squared": r_squared, "log_x_data": x_data}
+                        if group is not None: self.main.fit_params[group] = result
+                        else: self.main.fit_params = result
+                        
+                        results_text_parts.append(f"Top: {params[1]:.4f}, Bottom: {params[0]:.4f}, Hill Slope: {params[2]:.4f}, EC50: {10**params[3]:.4f}\nR-squared: {r_squared:.4f}")
+
+                self.main.graph_manager.update_graph()
+                
+                header = "Linear Regression Results" if model == 'linear' else "Non-linear Regression (4PL) Results"
+                self.main.results_widget.set_results_text(f"{header}\n=========================\n" + "\n".join(results_text_parts))
+            
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Failed to perform regression: {e}\n\n{traceback.format_exc()}")
