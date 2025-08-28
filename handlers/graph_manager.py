@@ -395,6 +395,7 @@ class GraphManager:
         if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:
             self.main.graph_widget.canvas.figure.clear()
             self.main.graph_widget.canvas.draw()
+            print("DEBUG: Canvas cleared.") # デバッグ用
 
 
     def save_graph(self):
@@ -411,6 +412,32 @@ class GraphManager:
 
 
     def clear_annotations(self):
+        self.main.statistical_annotations.clear()
+        self.main.paired_annotations.clear()
+        self.main.regression_line_params = None
+        self.main.fit_params = None
+        self.update_graph()
+
+
+    def clear_graph(self):
+        """
+        グラフキャンバスをクリアし、すべてのプロット関連パラメータをリセットする。
+        """
+        print("DEBUG: Clearing graph and resetting all plot states.")
+        # すべての注釈とフィットパラメータをクリア
+        self.main.statistical_annotations.clear()
+        self.main.paired_annotations.clear()
+        self.main.regression_line_params = None
+        self.main.fit_params = None
+        # Matplotlibのキャンバスをクリア
+        self.clear_canvas()
+
+
+    def clear_annotations(self):
+        """
+        統計的な注釈のみをクリアし、グラフを再描画する。
+        """
+        print("DEBUG: Clearing only annotations and redrawing graph.")
         self.main.statistical_annotations.clear()
         self.main.paired_annotations.clear()
         self.main.regression_line_params = None

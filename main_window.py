@@ -149,6 +149,12 @@ class MainWindow(QMainWindow):
         paste_action = QAction("&Paste", self)
         paste_action.triggered.connect(self.action_handler.paste_from_clipboard)
         edit_menu.addAction(paste_action)
+        
+        edit_menu.addSeparator()
+        clear_graph_action = QAction("Clear Graph", self)
+        clear_graph_action.triggered.connect(self.graph_manager.clear_graph)
+        edit_menu.addAction(clear_graph_action)
+        
         clear_annotations_action = QAction("Clear Annotations", self)
         clear_annotations_action.triggered.connect(self.graph_manager.clear_annotations)
         edit_menu.addAction(clear_annotations_action)
