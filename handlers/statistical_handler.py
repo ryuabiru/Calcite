@@ -65,7 +65,9 @@ class StatisticalHandler:
 
     def perform_t_test(self):
         """表示されているグラフのデータに基づいて独立t検定を実行する。"""
-        if not hasattr(self.main, 'model'): return
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
         
         df = self.main.model._data.copy()
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
@@ -190,7 +192,9 @@ class StatisticalHandler:
 
     def perform_mannwhitney_test(self):
         """マン・ホイットニーのU検定を実行する。"""
-        if not hasattr(self.main, 'model'): return
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
         
         df = self.main.model._data.copy()
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
@@ -552,7 +556,9 @@ class StatisticalHandler:
 
     def perform_paired_t_test(self):
         """対応のあるt検定を実行する。"""
-        if not hasattr(self.main, 'model'): return
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
         df = self.main.model._data
         dialog = PairedTTestDialog(df.columns, self.main)
         
@@ -603,7 +609,9 @@ class StatisticalHandler:
 
     def perform_wilcoxon_test(self):
         """ウィルコクソンの符号順位検定を実行する。"""
-        if not hasattr(self.main, 'model'): return
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
         df = self.main.model._data
         dialog = WilcoxonDialog(df.columns, self.main)
         
@@ -658,7 +666,9 @@ class StatisticalHandler:
 
     def perform_chi_squared_test(self):
         """カイ二乗検定を実行する。"""
-        if not hasattr(self.main, 'model'): return
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
         df = self.main.model._data
         dialog = ContingencyDialog(df.columns, self.main)
         if dialog.exec():
@@ -688,7 +698,9 @@ class StatisticalHandler:
         """
         選択された2つの列に対して、スピアマンの順位相関係数検定を実行する。
         """
-        if not hasattr(self.main, 'model'): return
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
         
         df = self.main.model._data
         dialog = CorrelationDialog(df.columns, self.main)
@@ -741,7 +753,9 @@ class StatisticalHandler:
         表示されているグラフの各グループに対して、シャピロ–ウィルク検定を実行し、
         正規性を評価する。
         """
-        if not hasattr(self.main, 'model'): return
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
         
         df = self.main.model._data.copy()
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
@@ -808,7 +822,9 @@ class StatisticalHandler:
 
     def perform_regression(self):
         """回帰分析ダイアログを表示し、選択されたモデルに基づいて分析を実行する。"""
-        if not hasattr(self.main, 'model'): return
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
         df = self.main.model._data
         
         dialog = RegressionDialog(df.columns, self.main)

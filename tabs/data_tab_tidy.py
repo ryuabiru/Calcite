@@ -31,8 +31,8 @@ class TidyDataTab(QWidget):
         self.subgroup_combo.currentTextChanged.connect(self.subgroupColumnChanged.emit)
         
         # レイアウトにウィジェットを追加
-        layout.addRow(self.y_axis_label, self.y_axis_combo)
         layout.addRow(self.x_axis_label, self.x_axis_combo)
+        layout.addRow(self.y_axis_label, self.y_axis_combo)
         layout.addRow(QLabel("Sub-group (Color):"), self.subgroup_combo)
         layout.addRow(QLabel("Facet (Columns):"), self.facet_col_combo)
 

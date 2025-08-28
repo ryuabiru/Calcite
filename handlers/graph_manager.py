@@ -108,7 +108,10 @@ class GraphManager:
                 df_processed[visual_hue_col] = df_processed[visual_hue_col].astype(str)
             if base_kind not in ['scatter', 'summary_scatter', 'lineplot']:
                 df_processed[current_x] = df_processed[current_x].astype(str)
-
+            
+            x_order = df_processed[current_x].unique()
+            print(f"DEBUG: Determined X-axis order: {x_order}")
+            
             subgroup_palette = properties.get('subgroup_colors', {})
             col_categories = sorted(df_processed[facet_col].unique()) if facet_col else [None]
             n_rows, n_cols = 1, len(col_categories)
@@ -150,9 +153,10 @@ class GraphManager:
                 base_plot_map = { 'bar': sns.barplot, 'boxplot': sns.boxplot, 'violin': sns.violinplot, 'pointplot': sns.pointplot, 'lineplot': sns.lineplot }
                 if base_kind in base_plot_map:
                     print(f"[Layer 2] Drawing Base Plot: {base_kind}")
-                    base_kwargs = {'data': plot_df, 'x': current_x, 'y': current_y, 'ax': ax}
+                    base_kwargs = {'data': plot_df, 'x': current_x, 'y': current_y, 'ax': ax, 'order': x_order}
                     if visual_hue_col:
-                        base_kwargs['hue'] = visual_hue_col; base_kwargs['palette'] = subgroup_palette
+                        base_kwargs['hue'] = visual_hue_col
+                        base_kwargs['palette'] = subgroup_palette
                     else:
                         single_color = properties.get('single_color'); 
                         if single_color: base_kwargs['color'] = single_color
@@ -169,8 +173,9 @@ class GraphManager:
                         'marker': properties.get('marker_style', 'o'),
                         'edgecolor': properties.get('marker_edgecolor', 'black'),
                         'linewidth': properties.get('marker_edgewidth', 1.0),
-                        's': properties.get('marker_size', 5.0)**2, # seabornのsは面積なので2乗します
-                        'alpha': properties.get('marker_alpha', 1.0)
+                        's': properties.get('marker_size', 5.0)**2,
+                        'alpha': properties.get('marker_alpha', 1.0),
+                        'order': x_order
                     }
                     if visual_hue_col:
                         scatter_kwargs['hue'] = visual_hue_col; scatter_kwargs['palette'] = subgroup_palette
@@ -187,7 +192,7 @@ class GraphManager:
                             ax.errorbar(x=plot_df[current_x], y=plot_df[current_y], yerr=plot_df['err_y'], fmt='none', capsize=properties.get('capsize', 4), ecolor=properties.get('marker_edgecolor', 'black'))
                         print(" -> Added error bars.")
 
-                if properties.get('scatter_overlay') and (base_kind in base_plot_map or base_kind == 'summary_scatter'):
+                if properties.get('scatter_overlay') and (base_kind in base_plot_map):
                     print("[Layer 4] Drawing Overlay Points...")
                     if not original_subset_df.empty:
                         # ▼▼▼ サブグループの有無に基づく、必然的な条件分岐を適用します ▼▼▼
@@ -206,7 +211,8 @@ class GraphManager:
                             edgecolor=properties.get('marker_edgecolor', 'black'),
                             linewidth=properties.get('marker_edgewidth', 1.0),
                             s=properties.get('marker_size', 5.0),
-                            dodge=should_dodge
+                            dodge=should_dodge,
+                            order=x_order
                         )
                         print(" -> stripplot called with dodge=True.")
                 
