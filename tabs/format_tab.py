@@ -37,7 +37,6 @@ class FormatTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         
-        self.current_marker_facecolor = 'white' # マーカーの塗りつぶし色
         self.current_marker_edgecolor = 'black'
         self.current_bar_edgecolor = 'black'
         self.current_regression_color = 'red'
@@ -85,10 +84,6 @@ class FormatTab(QWidget):
         self.marker_alpha_spin = NoScrollDoubleSpinBox()
         self.marker_alpha_spin.setRange(0.0, 1.0); self.marker_alpha_spin.setSingleStep(0.1); self.marker_alpha_spin.setValue(1.0)
         marker_layout.addRow(QLabel("Alpha (Transparency):"), self.marker_alpha_spin)
-
-        self.marker_facecolor_button = QPushButton("Select Color")
-        self.marker_facecolor_button.setStyleSheet(f"background-color: {self.current_marker_facecolor};")
-        marker_layout.addRow(QLabel("Face Color:"), self.marker_facecolor_button)
         
         self.marker_edgecolor_button = QPushButton("Select Color")
         self.marker_edgecolor_button.setStyleSheet(f"background-color: {self.current_marker_edgecolor};")
@@ -171,10 +166,9 @@ class FormatTab(QWidget):
     def connect_signals(self):
         self.spines_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
         self.scatter_overlay_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
-        self.marker_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
+        self.marker_style_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
         self.marker_edgecolor_button.clicked.connect(self.open_marker_edgecolor_dialog)
         self.marker_edgewidth_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
-        self.marker_facecolor_button.clicked.connect(self.open_marker_facecolor_dialog)
         self.marker_size_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
         self.marker_alpha_spin.valueChanged.connect(lambda: self.propertiesChanged.emit())
         self.linestyle_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
@@ -194,7 +188,6 @@ class FormatTab(QWidget):
             
             # Marker properties
             'marker_style': self.marker_style_combo.currentData(),
-            'marker_facecolor': self.current_marker_facecolor,
             'marker_edgecolor': self.current_marker_edgecolor,
             'marker_edgewidth': self.marker_edgewidth_spin.value(),
             'marker_size': self.marker_size_spin.value(),
@@ -243,13 +236,6 @@ class FormatTab(QWidget):
         if color.isValid():
             self.current_marker_edgecolor = color.name()
             self.marker_edgecolor_button.setStyleSheet(f"background-color: {self.current_marker_edgecolor};")
-            self.propertiesChanged.emit()
-
-    def open_marker_facecolor_dialog(self):
-        color = QColorDialog.getColor()
-        if color.isValid():
-            self.current_marker_facecolor = color.name()
-            self.marker_facecolor_button.setStyleSheet(f"background-color: {self.current_marker_facecolor};")
             self.propertiesChanged.emit()
 
     def open_bar_edgecolor_dialog(self):

@@ -97,7 +97,8 @@ class GraphManager:
         visual_hue_col = data_settings.get('subgroup_col')
         if not visual_hue_col:
             visual_hue_col = None
-
+        
+        # 分析上のhueは、X軸と異なる場合のみ意味を持つ
         analysis_hue_col = visual_hue_col if visual_hue_col != current_x else None
         facet_col = data_settings.get('facet_col')
 
@@ -156,7 +157,14 @@ class GraphManager:
 
                 if base_kind in ['scatter', 'summary_scatter']:
                     print(f"[Layer 3] Drawing Scatter Plot: {base_kind}")
-                    scatter_kwargs = {'data': plot_df, 'x': current_x, 'y': current_y, 'ax': ax, 'marker': properties.get('marker_style', 'o'), 'edgecolor': properties.get('marker_edgecolor', 'black'), 'linewidth': properties.get('marker_edgewidth', 1.0)}
+                    scatter_kwargs = {
+                        'data': plot_df, 'x': current_x, 'y': current_y, 'ax': ax,
+                        'marker': properties.get('marker_style', 'o'),
+                        'edgecolor': properties.get('marker_edgecolor', 'black'),
+                        'linewidth': properties.get('marker_edgewidth', 1.0),
+                        's': properties.get('marker_size', 5.0)**2, # seabornのsは面積なので2乗します
+                        'alpha': properties.get('marker_alpha', 1.0)
+                    }
                     if visual_hue_col:
                         scatter_kwargs['hue'] = visual_hue_col; scatter_kwargs['palette'] = subgroup_palette
                     else:
@@ -175,8 +183,20 @@ class GraphManager:
                 if properties.get('scatter_overlay') and base_kind in base_plot_map:
                     print("[Layer 4] Drawing Overlay Points...")
                     if not original_subset_df.empty:
-                        # ★★★ legend=False を削除 ★★★
-                        sns.stripplot(data=original_subset_df, x=current_x, y=current_y, hue=visual_hue_col, ax=ax, jitter=0.2, alpha=0.6, palette=subgroup_palette, marker=properties.get('marker_style', 'o'), edgecolor=properties.get('marker_edgecolor', 'black'), linewidth=properties.get('marker_edgewidth', 1.0), dodge=True)
+                        # ▼▼▼ サブグループの有無に基づく、必然的な条件分岐を適用します ▼▼▼
+                        sns.stripplot(
+                            data=original_subset_df, x=current_x, y=current_y,
+                            hue=visual_hue_col, # 色分けは常にvisual_hue_col
+                            ax=ax,
+                            jitter=True,
+                            alpha=properties.get('marker_alpha', 0.6),
+                            palette=subgroup_palette,
+                            marker=properties.get('marker_style', 'o'),
+                            edgecolor=properties.get('marker_edgecolor', 'black'),
+                            linewidth=properties.get('marker_edgewidth', 1.0),
+                            s=properties.get('marker_size', 5.0),
+                            dodge=bool(analysis_hue_col) # 位置分割はanalysis_hue_colの有無
+                        )
                         print(" -> stripplot called with dodge=True.")
                 
                 title_parts = []; 
