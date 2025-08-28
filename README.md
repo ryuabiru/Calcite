@@ -1,57 +1,82 @@
 # Calcite
 
-**Calcite** is a desktop application designed for scientists, researchers, and students who need to perform data analysis and create publication-quality graphs without writing code. It provides a seamless workflow from data import to final plot export, all within a single, user-friendly interface.
+**Calcite**は、プログラミング不要でデータ分析や論文品質のグラフ作成を行いたい科学者、研究者、学生のために開発されたデスクトップアプリケーションです。データのインポートからグラフのエクスポートまで、一連のワークフローを単一の使いやすいインターフェースでシームレスに提供します。
 
-[日本語のREADMEはこちら (Japanese README here)](README_ja.md)
+[English README](README_en.md)
 
-## ✨ Features
+## ✨ 主な機能
 
-- **Intuitive Data Handling**:
-  - Import data from CSV files or paste directly from spreadsheets (e.g., Excel).
-  - An interactive table view for easy data editing, sorting, and manipulation.
-  - Powerful data reshaping tools (wide-to-long and long-to-wide).
-  - Advanced filtering with multiple conditions (AND/OR).
-  - Create new columns using mathematical formulas.
+### **直感的なデータ操作**
 
-- **Publication-Quality Graphing**:
-  - A wide variety of plot types: Scatter, Bar, Box, Violin, Point, and Line plots.
-  - Extensive customization options: colors, markers, line styles, fonts, axis ranges, log scales, and more.
-  - "Prism-style" aesthetics with top and right spines removed by default.
-  - Overlay individual data points on summary plots.
+- **多彩なインポート**: CSVファイルの読み込み、またはスプレッドシート（Excelなど）からクリップボード経由での直接貼り付けに対応しています。
+- **Python連携**: `pandas.DataFrame`を直接引数として渡し、既存の分析環境からシームレスに起動できます。
+- **インタラクティブなテーブル**:
+  - クリックによるデータの昇順・降順ソート、ダブルクリックによる列名編集が可能です。
+  - フィルタリングやソート後のデータをCSVとしてエクスポートできます。
+- **高度なデータ加工**:
+  - **形式変換**: ワイド形式⇔ロング形式のデータ変換をGUI操作で簡単に行えます。
+  - **フィルタリング**: 複数条件（AND/OR）を組み合わせた高度なフィルタリング機能を備えています。
+  - **列計算**: `'ColumnA' * 100` のような数式を用いて、新しい列を動的に作成できます。
 
-- **Comprehensive Statistical Analysis**:
-  - **Basic Tests**: Independent & Paired t-tests, Mann-Whitney U, Wilcoxon signed-rank.
-  - **Group Comparisons**: One-way ANOVA & Kruskal-Wallis with post-hoc tests (Tukey, Dunn).
-  - **Regression**: Linear and non-linear (4-parameter logistic, 4PL) regression on raw or summarized data.
-  - **Correlations & Associations**: Spearman's correlation and Chi-squared tests.
-  - **Automatic Annotations**: Automatically add statistical significance (`*`) to your plots.
+### **論文品質のグラフ描画**
 
-- **High-Resolution Export**:
-  - Save your graphs as PNG, JPEG, SVG, or PDF at 300 DPI, ready for any publication or presentation.
+- **多彩なグラフタイプ**: 散布図、棒グラフ、箱ひげ図、バイオリンプロット、ポイントプロット、折れ線グラフ、ペアード散布図など、多様なグラフをサポートしています。
+- **豊富なカスタマイズ項目**:
+  - 色、マーカー、線のスタイル、フォントサイズ、軸範囲、対数スケールなどをGUIから細かく設定可能です。
+  - グラフの上と右の枠線を非表示にするPrism風スタイルを適用できます。
+  - 棒グラフや箱ひげ図に、個々のデータ点を重ねて表示（オーバーレイ）できます。
 
-## 🛠️ Installation
+### **充実した統計解析**
 
-Calcite is available on PyPI and can be installed with pip. Python 3.10 or higher is required.
+- **基本検定**: 対応のない/対応のあるt検定、Mann-Whitney U検定、Wilcoxon符号順位検定。
+- **多群比較**: 一元配置分散分析 (ANOVA)、Kruskal-Wallis検定（Tukey, Dunnの事後検定に対応）。
+- **回帰分析**: 線形回帰および非線形回帰（4パラメータロジスティック, 4PL）に対応し、R²値をグラフに表示。
+- **相関・関連**: Spearman相関、カイ二乗検定。
+- **自動アノテーション**: `statannotations`ライブラリの堅牢なロジックに基づき、統計的有意差（`*`）をグラフに自動で描画します。
+
+### **高解像度エクスポート**
+
+- 作成したグラフをPNG, JPEG, SVG, PDF形式で、300 DPIの高解像度で保存できます。
+
+## 🛠️ インストール
+
+CalciteはPyPIで公開されており、pipでインストールできます。Python 3.10以上が必要です。
 
 ```bash
 pip install calcite
-````
+```
 
-## 🚀 Quick Start
+## 🚀 クイックスタート
 
-1. Launch Calcite from your terminal:
+1. ターミナルからCalciteを起動します:
 
     ```bash
     calcite
     ```
 
-2. Import data using **File \> Open CSV...** or paste from your clipboard using **Edit \> Paste**.
-3. Select a graph type from the toolbar (e.g., Scatter Plot, Bar Chart).
-4. In the **"Data"** tab, select the columns for the X and Y axes.
-5. Customize the graph's appearance using the **"Format," "Text & Legend,"** and **"Axis"** tabs.
-6. Perform statistical analysis from the **"Analysis"** menu.
-7. Save your graph using **File \> Save Graph As...**.
+2. **File \> Open CSV...** または **Edit \> Paste** でデータをインポートします。
 
-## 📄 License
+   - **💡 Tidy Data形式を推奨します**
+   - Calciteは\*\*Tidy Data（整然データ）\*\*の考え方に基づいて設計されています。これは、以下のような構造を持つデータ形式です。
+     - **1つの列が1つの変数を表す**（例：「遺伝子型」「薬剤濃度」「測定値」）
+     - **1つの行が1つの観測（測定）を表す**
+     - **1つのテーブルが1種類の観測単位を表す**
+   - この形式は、コンピュータによる統計分析やグラフ描画に最も適しています。もしあなたのデータがExcelの集計表のように「ワイド形式」（例：各列がControl群、DrugA群のようになっている）の場合でも、Calciteの**Data \> Restructure (Wide to Long)...** 機能を使えば、簡単にTidy Data形式に変換できます。
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+    Tidy data (Seabornより引用)
+    (<https://seaborn.pydata.org/tutorial/data_structure.html>)
+    ![Tidy data](./images/Tidy%20data.png)
+
+3. ツールバーからグラフタイプ（例: Scatter Plot, Bar Chart）を選択します。
+
+4. 画面右下の\*\*「データ」\*\*タブで、X軸とY軸に使用する列を選択します。
+
+5. \*\*「フォーマット」「テキストと凡例」「軸」\*\*タブで、グラフの見た目をカスタマイズします。
+
+6. \*\*「Analysis」\*\*メニューから統計解析を実行します。
+
+7. **File \> Save Graph As...** でグラフを保存します。
+
+## 📄 ライセンス
+
+このプロジェクトはMITライセンスの下で公開されています。詳細はLICENCESファイルをご覧ください。
