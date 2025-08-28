@@ -1,0 +1,905 @@
+# handlers/statistical_handler.py
+
+import pandas as pd
+import numpy as np
+from PySide6.QtWidgets import QMessageBox
+from scipy.stats import (
+    ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency,
+    shapiro, spearmanr, mannwhitneyu, wilcoxon, kruskal
+)
+from scipy.optimize import curve_fit
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+import scikit_posthocs as sp
+import traceback
+
+# --- Dialogs ---
+from ..dialogs.anova_dialog import AnovaDialog
+from ..dialogs.kruskal_dialog import KruskalDialog
+from ..dialogs.ttest_dialog import TTestDialog
+from ..dialogs.mannwhitney_dialog import MannWhitneyDialog
+from ..dialogs.paired_ttest_dialog import PairedTTestDialog
+from ..dialogs.wilcoxon_dialog import WilcoxonDialog
+from ..dialogs.correlation_dialog import CorrelationDialog
+from ..dialogs.regression_dialog import RegressionDialog
+from ..dialogs.contingency_dialog import ContingencyDialog
+
+class StatisticalHandler:
+    _UNIQUE_SEPARATOR = '_#%%%_'
+
+
+    def __init__(self, main_window):
+        # main_windowへの参照を保持し、ウィンドウの各要素にアクセスできるようにする
+        self.main = main_window
+        
+    def _get_interaction_group_col(self, df, x_col, hue_col):
+        """
+        【生成】ヘルパー：X軸とサブグループ（hue）から検定用のグループ列を生成する。
+        """
+        if hue_col and hue_col in df.columns:
+            interaction_col_name = f"{x_col}_{hue_col}_interaction"
+            effective_groups = df[x_col].astype(str) + self._UNIQUE_SEPARATOR + df[hue_col].astype(str)
+            return effective_groups, interaction_col_name
+        else:
+            return df[x_col].astype(str), x_col
+
+
+    def _format_pair_for_annotation(self, pair, hue_col):
+        """
+        【翻訳】ヘルパー：Tukey検定などから得られたシンプルなペアを、
+        statannotationsが要求する形式に変換する。
+        """
+        if hue_col:
+            # hueがある場合: ('A_#%%%_c', 'B_#%%%_c') -> (('A', 'c'), ('B', 'c'))
+            try:
+                group1 = tuple(pair[0].split(self._UNIQUE_SEPARATOR))
+                group2 = tuple(pair[1].split(self._UNIQUE_SEPARATOR))
+                return (group1, group2)
+            except Exception:
+                return pair # 念のため、分割に失敗した場合は元のペアを返す
+        else:
+            # hueがない場合: ('Control', 'Drug_A') -> ('Control', 'Drug_A')
+            return pair
+
+
+# --- 統計処理を行うメソッド---
+
+    def perform_t_test(self):
+        """表示されているグラフのデータに基づいて独立t検定を実行する。"""
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
+        
+        df = self.main.model._data.copy()
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        value_col = data_settings.get('y_col')
+        group_col = data_settings.get('x_col')
+        
+        hue_col = data_settings.get('subgroup_col')
+        if not hue_col: hue_col = None
+        
+        if group_col == hue_col:
+            hue_col = None
+        
+        facet_col = data_settings.get('facet_col')
+        
+        if not value_col or not group_col:
+            QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+            return
+        
+        
+        df[group_col] = df[group_col].astype(str)
+        if hue_col and hue_col in df.columns:
+            df[hue_col] = df[hue_col].astype(str)
+        
+        x_values = [str(v) for v in df[group_col].dropna().unique()]
+        hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
+        
+        dialog = TTestDialog(
+            x_values=x_values, hue_values=hue_values,
+            x_name=group_col, hue_name=hue_col, parent=self.main
+        )
+        
+        if dialog.exec():
+            settings = dialog.get_settings()
+            if not settings: return
+            
+            g1_cond = settings['group1']
+            g2_cond = settings['group2']
+            if g1_cond == g2_cond:
+                QMessageBox.warning(self.main, "Warning", "Please select two different groups.")
+                return
+            
+            try:
+                if hue_col:
+                    g1_name = f"{g1_cond['x']}{self._UNIQUE_SEPARATOR}{g1_cond['hue']}"
+                    g2_name = f"{g2_cond['x']}{self._UNIQUE_SEPARATOR}{g2_cond['hue']}"
+                else:
+                    g1_name = g1_cond['x']
+                    g2_name = g2_cond['x']
+                
+                if facet_col and facet_col in df.columns:
+                    facet_categories = df[facet_col].dropna().unique()
+                    
+                    for category in facet_categories:
+                        subset_df = df[df[facet_col] == category].reset_index(drop=True)
+                        effective_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
+                        
+                        group1_values = subset_df.loc[effective_groups == g1_name, value_col].dropna()
+                        group2_values = subset_df.loc[effective_groups == g2_name, value_col].dropna()
+                        
+                        if group1_values.empty or group2_values.empty:
+                            continue
+                        
+                        _, p_value = ttest_ind(group1_values, group2_values, nan_policy='omit')
+                        
+                        simple_pair = (g1_name, g2_name)
+                        formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                        
+                        annotation = {
+                            "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                            "facet_col": facet_col, "facet_value": category,
+                            "box_pair": formatted_pair, "p_value": p_value
+                        }
+                        if annotation not in self.main.statistical_annotations:
+                            self.main.statistical_annotations.append(annotation)
+                
+                else: # ファセットなし
+                    effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
+                    group1_values = df.loc[effective_groups == g1_name, value_col].dropna()
+                    group2_values = df.loc[effective_groups == g2_name, value_col].dropna()
+                    
+                    if group1_values.empty or group2_values.empty:
+                        QMessageBox.warning(self.main, "Warning", "One or both selected groups have no data.")
+                        return
+                    
+                    t_stat, p_value = ttest_ind(group1_values, group2_values, nan_policy='omit')
+                    
+                    simple_pair = (g1_name, g2_name)
+                    formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                    
+                    annotation = {
+                        "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                        "facet_col": None, "facet_value": None,
+                        "box_pair": formatted_pair, "p_value": p_value
+                    }
+                    if annotation not in self.main.statistical_annotations:
+                        self.main.statistical_annotations.append(annotation)
+                    
+                    g1_display_name = f"{group_col}={g1_cond['x']}" + (f", {hue_col}={g1_cond['hue']}" if hue_col and g1_cond.get('hue') else "")
+                    g2_display_name = f"{group_col}={g2_cond['x']}" + (f", {hue_col}={g2_cond['hue']}" if hue_col and g2_cond.get('hue') else "")
+                    result_text = (
+                        f"Independent t-test results (on current graph):\n"
+                        f"============================================\n\n"
+                        f"Comparing '{value_col}' between:\n"
+                        f"- Group 1: {g1_display_name} (n={len(group1_values)}, Mean: {group1_values.mean():.3f})\n"
+                        f"- Group 2: {g2_display_name} (n={len(group2_values)}, Mean: {group2_values.mean():.3f})\n\n"
+                        f"---\n"
+                        f"t-statistic: {t_stat:.4f}\n"
+                        f"p-value: {p_value:.4f}\n\n"
+                    )
+                    if p_value < 0.05:
+                        result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
+                    else:
+                        result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
+                    self.main.results_widget.set_results_text(result_text)
+                    
+                self.main.graph_manager.update_graph()
+                
+            except Exception as e:
+                QMessageBox.critical(self.main, "Error", f"Failed to perform t-test: {e}")
+                traceback.print_exc()
+
+
+    def perform_mannwhitney_test(self):
+        """マン・ホイットニーのU検定を実行する。"""
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
+        
+        df = self.main.model._data.copy()
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        value_col = data_settings.get('y_col')
+        group_col = data_settings.get('x_col')
+        
+        hue_col = data_settings.get('subgroup_col')
+        if not hue_col: hue_col = None
+        
+        if group_col == hue_col:
+            hue_col = None
+            
+        facet_col = data_settings.get('facet_col')
+        
+        if not value_col or not group_col:
+            QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+            return
+        
+        df[group_col] = df[group_col].astype(str)
+        if hue_col and hue_col in df.columns:
+            df[hue_col] = df[hue_col].astype(str)
+            
+        x_values = [str(v) for v in df[group_col].dropna().unique()]
+        hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
+        
+        dialog = MannWhitneyDialog(
+            x_values=x_values, hue_values=hue_values,
+            x_name=group_col, hue_name=hue_col, parent=self.main
+        )
+        
+        if dialog.exec():
+            settings = dialog.get_settings()
+            if not settings: return
+            
+            g1_cond = settings['group1']
+            g2_cond = settings['group2']
+            if g1_cond == g2_cond:
+                QMessageBox.warning(self.main, "Warning", "Please select two different groups.")
+                return
+            try:
+                if hue_col:
+                    g1_name = f"{g1_cond['x']}{self._UNIQUE_SEPARATOR}{g1_cond['hue']}"
+                    g2_name = f"{g2_cond['x']}{self._UNIQUE_SEPARATOR}{g2_cond['hue']}"
+                else:
+                    g1_name = g1_cond['x']
+                    g2_name = g2_cond['x']
+                    
+                if facet_col and facet_col in df.columns:
+                    for category in df[facet_col].dropna().unique():
+                        subset_df = df[df[facet_col] == category].reset_index(drop=True)
+                        effective_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
+                        
+                        group1_values = subset_df.loc[effective_groups == g1_name, value_col].dropna()
+                        group2_values = subset_df.loc[effective_groups == g2_name, value_col].dropna()
+                    
+                        if len(group1_values) < 1 or len(group2_values) < 1: continue
+                        
+                        _, p_value = mannwhitneyu(group1_values, group2_values)
+                        
+                        simple_pair = (g1_name, g2_name)
+                        formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                        
+                        annotation = {
+                            "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                            "facet_col": facet_col, "facet_value": category,
+                            "box_pair": formatted_pair, "p_value": p_value
+                        }
+                        if annotation not in self.main.statistical_annotations:
+                            self.main.statistical_annotations.append(annotation)
+                else:
+                    effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
+                    group1_values = df.loc[effective_groups == g1_name, value_col].dropna()
+                    group2_values = df.loc[effective_groups == g2_name, value_col].dropna()
+                    
+                    if group1_values.empty or group2_values.empty:
+                        QMessageBox.warning(self.main, "Warning", "One or both selected groups have no data.")
+                        return
+                    
+                    u_stat, p_value = mannwhitneyu(group1_values, group2_values)
+                    
+                    simple_pair = (g1_name, g2_name)
+                    formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                    
+                    annotation = {
+                        "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                        "facet_col": None, "facet_value": None,
+                        "box_pair": formatted_pair, "p_value": p_value
+                    }
+                    if annotation not in self.main.statistical_annotations:
+                        self.main.statistical_annotations.append(annotation)
+                    
+                    g1_display_name = f"{group_col}={g1_cond['x']}" + (f", {hue_col}={g1_cond['hue']}" if hue_col and g1_cond.get('hue') else "")
+                    g2_display_name = f"{group_col}={g2_cond['x']}" + (f", {hue_col}={g2_cond['hue']}" if hue_col and g2_cond.get('hue') else "")
+                    result_text = (
+                        f"Mann-Whitney U test results:\n"
+                        f"============================================\n\n"
+                        f"Comparing '{value_col}' between:\n"
+                        f"- Group 1: {g1_display_name} (n={len(group1_values)})\n"
+                        f"- Group 2: {g2_display_name} (n={len(group2_values)})\n\n"
+                        f"---\n"
+                        f"U-statistic: {u_stat:.4f}\n"
+                        f"p-value: {p_value:.4f}\n\n"
+                    )
+                    if p_value < 0.05:
+                        result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
+                    else:
+                        result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
+                    
+                    self.main.results_widget.set_results_text(result_text)
+                    
+                self.main.graph_manager.update_graph()
+                
+            except Exception as e:
+                QMessageBox.critical(self.main, "Error", f"Failed to perform Mann-Whitney U test: {e}")
+                traceback.print_exc()
+
+
+    def perform_one_way_anova(self):
+        """
+        表示されているグラフのデータに基づいて一元配置分散分析を実行する。
+        ユーザーがダイアログで選択した複数グループを対象とする。
+        """
+        try:
+            if not hasattr(self.main, 'model'):
+                QMessageBox.warning(self.main, "Warning", "Please load data first.")
+                return
+            
+            df = self.main.model._data.copy()
+            data_settings = self.main.properties_panel.data_tab.get_current_settings()
+            value_col = data_settings.get('y_col')
+            group_col = data_settings.get('x_col')
+            
+            if not value_col or not group_col:
+                QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+                return
+            
+            hue_col = data_settings.get('subgroup_col')
+            if not hue_col or group_col == hue_col:
+                hue_col = None
+                
+            df[group_col] = df[group_col].astype(str)
+            if hue_col and hue_col in df.columns:
+                df[hue_col] = df[hue_col].astype(str)
+                
+            facet_col = data_settings.get('facet_col')
+            
+            x_values = [str(v) for v in df[group_col].dropna().unique()]
+            hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
+            
+            if not x_values:
+                QMessageBox.warning(self.main, "Warning", "The selected X-Axis column has no data.")
+                return
+            dialog = AnovaDialog(x_values, hue_values, group_col, hue_col, self.main)
+            
+            if dialog.exec():
+                selected_groups = dialog.get_settings()
+                
+                if not selected_groups:
+                    QMessageBox.warning(self.main, "Warning", "Please build a list of at least 2 groups to compare.")
+                    return
+                
+                effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
+                
+                results_summary = []
+                
+                if facet_col and facet_col in df.columns:
+                    facet_categories = df[facet_col].dropna().unique()
+                    
+                    for category in facet_categories:
+                        subset_df = df[df[facet_col] == category].copy()
+                        current_facet_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
+                        
+                        samples = [subset_df.loc[current_facet_groups == g, value_col].dropna() for g in selected_groups]
+                        samples = [s for s in samples if not s.empty]
+                        
+                        if len(samples) < 2: continue
+                        
+                        _, p_value = f_oneway(*samples)
+                        
+                        results_summary.append(f"--- Facet: {facet_col} = {category} ---\n"
+                                            f"F-statistic: _, p-value: {p_value:.4f}\n")
+                        
+                        if p_value < 0.05 and len(samples) >= 2:
+                            selected_data_indices = current_facet_groups.isin(selected_groups)
+                            all_data = subset_df.loc[selected_data_indices, value_col].dropna()
+                            group_labels = current_facet_groups[selected_data_indices].dropna()
+                            
+                            tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
+                            df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
+                            
+                            results_summary.append(str(tukey_result) + "\n")
+                            
+                            for _, row in df_tukey.iterrows():
+                                if row['p-adj'] < 0.05:
+                                    simple_pair = (str(row['group1']), str(row['group2']))
+                                    formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                                    
+                                    annotation = {
+                                        "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                                        "facet_col": facet_col, "facet_value": category,
+                                        "box_pair": formatted_pair, "p_value": row['p-adj']
+                                    }
+                                    if annotation not in self.main.statistical_annotations:
+                                        self.main.statistical_annotations.append(annotation)
+                
+                else: # ファセットなし
+                    samples = [df.loc[effective_groups == g, value_col].dropna() for g in selected_groups]
+                    samples = [s for s in samples if not s.empty]
+                    
+                    if len(samples) < 2:
+                        QMessageBox.warning(self.main, "Warning", "Not enough data for the selected groups.")
+                        return
+                    
+                    f_stat, p_value = f_oneway(*samples)
+                    results_summary.append(f"F-statistic: {f_stat:.4f}\np-value: {p_value:.4f}\n")
+                    
+                    if p_value < 0.05 and len(samples) >= 2:
+                        selected_data_indices = effective_groups.isin(selected_groups)
+                        all_data = df.loc[selected_data_indices, value_col].dropna()
+                        group_labels = effective_groups[selected_data_indices].dropna()
+                        
+                        tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
+                        df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
+                        results_summary.append("\nPost-hoc test (Tukey's HSD):\n" + str(tukey_result))
+                        
+                        for _, row in df_tukey.iterrows():
+                            if row['p-adj'] < 0.05:
+                                simple_pair = (str(row['group1']), str(row['group2']))
+                                formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                                
+                                annotation = {
+                                    "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                                    "facet_col": None, "facet_value": None,
+                                    "box_pair": formatted_pair, "p_value": row['p-adj']
+                                }
+                                if annotation not in self.main.statistical_annotations:
+                                    self.main.statistical_annotations.append(annotation)
+                
+                if results_summary:
+                    final_summary = "One-way ANOVA Results\n======================\n\n" + "\n".join(results_summary)
+                    
+                    self.main.results_widget.set_results_text(final_summary)
+                    
+                self.main.graph_manager.update_graph()
+                
+        except Exception as e:
+            traceback.print_exc()
+            QMessageBox.critical(self.main, "Error", f"An unexpected error occurred in ANOVA:\n\n{e}")
+
+
+    def perform_kruskal_test(self):
+        """クラスカル・ウォリス検定と、それに続くダンの多重比較検定を実行する。"""
+        try:
+            if not hasattr(self.main, 'model'):
+                return
+            
+            df = self.main.model._data.copy()
+            data_settings = self.main.properties_panel.data_tab.get_current_settings()
+            value_col = data_settings.get('y_col')
+            group_col = data_settings.get('x_col')
+            
+            if not value_col or not group_col:
+                QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis.")
+                return
+            
+            hue_col = data_settings.get('subgroup_col')
+            if not hue_col or group_col == hue_col:
+                hue_col = None
+                
+            df[group_col] = df[group_col].astype(str)
+            if hue_col and hue_col in df.columns:
+                df[hue_col] = df[hue_col].astype(str)
+                
+            facet_col = data_settings.get('facet_col')
+            x_values = [str(v) for v in df[group_col].dropna().unique()]
+            hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col else []
+            
+            dialog = KruskalDialog(x_values, hue_values, group_col, hue_col, self.main)
+            
+            if dialog.exec():
+                selected_groups = dialog.get_settings()
+                
+                if not selected_groups or len(selected_groups) < 2:
+                    QMessageBox.warning(self.main, "Warning", "Please select at least 2 groups.")
+                    return
+                
+                effective_groups, interaction_col_name = self._get_interaction_group_col(df, group_col, hue_col)
+                df[interaction_col_name] = effective_groups
+                
+                results_summary = []
+                
+                if facet_col and facet_col in df.columns:
+                    for category in df[facet_col].dropna().unique():
+                        subset_df = df[df[facet_col] == category].copy()
+                        
+                        samples = [subset_df.loc[subset_df[interaction_col_name] == g, value_col].dropna() for g in selected_groups]
+                        samples = [s for s in samples if not s.empty]
+                        
+                        if len(samples) < 2: continue
+                        
+                        h_stat, p_value = kruskal(*samples)
+                        results_summary.append(f"--- Facet: {facet_col} = {category} ---")
+                        results_summary.append(f"Kruskal-Wallis H-statistic: {h_stat:.4f}, p-value: {p_value:.4f}")
+                        
+                        if p_value < 0.05 and len(samples) > 2:
+                            posthoc_df = sp.posthoc_dunn(subset_df, val_col=value_col, group_col=interaction_col_name)
+                            results_summary.append("\nDunn's Post-hoc Test (p-values):\n" + posthoc_df.to_string())
+                            
+                            for group1 in posthoc_df.columns:
+                                for group2, p_adj in posthoc_df.loc[group1].items():
+                                    if group1 != group2 and pd.notna(p_adj) and p_adj < 0.05:
+                                        simple_pair = tuple(sorted((group1, group2)))
+                                        formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                                        annotation = {
+                                            "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                                            "facet_col": facet_col, "facet_value": category,
+                                            "box_pair": formatted_pair, "p_value": p_adj
+                                        }
+                                        if annotation not in self.main.statistical_annotations:
+                                            self.main.statistical_annotations.append(annotation)
+                        results_summary.append("-" * 20)
+                else:
+                    samples = [df.loc[df[interaction_col_name] == g, value_col].dropna() for g in selected_groups]
+                    samples = [s for s in samples if not s.empty]
+                    
+                    if len(samples) < 2: return
+                    
+                    h_stat, p_value = kruskal(*samples)
+                    results_summary.append(f"Kruskal-Wallis H-statistic: {h_stat:.4f}, p-value: {p_value:.4f}")
+                    
+                    if p_value < 0.05 and len(samples) > 2:
+                        posthoc_df = sp.posthoc_dunn(df, val_col=value_col, group_col=interaction_col_name)
+                        results_summary.append("\nDunn's Post-hoc Test (p-values):\n" + posthoc_df.to_string())
+                        
+                        for group1 in posthoc_df.columns:
+                            for group2, p_adj in posthoc_df.loc[group1].items():
+                                if group1 != group2 and pd.notna(p_adj) and p_adj < 0.05:
+                                    simple_pair = tuple(sorted((str(group1), str(group2))))
+                                    formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
+                                    annotation = {
+                                        "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
+                                        "facet_col": None, "facet_value": None,
+                                        "box_pair": formatted_pair, "p_value": p_adj
+                                    }
+                                    if annotation not in self.main.statistical_annotations:
+                                        self.main.statistical_annotations.append(annotation)
+                                        
+                if results_summary:
+                    final_summary = "Kruskal-Wallis Test Results\n======================\n\n" + "\n".join(results_summary)
+                    
+                    self.main.results_widget.set_results_text(final_summary)
+                    
+                self.main.graph_manager.update_graph()
+                
+        except Exception as e:
+            traceback.print_exc()
+            QMessageBox.critical(self.main, "Error", f"An unexpected error occurred in Kruskal-Wallis test:\n\n{e}")
+
+
+    def perform_paired_t_test(self):
+        """対応のあるt検定を実行する。"""
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
+        df = self.main.model._data
+        dialog = PairedTTestDialog(df.columns, self.main)
+        
+        if dialog.exec():
+            settings = dialog.get_settings()
+            col1, col2 = settings['col1'], settings['col2']
+            if not col1 or not col2 or col1 == col2:
+                QMessageBox.warning(self.main, "Warning", "Please select two different columns.")
+                return
+            try:
+                data1 = df[col1].dropna()
+                data2 = df[col2].dropna()
+                min_len = min(len(data1), len(data2))
+                if min_len < 2:
+                    QMessageBox.warning(self.main, "Warning", "Not enough paired data to perform the test.")
+                    return
+                
+                t_stat, p_value = ttest_rel(data1[:min_len], data2[:min_len])
+                
+                # アノテーション情報を生成
+                annotation = {
+                    "box_pair": (col1, col2),
+                    "p_value": p_value
+                }
+                # 重複しないように追加
+                if annotation not in self.main.paired_annotations:
+                    self.main.paired_annotations.append(annotation)
+                    
+                result_text = (
+                    f"Paired t-test results:\n=====================\n\nComparing:\n- Column 1: '{col1}' (Mean: {data1.mean():.3f})\n"
+                    f"- Column 2: '{col2}' (Mean: {data2.mean():.3f})\n\n---\n"
+                    f"t-statistic: {t_stat:.4f}\np-value: {p_value:.4f}\n\n"
+                )
+                if p_value < 0.05:
+                    result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
+                else:
+                    result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
+                    
+                self.main.results_widget.set_results_text(result_text)
+                
+                # グラフの更新をトリガー
+                self.main.graph_manager.update_graph()
+                
+            except Exception as e:
+                QMessageBox.critical(self.main, "Error", f"Failed to perform paired t-test: {e}")
+
+
+
+    def perform_wilcoxon_test(self):
+        """ウィルコクソンの符号順位検定を実行する。"""
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
+        df = self.main.model._data
+        dialog = WilcoxonDialog(df.columns, self.main)
+        
+        if dialog.exec():
+            settings = dialog.get_settings()
+            col1, col2 = settings['col1'], settings['col2']
+            if not col1 or not col2 or col1 == col2:
+                QMessageBox.warning(self.main, "Warning", "Please select two different columns.")
+                return
+            try:
+                data1 = df[col1].dropna()
+                data2 = df[col2].dropna()
+                min_len = min(len(data1), len(data2))
+                if min_len < 2:
+                    QMessageBox.warning(self.main, "Warning", "Not enough paired data to perform the test.")
+                    return
+                
+                diff = data1[:min_len] - data2[:min_len]
+                nonzero_diff_indices = diff[diff != 0].index
+                
+                if len(nonzero_diff_indices) < 1:
+                    QMessageBox.warning(self.main, "Warning", "No non-zero differences found between the two columns.")
+                    return
+                
+                stat, p_value = wilcoxon(data1.loc[nonzero_diff_indices], data2.loc[nonzero_diff_indices])
+                
+                annotation = {
+                    "box_pair": (col1, col2),
+                    "p_value": p_value
+                }
+                if annotation not in self.main.paired_annotations:
+                    self.main.paired_annotations.append(annotation)
+                    
+                result_text = (
+                    f"Wilcoxon Signed-rank test results:\n=====================\n\nComparing:\n- Column 1: '{col1}'\n"
+                    f"- Column 2: '{col2}'\n(n={len(nonzero_diff_indices)} pairs with non-zero difference)\n\n---\n"
+                    f"W-statistic: {stat:.4f}\np-value: {p_value:.4f}\n\n"
+                )
+                if p_value < 0.05:
+                    result_text += "Conclusion: The difference is statistically significant (p < 0.05)."
+                else:
+                    result_text += "Conclusion: The difference is not statistically significant (p >= 0.05)."
+                    
+                self.main.results_widget.set_results_text(result_text)
+                
+                self.main.graph_manager.update_graph()
+                
+            except Exception as e:
+                QMessageBox.critical(self.main, "Error", f"Failed to perform Wilcoxon test: {e}")
+
+
+
+    def perform_chi_squared_test(self):
+        """カイ二乗検定を実行する。"""
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
+        df = self.main.model._data
+        dialog = ContingencyDialog(df.columns, self.main)
+        if dialog.exec():
+            settings = dialog.get_settings()
+            rows_col, cols_col = settings['rows_col'], settings['cols_col']
+            if not rows_col or not cols_col or rows_col == cols_col: return
+            try:
+                contingency_table = pd.crosstab(df[rows_col], df[cols_col])
+                chi2, p, dof, expected = chi2_contingency(contingency_table)
+                expected_table = pd.DataFrame(expected, index=contingency_table.index, columns=contingency_table.columns)
+                
+                result_text = "Chi-squared Test Results\n==========================\n\nObserved Frequencies:\n"
+                result_text += f"{contingency_table.to_string()}\n\nExpected Frequencies:\n"
+                result_text += f"{expected_table.round(2).to_string()}\n\n---\n"
+                result_text += f"Chi-squared statistic: {chi2:.4f}\nDegrees of Freedom: {dof}\np-value: {p:.4f}\n\n"
+                if p < 0.05:
+                    result_text += f"Conclusion: There is a statistically significant association between '{rows_col}' and '{cols_col}' (p < 0.05)."
+                else:
+                    result_text += f"Conclusion: There is no statistically significant association between '{rows_col}' and '{cols_col}' (p >= 0.05)."
+                self.main.results_widget.set_results_text("Chi-squared Test Result", result_text)
+                
+            except Exception as e:
+                QMessageBox.critical(self.main, "Error", f"Failed to perform Chi-squared test: {e}")
+
+
+    def perform_spearman_correlation(self):
+        """
+        選択された2つの列に対して、スピアマンの順位相関係数検定を実行する。
+        """
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
+        
+        df = self.main.model._data
+        dialog = CorrelationDialog(df.columns, self.main)
+        
+        if dialog.exec():
+            settings = dialog.get_settings()
+            col1, col2 = settings['col1'], settings['col2']
+            
+            if not col1 or not col2 or col1 == col2:
+                QMessageBox.warning(self.main, "Warning", "Please select two different columns.")
+                return
+            
+            try:
+                data1 = df[col1].dropna()
+                data2 = df[col2].dropna()
+                
+                # データ長を合わせる
+                common_indices = data1.index.intersection(data2.index)
+                if len(common_indices) < 3:
+                    QMessageBox.warning(self.main, "Warning", "Not enough paired data to perform the test.")
+                    return
+                
+                data1 = data1.loc[common_indices]
+                data2 = data2.loc[common_indices]
+                
+                rho, p_value = spearmanr(data1, data2)
+                
+                result_text = (
+                    f"Spearman's Rank Correlation Results\n"
+                    f"====================================\n\n"
+                    f"Comparing:\n- Variable 1: '{col1}'\n- Variable 2: '{col2}'\n"
+                    f"(n={len(data1)})\n\n"
+                    f"---\n"
+                    f"Spearman's rho: {rho:.4f}\n"
+                    f"p-value: {p_value:.4f}\n\n"
+                )
+                if p_value < 0.05:
+                    result_text += "Conclusion: There is a statistically significant correlation."
+                else:
+                    result_text += "Conclusion: There is no statistically significant correlation."
+                
+                self.main.results_widget.set_results_text("Spearman's Correlation Result", result_text)
+            except Exception as e:
+                QMessageBox.critical(self.main, "Error", f"Failed to perform Spearman's correlation: {e}")
+                traceback.print_exc()
+
+
+    def perform_shapiro_test(self):
+        """
+        表示されているグラフの各グループに対して、シャピロ–ウィルク検定を実行し、
+        正規性を評価する。
+        """
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
+        
+        df = self.main.model._data.copy()
+        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        value_col = data_settings.get('y_col')
+        group_col = data_settings.get('x_col')
+        hue_col = data_settings.get('subgroup_col')
+        
+        if not value_col or not group_col:
+            QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+            return
+        
+        # X軸とサブグループが同じ場合は、hueを分析上無視する
+        if group_col == hue_col:
+            hue_col = None
+            
+        try:
+            effective_groups, group_name = self._get_interaction_group_col(df, group_col, hue_col)
+            unique_groups = sorted(effective_groups.dropna().unique())
+            
+            if not unique_groups:
+                QMessageBox.warning(self.main, "Warning", "No groups found to test.")
+                return
+            
+            # 結果を格納する文字列を初期化
+            result_text = f"Shapiro-Wilk Normality Test Results\n"
+            result_text += "=========================================\n\n"
+            result_text += f"Value Column: {value_col}\n"
+            result_text += f"Grouping by: {group_name}\n\n"
+            result_text += "p > 0.05 suggests that the data is normally distributed.\n\n"
+            result_text += "-----------------------------------------\n"
+            
+            # 各グループに対してループ処理
+            for group in unique_groups:
+                data = df[value_col][effective_groups == group].dropna()
+                
+                result_text += f"Group: {group} (n={len(data)})\n"
+                
+                # サンプル数が3未満の場合、検定は実行できない
+                if len(data) < 3:
+                    result_text += "  -> Skipped (sample size < 3)\n"
+                else:
+                    stat, p_value = shapiro(data)
+                    result_text += f"  - W-statistic: {stat:.4f}\n"
+                    result_text += f"  - p-value: {p_value:.4f}\n"
+                    if p_value > 0.05:
+                        result_text += "  - Conclusion: Data likely follows a normal distribution.\n"
+                    else:
+                        result_text += "  - Conclusion: Data likely does not follow a normal distribution.\n"
+                result_text += "-----------------------------------------\n"
+                
+            # 結果をダイアログで表示
+            self.main.results_widget.set_results_text("Normality Test Results", result_text)
+        except Exception as e:
+            QMessageBox.critical(self.main, "Error", f"Failed to perform Shapiro-Wilk test: {e}")
+            traceback.print_exc()
+
+
+# --- 回帰分析 ---
+
+    def sigmoid_4pl(self, x, bottom, top, hill_slope, log_ec50):
+        """4パラメータロジスティック（4PL）モデルの関数。xとlog_ec50はlog10スケール。"""
+        return bottom + (top - bottom) / (1 + 10**((log_ec50 - x) * hill_slope))
+
+
+    def perform_regression(self):
+        """回帰分析ダイアログを表示し、選択されたモデルに基づいて分析を実行する。"""
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
+            return
+        df = self.main.model._data
+        
+        dialog = RegressionDialog(df.columns, self.main)
+        
+        if dialog.exec():
+            settings = dialog.get_settings()
+            x_col, y_col, model = settings['x_col'], settings['y_col'], settings['model']
+            
+            if not x_col or not y_col:
+                QMessageBox.warning(self.main, "Warning", "Please select both X and Y columns.")
+                return
+            
+            data_settings = self.main.properties_panel.data_tab.get_current_settings()
+            subgroup_col = data_settings.get('subgroup_col')
+
+            if subgroup_col == x_col: # X軸と同じなら分析上は無視
+                subgroup_col = None
+
+            try:
+                # 毎回パラメータを初期化
+                self.main.regression_line_params = {}
+                self.main.fit_params = {}
+                results_text_parts = []
+
+                # フィット対象のグループリストを作成 (サブグループがなければ[None])
+                groups_to_fit = [None]
+                if subgroup_col and subgroup_col in df.columns:
+                    groups_to_fit = sorted(df[subgroup_col].dropna().unique())
+
+                for group in groups_to_fit:
+                    subset_df = df
+                    if group is not None:
+                        subset_df = df[df[subgroup_col] == group]
+                        results_text_parts.append(f"\n--- Sub-group: {group} ---")
+
+                    if model == 'linear':
+                        x_data = subset_df[x_col].dropna(); y_data = subset_df[y_col].dropna()
+                        common_indices = x_data.index.intersection(y_data.index)
+                        x_data = x_data.loc[common_indices]; y_data = y_data.loc[common_indices]
+                        
+                        if len(x_data) < 2: continue
+                        
+                        slope, intercept, r_value, p_value, _ = linregress(x_data, y_data)
+                        result = {
+                            "x_line": np.array([x_data.min(), x_data.max()]),
+                            "y_line": slope * np.array([x_data.min(), x_data.max()]) + intercept,
+                            "r_squared": r_value**2
+                        }
+                        if group is not None: self.main.regression_line_params[group] = result
+                        else: self.main.regression_line_params = result
+                        
+                        results_text_parts.append(f"Y = {slope:.4f} * X + {intercept:.4f}\nR-squared: {r_value**2:.4f}, p-value: {p_value:.4f}")
+
+                    elif model == '4pl':
+                        fit_df = subset_df[[x_col, y_col]].dropna().copy()
+                        if (fit_df[x_col] <= 0).any(): continue
+                        
+                        fit_df['log_x'] = np.log10(fit_df[x_col])
+                        x_data, y_data = fit_df['log_x'], fit_df[y_col]
+                        
+                        p0 = [y_data.min(), y_data.max(), 1.0, np.median(x_data)]
+                        params, _ = curve_fit(self.sigmoid_4pl, x_data, y_data, p0=p0, maxfev=10000)
+                        y_pred = self.sigmoid_4pl(x_data, *params)
+                        r_squared = 1 - (np.sum((y_data - y_pred)**2) / np.sum((y_data - np.mean(y_data))**2))
+                        
+                        result = {"params": params, "r_squared": r_squared, "log_x_data": x_data}
+                        if group is not None: self.main.fit_params[group] = result
+                        else: self.main.fit_params = result
+                        
+                        results_text_parts.append(f"Top: {params[1]:.4f}, Bottom: {params[0]:.4f}, Hill Slope: {params[2]:.4f}, EC50: {10**params[3]:.4f}\nR-squared: {r_squared:.4f}")
+
+                self.main.graph_manager.update_graph()
+                
+                header = "Linear Regression Results" if model == 'linear' else "Non-linear Regression (4PL) Results"
+                self.main.results_widget.set_results_text(f"{header}\n=========================\n" + "\n".join(results_text_parts))
+            
+            except Exception as e:
+                QMessageBox.critical(self.main, "Error", f"Failed to perform regression: {e}\n\n{traceback.format_exc()}")
