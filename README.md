@@ -1,82 +1,86 @@
 # Calcite
 
-**Calcite**は、プログラミング不要でデータ分析や論文品質のグラフ作成を行いたい科学者、研究者、学生のために開発されたデスクトップアプリケーションです。データのインポートからグラフのエクスポートまで、一連のワークフローを単一の使いやすいインターフェースでシームレスに提供します。
+**Calcite** is a desktop application designed for scientists, researchers, and students who need to perform data analysis and create publication-quality graphs without writing code. It provides a seamless workflow from data import to final plot export, all within a single, user-friendly interface.
 
-[English README](README_en.md)
+[日本語のREADMEはこちら (Japanese README here)](README_ja.md)
 
-## ✨ 主な機能
+## ✨ Features
 
-### **直感的なデータ操作**
+### **Intuitive Data Handling**
 
-- **多彩なインポート**: CSVファイルの読み込み、またはスプレッドシート（Excelなど）からクリップボード経由での直接貼り付けに対応しています。
-- **Python連携**: `pandas.DataFrame`を直接引数として渡し、既存の分析環境からシームレスに起動できます。
-- **インタラクティブなテーブル**:
-  - クリックによるデータの昇順・降順ソート、ダブルクリックによる列名編集が可能です。
-  - フィルタリングやソート後のデータをCSVとしてエクスポートできます。
-- **高度なデータ加工**:
-  - **形式変換**: ワイド形式⇔ロング形式のデータ変換をGUI操作で簡単に行えます。
-  - **フィルタリング**: 複数条件（AND/OR）を組み合わせた高度なフィルタリング機能を備えています。
-  - **列計算**: `'ColumnA' * 100` のような数式を用いて、新しい列を動的に作成できます。
+- **Versatile Import**: Import data from CSV files or paste directly from spreadsheets (e.g., Excel) via the clipboard.
+- **Python Integration**: Launch the application seamlessly from existing analysis environments by passing a `pandas.DataFrame` as a direct argument.
+- **Interactive Table**:
+  - Sort data in ascending/descending order with a single click or edit column names with a double click.
+  - Export the current state of the data (after filtering or sorting) to a new CSV file.
+- **Advanced Data Manipulation**:
+  - **Reshaping**: Easily convert data between wide and long formats using a graphical interface.
+  - **Filtering**: A powerful and advanced filtering tool allows for combining multiple conditions using AND/OR logic.
+  - **Column Calculation**: Dynamically create new columns using formulas like `'ColumnA' * 100`.
 
-### **論文品質のグラフ描画**
+### **Publication-Quality Graphing**
 
-- **多彩なグラフタイプ**: 散布図、棒グラフ、箱ひげ図、バイオリンプロット、ポイントプロット、折れ線グラフ、ペアード散布図など、多様なグラフをサポートしています。
-- **豊富なカスタマイズ項目**:
-  - 色、マーカー、線のスタイル、フォントサイズ、軸範囲、対数スケールなどをGUIから細かく設定可能です。
-  - グラフの上と右の枠線を非表示にするPrism風スタイルを適用できます。
-  - 棒グラフや箱ひげ図に、個々のデータ点を重ねて表示（オーバーレイ）できます。
+- **Variety of Plot Types**: Supports a wide range of plots, including Scatter, Bar, Box, Violin, Point, Line, and Paired Scatter plots.
+- **Extensive Customization**:
+  - Fine-tune every aspect of your plot from the GUI, including colors, markers, line styles, font sizes, axis ranges, and log scales.
+  - Apply a "Prism-style" aesthetic by removing the top and right spines of the graph.
+  - Overlay individual data points on summary plots like bar charts and box plots.
 
-### **充実した統計解析**
+### **Comprehensive Statistical Analysis**
 
-- **基本検定**: 対応のない/対応のあるt検定、Mann-Whitney U検定、Wilcoxon符号順位検定。
-- **多群比較**: 一元配置分散分析 (ANOVA)、Kruskal-Wallis検定（Tukey, Dunnの事後検定に対応）。
-- **回帰分析**: 線形回帰および非線形回帰（4パラメータロジスティック, 4PL）に対応し、R²値をグラフに表示。
-- **相関・関連**: Spearman相関、カイ二乗検定。
-- **自動アノテーション**: `statannotations`ライブラリの堅牢なロジックに基づき、統計的有意差（`*`）をグラフに自動で描画します。
+- **Basic Tests**: Independent & Paired t-tests, Mann-Whitney U, Wilcoxon signed-rank.
+- **Group Comparisons**: One-way ANOVA & Kruskal-Wallis with post-hoc tests (Tukey, Dunn).
+- **Regression**: Linear and non-linear (4-parameter logistic, 4PL) regression, with R² values displayed on the graph.
+- **Correlations & Associations**: Spearman's correlation and Chi-squared tests.
+- **Automatic Annotations**: Automatically adds statistical significance (`*`) to your plots based on the robust logic of the `statannotations` library.
 
-### **高解像度エクスポート**
+e.g.
+![e.g. Owe way anova](/images/one_way_anova.jpg)
 
-- 作成したグラフをPNG, JPEG, SVG, PDF形式で、300 DPIの高解像度で保存できます。
+### **High-Resolution Export**
 
-## 🛠️ インストール
+- Save your graphs as PNG, JPEG, SVG, or PDF at 300 DPI, ready for any publication or presentation.
 
-CalciteはPyPIで公開されており、pipでインストールできます。Python 3.10以上が必要です。
+## 🛠️ Installation
+
+This project is currently under development. The installation method is as follows.
+Python 3.10 or higher is required.
 
 ```bash
-pip install calcite
+pip install git+https://github.com/ryuabiru/calcite.git
 ```
 
-## 🚀 クイックスタート
+## 🚀 Quick Start
 
-1. ターミナルからCalciteを起動します:
+1. Launch Calcite from your terminal:
 
     ```bash
     calcite
     ```
 
-2. **File \> Open CSV...** または **Edit \> Paste** でデータをインポートします。
+2. Import data using **File \> Open CSV...** or paste from your clipboard using **Edit \> Paste**.
 
-   - **💡 Tidy Data形式を推奨します**
-   - Calciteは\*\*Tidy Data（整然データ）\*\*の考え方に基づいて設計されています。これは、以下のような構造を持つデータ形式です。
-     - **1つの列が1つの変数を表す**（例：「遺伝子型」「薬剤濃度」「測定値」）
-     - **1つの行が1つの観測（測定）を表す**
-     - **1つのテーブルが1種類の観測単位を表す**
-   - この形式は、コンピュータによる統計分析やグラフ描画に最も適しています。もしあなたのデータがExcelの集計表のように「ワイド形式」（例：各列がControl群、DrugA群のようになっている）の場合でも、Calciteの**Data \> Restructure (Wide to Long)...** 機能を使えば、簡単にTidy Data形式に変換できます。
+   - **💡 Tidy Data format is recommended**
+   - Calcite is designed around the principles of **Tidy Data**. This is a data structure where:
+     - **Each variable forms a column** (e.g., "Genotype", "Concentration", "Measurement").
+     - **Each observation forms a row**.
+     - **Each type of observational unit forms a table**.
+   - This format is the most suitable for statistical analysis and graphing on a computer. If your data is in a "wide" format (e.g., separate columns for Control Group, Drug A Group, etc.), you can easily convert it to Tidy Data using Calcite's **Data \> Restructure (Wide to Long)...** feature.
 
-    Tidy data (Seabornより引用)
+    Tidy data (Ref. Seaborn)
     (<https://seaborn.pydata.org/tutorial/data_structure.html>)
     ![Tidy data](./images/Tidy%20data.png)
 
-3. ツールバーからグラフタイプ（例: Scatter Plot, Bar Chart）を選択します。
+3. Select a graph type from the toolbar (e.g., Scatter Plot, Bar Chart).
 
-4. 画面右下の\*\*「データ」\*\*タブで、X軸とY軸に使用する列を選択します。
+4. In the **"Data"** tab at the bottom right, select the columns for the X and Y axes.
 
-5. \*\*「フォーマット」「テキストと凡例」「軸」\*\*タブで、グラフの見た目をカスタマイズします。
+5. Customize the graph's appearance using the **"Format," "Text & Legend,"** and **"Axis"** tabs.
 
-6. \*\*「Analysis」\*\*メニューから統計解析を実行します。
+6. Perform statistical analysis from the **"Analysis"** menu.
 
-7. **File \> Save Graph As...** でグラフを保存します。
+7. Save your graph using **File \> Save Graph As...**.
 
-## 📄 ライセンス
+## 📄 License
 
-このプロジェクトはMITライセンスの下で公開されています。詳細はLICENCESファイルをご覧ください。
+This project is licensed under the MIT License. See the LICENSE file for details.

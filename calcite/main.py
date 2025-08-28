@@ -3,7 +3,7 @@
 import sys
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt, QCoreApplication
-from calcite.main_window import MainWindow
+from .main_window import MainWindow
 import seaborn as sns
 import pandas as pd
 

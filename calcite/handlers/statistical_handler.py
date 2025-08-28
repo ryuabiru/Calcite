@@ -13,15 +13,15 @@ import scikit_posthocs as sp
 import traceback
 
 # --- Dialogs ---
-from dialogs.anova_dialog import AnovaDialog
-from dialogs.kruskal_dialog import KruskalDialog
-from dialogs.ttest_dialog import TTestDialog
-from dialogs.mannwhitney_dialog import MannWhitneyDialog
-from dialogs.paired_ttest_dialog import PairedTTestDialog
-from dialogs.wilcoxon_dialog import WilcoxonDialog
-from dialogs.correlation_dialog import CorrelationDialog
-from dialogs.regression_dialog import RegressionDialog
-from dialogs.contingency_dialog import ContingencyDialog
+from ..dialogs.anova_dialog import AnovaDialog
+from ..dialogs.kruskal_dialog import KruskalDialog
+from ..dialogs.ttest_dialog import TTestDialog
+from ..dialogs.mannwhitney_dialog import MannWhitneyDialog
+from ..dialogs.paired_ttest_dialog import PairedTTestDialog
+from ..dialogs.wilcoxon_dialog import WilcoxonDialog
+from ..dialogs.correlation_dialog import CorrelationDialog
+from ..dialogs.regression_dialog import RegressionDialog
+from ..dialogs.contingency_dialog import ContingencyDialog
 
 class StatisticalHandler:
     _UNIQUE_SEPARATOR = '_#%%%_'

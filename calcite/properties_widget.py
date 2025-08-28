@@ -3,10 +3,10 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QTabWidget
 from PySide6.QtCore import Signal
 
-from tabs.data_tab import DataTab
-from tabs.format_tab import FormatTab
-from tabs.text_tab import TextTab
-from tabs.axes_tab import AxesTab
+from .tabs.data_tab import DataTab
+from .tabs.format_tab import FormatTab
+from .tabs.text_tab import TextTab
+from .tabs.axes_tab import AxesTab
 
 class PropertiesWidget(QWidget):
     propertiesChanged = Signal()
@@ -54,7 +54,7 @@ class PropertiesWidget(QWidget):
         self.text_tab.ylabel_fontsize_spin.valueChanged.connect(lambda val: self.propertiesChanged.emit())
         self.text_tab.ticks_fontsize_spin.valueChanged.connect(lambda val: self.propertiesChanged.emit())
         # ▼▼▼ 新しく移設した凡例ウィジェットのシグナルを接続 ▼▼▼
-        self.text_tab.legend_pos_combo.currentIndexChanged.connect(self.propertiesChanged.emit)
+        self.text_tab.legend_pos_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
         self.text_tab.legend_title_edit.editingFinished.connect(self.propertiesChanged.emit)
         # ▲▲▲ ここまで ▲▲▲
 

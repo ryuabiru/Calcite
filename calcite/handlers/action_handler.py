@@ -11,16 +11,16 @@ from scipy.optimize import curve_fit
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 import scikit_posthocs as sp
 
-from calcite.pandas_model import PandasModel
+from ..pandas_model import PandasModel
 
 # --- Dialogs ---
-from dialogs.restructure_dialog import RestructureDialog
-from dialogs.calculate_dialog import CalculateDialog
-from dialogs.pivot_dialog import PivotDialog
-from dialogs.advanced_filter_dialog import AdvancedFilterDialog
-from dialogs.license_dialog import LicenseDialog
+from ..dialogs.restructure_dialog import RestructureDialog
+from ..dialogs.calculate_dialog import CalculateDialog
+from ..dialogs.pivot_dialog import PivotDialog
+from ..dialogs.advanced_filter_dialog import AdvancedFilterDialog
+from ..dialogs.license_dialog import LicenseDialog
 
-from handlers.statistical_handler import StatisticalHandler
+from .statistical_handler import StatisticalHandler
 
 class ActionHandler:
     

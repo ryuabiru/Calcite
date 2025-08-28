@@ -8,14 +8,14 @@ from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtCore import Qt
 
 # --- Local Imports ---
-from calcite.graph_widget import GraphWidget
-from calcite.properties_widget import PropertiesWidget
-from calcite.results_widget import ResultsWidget
-from calcite.pandas_model import PandasModel
+from .graph_widget import GraphWidget
+from .properties_widget import PropertiesWidget
+from .results_widget import ResultsWidget
+from .pandas_model import PandasModel
 
 # --- Handlers ---
-from handlers.action_handler import ActionHandler
-from handlers.graph_manager import GraphManager
+from .handlers.action_handler import ActionHandler
+from .handlers.graph_manager import GraphManager
 
 import pandas as pd
 

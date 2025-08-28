@@ -1,0 +1,3 @@
+recursive-include LICENSES *.txt
+recursive-include sample_data *.csv
+recursive-include images *
