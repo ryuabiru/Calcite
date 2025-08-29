@@ -423,6 +423,12 @@ class GraphManager:
         
         is_faceted = len(fig.axes) > 1
 
+        axis_linewidth = properties.get('axis_linewidth', 1.0)
+        tick_length = properties.get('tick_length', 4.0)
+        tick_direction = properties.get('tick_direction', 'out')
+
+        print(f"DEBUG: Applying axis_linewidth={axis_linewidth}, tick_length={tick_length}")
+
         for ax in fig.axes:
             # ファセットグラフではない場合にのみ、個別のX軸ラベルを設定する
             if not is_faceted:
@@ -431,7 +437,17 @@ class GraphManager:
             # Y軸ラベルは常に個別で設定
             ax.set_ylabel(properties.get('ylabel') or ax.get_ylabel(), fontsize=properties.get('ylabel_fontsize', 12))
             
-            ax.tick_params(axis='both', which='major', labelsize=properties.get('ticks_fontsize', 10))
+            ax.tick_params(
+                axis='both', which='major', 
+                labelsize=properties.get('ticks_fontsize', 10),
+                width=axis_linewidth,
+                length=tick_length,
+                direction=tick_direction
+            )
+            
+            for spine in ax.spines.values():
+                spine.set_linewidth(axis_linewidth)
+            
             if properties.get('hide_top_right_spines', True):
                 ax.spines['right'].set_visible(False); ax.spines['top'].set_visible(False)
             ax.grid(properties.get('show_grid', False))

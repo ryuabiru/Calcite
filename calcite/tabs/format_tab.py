@@ -160,6 +160,8 @@ class FormatTab(QWidget):
         color_layout.addRow(QLabel("<b>Sub-group Colors</b>"))
         
         self.palette_combo = NoScrollComboBox()
+        # palettesリストに連続カラーマップを追加
+        
         palettes = [
             "default", "deep", "muted", "pastel", "bright", "dark", "colorblind", 
             "Paired", "Set2", "tab10",
