@@ -160,7 +160,12 @@ class FormatTab(QWidget):
         color_layout.addRow(QLabel("<b>Sub-group Colors</b>"))
         
         self.palette_combo = NoScrollComboBox()
-        palettes = ["default", "deep", "muted", "pastel", "bright", "dark", "colorblind", "Paired", "Set2", "tab10"]
+        palettes = [
+            "default", "deep", "muted", "pastel", "bright", "dark", "colorblind", 
+            "Paired", "Set2", "tab10",
+            "viridis", "plasma", "inferno", "magma", "cividis",
+            "rocket", "mako", "flare", "crest"
+        ]
         self.palette_combo.addItems(palettes)
         color_layout.addRow(QLabel("Palette:"), self.palette_combo)
 

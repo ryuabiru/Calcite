@@ -190,7 +190,7 @@ class GraphManager:
                     else:
                         single_color = properties.get('single_color'); 
                         if single_color: scatter_kwargs['color'] = single_color
-                    # ★★★ legend=False を削除 ★★★
+                    
                     sns.scatterplot(**scatter_kwargs)
                     if base_kind == 'summary_scatter':
                         if visual_hue_col:

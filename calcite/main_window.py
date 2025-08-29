@@ -31,6 +31,7 @@ class MainWindow(QMainWindow):
         
         self.model = None
         self.current_graph_type = 'scatter'
+        self.previous_graph_type = 'scatter'
         self.header_editor = None
         self.regression_line_params = None
         self.fit_params = None
@@ -131,7 +132,6 @@ class MainWindow(QMainWindow):
         
         menu_bar = self.menuBar()
         
-        # ▼▼▼ ここからメニュー全体の定義を修正します ▼▼▼
         # File Menu
         file_menu = menu_bar.addMenu("File")
         open_action = QAction("Open CSV...", self)
@@ -287,9 +287,23 @@ class MainWindow(QMainWindow):
         except (RuntimeError, TypeError):
             pass
         
+        previous_graph_type = self.current_graph_type
         self.current_graph_type = graph_type
+        
         self.properties_panel.data_tab.set_graph_type(graph_type)
         self.properties_panel.text_tab.update_paired_labels_visibility(graph_type == 'paired_scatter')
+        
+        current_legend_setting = self.properties_panel.text_tab.legend_pos_combo.currentData()
+        
+        if graph_type == 'summary_scatter' and current_legend_setting == 'best':
+            hide_index = self.properties_panel.text_tab.legend_pos_combo.fineData('hide')
+            if hide_index != -1:
+                self.properties_panel.text_tab.legend_pos_combo.setCurrentIndex(hide_index)
+        
+        elif previous_graph_type == 'summary_scatter' and current_legend_setting == 'hide':
+            best_index = self.properties_panel.text_tab.legend_pos_combo.findData('best')
+            if best_index != -1:
+                self.properties_panel.text_tab.legend_pos_combo.setCurrentIndex(best_index)
         
         self.properties_panel.propertiesChanged.connect(self.graph_manager.update_graph)
         
@@ -324,13 +338,19 @@ class MainWindow(QMainWindow):
         create_table_action.triggered.connect(self.action_handler.create_table_from_selection)
         insert_row_action = QAction("Insert Row Above", self); insert_row_action.triggered.connect(self.insert_row)
         remove_row_action = QAction("Remove Selected Row(s)", self); remove_row_action.triggered.connect(self.remove_row)
-        insert_col_action = QAction("Insert Column Left", self); insert_col_action.triggered.connect(self.insert_col)
+        insert_col_left_action = QAction("Insert Column Left", self)
+        insert_col_left_action.triggered.connect(lambda: self.insert_col(left=True))
+        insert_col_right_action = QAction("Insert Column Right", self)
+        insert_col_right_action.triggered.connect(lambda: self.insert_col(left=False))
         remove_col_action = QAction("Remove Selected Column(s)", self); remove_col_action.triggered.connect(self.remove_col)
+        
         menu.addAction(create_table_action)
         menu.addSeparator()
         menu.addAction(insert_row_action); menu.addAction(remove_row_action)
         menu.addSeparator()
-        menu.addAction(insert_col_action); menu.addAction(remove_col_action)
+        menu.addAction(insert_col_left_action)
+        menu.addAction(insert_col_right_action)
+        menu.addAction(remove_col_action)
         menu.exec(self.table_view.viewport().mapToGlobal(position))
 
 
@@ -358,10 +378,12 @@ class MainWindow(QMainWindow):
             for row in reversed(selected_rows): self.model.removeRows(row, 1)
 
 
-    def insert_col(self):
+    def insert_col(self, left=False):
         if hasattr(self, 'model'):
             selected_index = self.table_view.currentIndex()
             col = selected_index.column() if selected_index.isValid() else self.model.columnCount()
+            if not left and selected_index.isValid():
+                col += 1
             self.model.insertColumns(col, 1)
 
 
