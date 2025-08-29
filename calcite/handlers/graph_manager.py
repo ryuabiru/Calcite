@@ -110,7 +110,6 @@ class GraphManager:
                 df_processed[current_x] = df_processed[current_x].astype(str)
             
             x_order = df_processed[current_x].unique()
-            print(f"DEBUG: Determined X-axis order: {x_order}")
             
             subgroup_palette = properties.get('subgroup_colors', {})
             col_categories = df_processed[facet_col].unique() if facet_col else [None]
@@ -140,7 +139,6 @@ class GraphManager:
                     if visual_hue_col and visual_hue_col != current_x: group_cols.append(visual_hue_col)
                     
                     error_agg_func = properties.get('error_bar_type', 'sem') # デフォルトはsem
-                    print(f"DEBUG: Using '{error_agg_func}' for error bar calculation.")
                     
                     summary_stats = original_subset_df.groupby(group_cols, as_index=False).agg(
                         mean_y=(current_y, 'mean'),
@@ -157,7 +155,6 @@ class GraphManager:
                     
                     if base_kind in ['bar', 'boxplot', 'violin', 'pointplot']:
                         base_kwargs['order'] = x_order
-                        print(f"DEBUG: Setting order for {base_kind}")
                     
                     if visual_hue_col:
                         base_kwargs['hue'] = visual_hue_col
@@ -170,7 +167,6 @@ class GraphManager:
                     if base_kind == 'pointplot': base_kwargs.update({'capsize': properties.get('capsize', 4) * 0.02})
                     
                     if base_kind == 'lineplot' and 'order' in base_kwargs:
-                        print("DEBUG: Defensively removing 'order' key for lineplot.")
                         del base_kwargs['order']
                     
                     base_plot_map[base_kind](**base_kwargs)
@@ -203,7 +199,7 @@ class GraphManager:
                 if properties.get('scatter_overlay') and (base_kind in base_plot_map):
                     print("[Layer 4] Drawing Overlay Points...")
                     if not original_subset_df.empty:
-                        # ▼▼▼ サブグループの有無に基づく、必然的な条件分岐を適用します ▼▼▼
+                        
                         should_dodge = bool(analysis_hue_col) and base_kind != 'pointplot'
                         
                         print(f"DEBUG: base_kind='{base_kind}', analysis_hue_col='{analysis_hue_col}', should_dodge={should_dodge}")
@@ -296,7 +292,6 @@ class GraphManager:
                 for ax in axes.flat: ax.set_xlabel('')
                 fig.supxlabel(shared_xlabel, fontsize=properties.get('xlabel_fontsize', 12))
 
-            # ▼▼▼ メソッドの末尾近くにある、このブロックを修正します ▼▼▼
             if base_kind in ['scatter', 'summary_scatter'] and not is_faceted:
                 ax = axes[0, 0]
 
@@ -310,6 +305,7 @@ class GraphManager:
                                     linestyle=properties.get('linestyle', '--'), linewidth=properties.get('linewidth', 1.5),
                                     label=f"{group_name} Fit (R²={params['r_squared']:.3f})")
                         ax.legend()
+                    
                     elif 'x_line' in params_dict: # 単一のデータ
                         params = params_dict
                         ax.plot(params["x_line"], params["y_line"], color=properties.get('regression_color', 'red'),
@@ -332,6 +328,7 @@ class GraphManager:
                                     linestyle=properties.get('linestyle', '--'), linewidth=properties.get('linewidth', 1.5),
                                     label=f"{group_name} 4PL (R²={params_info['r_squared']:.3f})")
                         ax.legend()
+                    
                     elif 'params' in params_dict: # 単一のデータ
                         params_info = params_dict
                         fit_params = params_info["params"]
@@ -352,6 +349,7 @@ class GraphManager:
 
 
     def draw_paired_scatter(self, df, properties, data_settings):
+        
         col1 = data_settings.get('col1')
         col2 = data_settings.get('col2')
         if not (col1 and col2 and col1 != col2): return None
@@ -391,8 +389,6 @@ class GraphManager:
         """
         古いFigureCanvasをウィジェットから削除し、新しいものに置き換える。
         """
-        # --- デバッグ用のprint文 ---
-        print("Replacing canvas with new figure...")
         
         # 既存のキャンバスがあれば、レイアウトから削除して安全に破棄する
         if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:
@@ -409,16 +405,12 @@ class GraphManager:
         self.main.graph_widget.fig = new_fig
         if hasattr(self.main.graph_widget.fig, 'axes') and self.main.graph_widget.fig.axes:
              self.main.graph_widget.ax = self.main.graph_widget.fig.axes[0]
-        
-        print(" -> Canvas replaced successfully.")
 
 
     def update_graph_properties(self, fig, properties):
         """
         UIパネルの設定に基づいて、FigureとAxesの見た目を更新する。
         """
-        print("Updating graph properties (titles, labels, etc.)...") # デバッグ用
-        
         fig.suptitle(properties.get('title', ''), fontsize=properties.get('title_fontsize', 16))
         
         is_faceted = len(fig.axes) > 1
@@ -426,8 +418,6 @@ class GraphManager:
         axis_linewidth = properties.get('axis_linewidth', 1.0)
         tick_length = properties.get('tick_length', 4.0)
         tick_direction = properties.get('tick_direction', 'out')
-
-        print(f"DEBUG: Applying axis_linewidth={axis_linewidth}, tick_length={tick_length}")
 
         for ax in fig.axes:
             # ファセットグラフではない場合にのみ、個別のX軸ラベルを設定する
@@ -454,8 +444,6 @@ class GraphManager:
             if properties.get('x_log_scale'): ax.set_xscale('log')
             if properties.get('y_log_scale'): ax.set_yscale('log')
             
-        # 凡例などを考慮してレイアウトを自動調整
-        print("DEBUG: Calling fig.tight_layout() with padding.")
         fig.tight_layout(pad=1.5)
 
 
@@ -463,7 +451,6 @@ class GraphManager:
         if hasattr(self.main.graph_widget, 'canvas') and self.main.graph_widget.canvas:
             self.main.graph_widget.canvas.figure.clear()
             self.main.graph_widget.canvas.draw()
-            print("DEBUG: Canvas cleared.") # デバッグ用
 
 
     def save_graph(self):
@@ -491,7 +478,6 @@ class GraphManager:
         """
         グラフキャンバスをクリアし、すべてのプロット関連パラメータをリセットする。
         """
-        print("DEBUG: Clearing graph and resetting all plot states.")
         # すべての注釈とフィットパラメータをクリア
         self.main.statistical_annotations.clear()
         self.main.paired_annotations.clear()
@@ -505,7 +491,6 @@ class GraphManager:
         """
         統計的な注釈のみをクリアし、グラフを再描画する。
         """
-        print("DEBUG: Clearing only annotations and redrawing graph.")
         self.main.statistical_annotations.clear()
         self.main.paired_annotations.clear()
         self.main.regression_line_params = None

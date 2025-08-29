@@ -37,15 +37,17 @@ class FilterConditionWidget(QWidget):
         self.column_combo.currentTextChanged.connect(self.update_operators)
         self.update_operators(self.column_combo.currentText())
         
-        # 最初の行はAND/OR不要
         self.and_or_combo.setVisible(False)
 
+
     def update_operators(self, column_name):
+        
         self.operator_combo.clear()
         if not column_name or column_name not in self.df.columns: return
         dtype = self.df[column_name].dtype
         
         operators = {"equals": "==", "not equal": "!="}
+        
         if pd.api.types.is_numeric_dtype(dtype):
             operators.update({
                 "greater than": ">", "less than": "<",
@@ -56,9 +58,11 @@ class FilterConditionWidget(QWidget):
                 "contains": "contains", "does not contain": "not contains",
                 "starts with": "startswith", "ends with": "endswith"
             })
+        
         for name, key in operators.items():
             self.operator_combo.addItem(name, key)
             
+    
     def get_condition(self):
         """この行の設定を辞書として返す"""
         return {
@@ -67,6 +71,7 @@ class FilterConditionWidget(QWidget):
             "operator": self.operator_combo.currentData(),
             "value": self.value_input.text()
         }
+
 
 class AdvancedFilterDialog(QDialog):
     """
@@ -102,10 +107,12 @@ class AdvancedFilterDialog(QDialog):
         
         self.add_condition_row() # 最初に一行追加しておく
 
+
     def add_condition_row(self):
-        is_first_row = len(self.condition_widgets) == 0
         
+        is_first_row = len(self.condition_widgets) == 0
         condition_widget = FilterConditionWidget(self.df)
+        
         if not is_first_row:
             condition_widget.and_or_combo.setVisible(True)
             
@@ -115,16 +122,21 @@ class AdvancedFilterDialog(QDialog):
         
         self.conditions_layout.addWidget(condition_widget)
         self.condition_widgets.append(condition_widget)
+
         
     def remove_condition_row(self, widget_to_remove):
+        
         if len(self.condition_widgets) > 1: # 最後の1行は消させない
             widget_to_remove.setParent(None)
             widget_to_remove.deleteLater()
             self.condition_widgets.remove(widget_to_remove)
 
+
     def get_settings(self):
         """全条件のリストを返す"""
+        
         settings = []
+        
         for widget in self.condition_widgets:
             condition = widget.get_condition()
             
