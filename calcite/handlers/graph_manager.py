@@ -131,10 +131,8 @@ class GraphManager:
                     ax.set_title(f"No data for {col_cat}"); continue
                 
                 plot_df = original_subset_df
-                print(f"\n--- Drawing Facet (Col: {col_cat}) ---")
 
                 if base_kind == 'summary_scatter':
-                    print("[Layer 1] Preparing data...")
                     group_cols = [current_x]
                     if visual_hue_col and visual_hue_col != current_x: group_cols.append(visual_hue_col)
                     
@@ -146,11 +144,9 @@ class GraphManager:
                     )
                     summary_stats.rename(columns={'mean_y': current_y}, inplace=True)
                     plot_df = summary_stats
-                    print(" -> Data summarized.")
                 
                 base_plot_map = { 'bar': sns.barplot, 'boxplot': sns.boxplot, 'violin': sns.violinplot, 'pointplot': sns.pointplot, 'lineplot': sns.lineplot }
                 if base_kind in base_plot_map:
-                    print(f"[Layer 2] Drawing Base Plot: {base_kind}")
                     base_kwargs = {'data': plot_df, 'x': current_x, 'y': current_y, 'ax': ax, 'order': x_order}
                     
                     if base_kind in ['bar', 'boxplot', 'violin', 'pointplot']:
@@ -172,7 +168,6 @@ class GraphManager:
                     base_plot_map[base_kind](**base_kwargs)
 
                 if base_kind in ['scatter', 'summary_scatter']:
-                    print(f"[Layer 3] Drawing Scatter Plot: {base_kind}")
                     scatter_kwargs = {
                         'data': plot_df, 'x': current_x, 'y': current_y, 'ax': ax,
                         'marker': properties.get('marker_style', 'o'),
@@ -194,15 +189,10 @@ class GraphManager:
                                 ax.errorbar(x=grp[current_x], y=grp[current_y], yerr=grp['err_y'], fmt='none', capsize=properties.get('capsize', 4), ecolor=subgroup_palette.get(str(hue_val), 'black'))
                         else:
                             ax.errorbar(x=plot_df[current_x], y=plot_df[current_y], yerr=plot_df['err_y'], fmt='none', capsize=properties.get('capsize', 4), ecolor=properties.get('marker_edgecolor', 'black'))
-                        print(" -> Added error bars.")
-
                 if properties.get('scatter_overlay') and (base_kind in base_plot_map):
-                    print("[Layer 4] Drawing Overlay Points...")
                     if not original_subset_df.empty:
                         
                         should_dodge = bool(analysis_hue_col) and base_kind != 'pointplot'
-                        
-                        print(f"DEBUG: base_kind='{base_kind}', analysis_hue_col='{analysis_hue_col}', should_dodge={should_dodge}")
                         
                         sns.stripplot(
                             data=original_subset_df, x=current_x, y=current_y,
@@ -218,7 +208,6 @@ class GraphManager:
                             dodge=should_dodge,
                             order=x_order
                         )
-                        print(" -> stripplot called with dodge=True.")
                 
                 title_parts = []; 
                 if facet_col: title_parts.append(f"{facet_col} = {col_cat}")
@@ -231,21 +220,18 @@ class GraphManager:
 
             # --- 凡例統合レイヤー ---
             if visual_hue_col:
-                print("Consolidating legend...")
                 handles, labels = [], []
 
                 # --- Step 1: 既存の凡例をすべてクリア ---
                 for ax in axes.flat:
                     if ax.get_legend() is not None:
                         ax.get_legend().remove()
-                print(" -> All subplot legends cleared.")
 
                 # --- Step 2: グラフタイプに応じて凡例の「部品」を生成 ---
                 base_kind = self.main.current_graph_type
                 
                 # Bar, Box, Violinの場合は、凡例の部品を手動で作成する
                 if base_kind in ['bar', 'boxplot', 'violin']:
-                    print(" -> Manually creating patch handles for legend.")
                     hue_categories = sorted(df_processed[visual_hue_col].unique())
                     palette = properties.get('subgroup_colors', {})
                     
@@ -259,7 +245,6 @@ class GraphManager:
 
                 # それ以外のグラフタイプは、自動生成された部品を収集する
                 else:
-                    print(" -> Collecting handles from axes.")
                     for ax in axes.flat:
                         h, l = ax.get_legend_handles_labels()
                         for i, label in enumerate(l):
@@ -280,11 +265,6 @@ class GraphManager:
                         title=legend_title,
                         loc=legend_pos
                     )
-                    if leg:
-                        leg.get_frame().set_alpha(legend_alpha)
-                    print(f" -> In-plot legend re-created with alpha={legend_alpha}.")
-                else:
-                    print(" -> Legend hidden by user setting or no handles found.")
 
             is_faceted = n_cols > 1
             if is_faceted:
