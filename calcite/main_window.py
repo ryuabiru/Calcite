@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QSplitter, QTableView, QMessageBox, QToolBar,
     QMenu, QLineEdit, QApplication
 )
-from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtCore import Qt, QEvent
 
 # --- Local Imports ---
@@ -354,6 +354,14 @@ class MainWindow(QMainWindow):
                         # イベントが処理されたことを示す
                         return True
 
+            if event.matches(QKeySequence.StandardKey.Copy):
+                self.copy_selection()
+                return True
+            
+            if event.matches(QKeySequence.StandardKey.Paste):
+                self.paste_selection()
+                return True
+
         # 上記以外のイベントは、通常の処理に任せる
         return super().eventFilter(source, event)
 
@@ -379,10 +387,79 @@ class MainWindow(QMainWindow):
         for target_index in sorted_indexes[1:]:
             self.model.setData(target_index, fill_value, Qt.ItemDataRole.EditRole)
 
+    def copy_selection(self):
+        """
+        選択されたセル範囲のデータをタブ区切りテキストとしてクリップボードにコピーする。
+        """
+        selection_model = self.table_view.selectionModel()
+        selected_indexes = selection_model.selectedIndexes()
+
+        if not selected_indexes:
+            return
+
+        # 行と列の範囲を特定
+        rows = sorted(list(set(index.row() for index in selected_indexes)))
+        cols = sorted(list(set(index.column() for index in selected_indexes)))
+        
+        # データを格納する二次元配列を作成
+        row_count = len(rows)
+        col_count = len(cols)
+        data = [["" for _ in range(col_count)] for _ in range(row_count)]
+
+        # 選択されたインデックスのみデータを取得
+        row_map = {row: i for i, row in enumerate(rows)}
+        col_map = {col: i for i, col in enumerate(cols)}
+
+        for index in selected_indexes:
+            r, c = row_map[index.row()], col_map[index.column()]
+            data[r][c] = index.data()
+
+        # タブ区切りテキストを作成
+        tsv_text = "\n".join(["\t".join(row) for row in data])
+
+        # クリップボードに設定
+        QApplication.clipboard().setText(tsv_text)
+
+    def paste_selection(self):
+        """
+        クリップボードのタブ区切りテキストを、選択されたセルを起点として貼り付ける。
+        """
+        clipboard_text = QApplication.clipboard().text()
+        if not clipboard_text:
+            return
+            
+        start_index = self.table_view.currentIndex()
+        if not start_index.isValid():
+            return # 貼り付け開始位置がなければ何もしない
+
+        start_row = start_index.row()
+        start_col = start_index.column()
+
+        # クリップボードのテキストを行と列に分割
+        lines = clipboard_text.strip('\n').split('\n')
+        rows_data = [line.split('\t') for line in lines]
+        
+        # 貼り付け処理
+        for r_offset, row_data in enumerate(rows_data):
+            for c_offset, cell_value in enumerate(row_data):
+                target_row = start_row + r_offset
+                target_col = start_col + c_offset
+                
+                # モデルの範囲内かチェック
+                if (target_row < self.model.rowCount() and 
+                    target_col < self.model.columnCount()):
+                    
+                    target_index = self.model.index(target_row, target_col)
+                    self.model.setData(target_index, cell_value, Qt.ItemDataRole.EditRole)
+
 
     def show_table_context_menu(self, position):
         if not hasattr(self, 'model'): return
         menu = QMenu()
+        copy_action = QAction("Copy", self)
+        copy_action.triggered.connect(self.copy_selection)
+        paste_action = QAction("Paste", self)
+        paste_action.triggered.connect(self.paste_selection)
         create_table_action = QAction("Create New Table from Selection", self)
         create_table_action.triggered.connect(self.action_handler.create_table_from_selection)
         insert_row_action = QAction("Insert Row Above", self); insert_row_action.triggered.connect(self.insert_row)
@@ -399,6 +476,9 @@ class MainWindow(QMainWindow):
         if len(self.table_view.selectionModel().selectedIndexes()) < 2:
             fill_down_action.setEnabled(False)
 
+        menu.addAction(copy_action)
+        menu.addAction(paste_action)
+        menu.addSeparator()
         menu.addAction(create_table_action)
         menu.addSeparator()
         menu.addAction(fill_down_action)
