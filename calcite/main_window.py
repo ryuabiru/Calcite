@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QMenu, QLineEdit, QApplication
 )
 from PySide6.QtGui import QAction, QActionGroup
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEvent
 
 # --- Local Imports ---
 from .graph_widget import GraphWidget
@@ -45,6 +45,8 @@ class MainWindow(QMainWindow):
         self._create_menu_bar()
         self._create_toolbar()
         self._connect_signals()
+        
+        self.table_view.installEventFilter(self)
         
         if data is not None:
             self.load_dataframe(data)
@@ -331,6 +333,53 @@ class MainWindow(QMainWindow):
             self.header_editor.close(); self.header_editor = None
 
 
+    def eventFilter(self, source, event):
+        """
+        table_viewのイベントを監視し、特定のキー入力を処理する。
+        """
+        # イベントがキープレスで、発生源がテーブルビューの場合のみ処理
+        if event.type() == QEvent.Type.KeyPress and source is self.table_view:
+            # 押されたキーがEnter/Returnキーかチェック
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                
+                # 現在選択されているセルのインデックスを取得
+                current_index = self.table_view.currentIndex()
+                if current_index.isValid():
+                    # 1行下のインデックスを作成
+                    next_index = current_index.model().index(current_index.row() + 1, current_index.column())
+                    
+                    # 次の行が存在すれば、そこにカーソルを移動
+                    if next_index.isValid():
+                        self.table_view.setCurrentIndex(next_index)
+                        # イベントが処理されたことを示す
+                        return True
+
+        # 上記以外のイベントは、通常の処理に任せる
+        return super().eventFilter(source, event)
+
+    def fill_down(self):
+        """
+        選択されたセルのうち、一番上のセルの値で他の選択セルを埋める。
+        """
+        if not hasattr(self, 'model'): return
+        
+        selection_model = self.table_view.selectionModel()
+        selected_indexes = selection_model.selectedIndexes()
+        
+        if len(selected_indexes) < 2: return # 2つ以上選択されていないと意味がない
+        
+        # 選択範囲を(行, 列)のタプルのリストに変換し、行番号でソート
+        sorted_indexes = sorted(selected_indexes, key=lambda index: (index.row(), index.column()))
+        
+        # フィル元の値を取得 (ソート後、最初のインデックスが一番上になる)
+        source_index = sorted_indexes[0]
+        fill_value = self.model.data(source_index, Qt.ItemDataRole.DisplayRole)
+        
+        # フィル元以外のインデックスをループして、値をセット
+        for target_index in sorted_indexes[1:]:
+            self.model.setData(target_index, fill_value, Qt.ItemDataRole.EditRole)
+
+
     def show_table_context_menu(self, position):
         if not hasattr(self, 'model'): return
         menu = QMenu()
@@ -344,7 +393,15 @@ class MainWindow(QMainWindow):
         insert_col_right_action.triggered.connect(lambda: self.insert_col(left=False))
         remove_col_action = QAction("Remove Selected Column(s)", self); remove_col_action.triggered.connect(self.remove_col)
         
+        fill_down_action = QAction("Fill Down", self)
+        fill_down_action.triggered.connect(self.fill_down)
+        # 選択されているセルが2つ未満の場合は無効化する
+        if len(self.table_view.selectionModel().selectedIndexes()) < 2:
+            fill_down_action.setEnabled(False)
+
         menu.addAction(create_table_action)
+        menu.addSeparator()
+        menu.addAction(fill_down_action)
         menu.addSeparator()
         menu.addAction(insert_row_action); menu.addAction(remove_row_action)
         menu.addSeparator()
