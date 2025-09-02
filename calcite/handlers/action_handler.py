@@ -56,6 +56,16 @@ class ActionHandler:
         if file_path:
             try:
                 df = pd.read_csv(file_path)
+                
+                # メモリ削減のためにcategory型に変換
+                for col in df.select_dtypes(include=['object']).columns:
+                    num_unique_values = df[col].nunique()
+                    num_total_values = len(df[col])
+                    # ユニークな値の割合が50%未満ならcategory型に変換
+                    if num_unique_values / num_total_values < 0.5:
+                        print(f"Converting column '{col}' to 'category' type.")
+                        df[col] = df[col].astype('category')
+                
                 self.main.model = PandasModel(df)
                 self.main.table_view.setModel(self.main.model)
                 self.main.properties_panel.set_columns(df.columns)

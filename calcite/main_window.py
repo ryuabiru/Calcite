@@ -118,7 +118,7 @@ class MainWindow(QMainWindow):
         self.table_view.horizontalHeader().sectionClicked.connect(self.sort_table)
         self.table_view.horizontalHeader().sectionDoubleClicked.connect(self.edit_header)
         
-        self.properties_panel.propertiesChanged.connect(self.graph_manager.update_graph)
+        # self.properties_panel.propertiesChanged.connect(self.graph_manager.update_graph)
         self.properties_panel.graphUpdateRequest.connect(self.graph_manager.update_graph)
         self.properties_panel.subgroupColumnChanged.connect(self.on_subgroup_column_changed)
 
@@ -284,10 +284,6 @@ class MainWindow(QMainWindow):
 
 
     def set_graph_type(self, graph_type):
-        try:
-            self.properties_panel.propertiesChanged.disconnect(self.graph_manager.update_graph)
-        except (RuntimeError, TypeError):
-            pass
         
         previous_graph_type = self.current_graph_type
         self.current_graph_type = graph_type
@@ -298,7 +294,7 @@ class MainWindow(QMainWindow):
         current_legend_setting = self.properties_panel.text_tab.legend_pos_combo.currentData()
         
         if graph_type == 'summary_scatter' and current_legend_setting == 'best':
-            hide_index = self.properties_panel.text_tab.legend_pos_combo.fineData('hide')
+            hide_index = self.properties_panel.text_tab.legend_pos_combo.findData('hide')
             if hide_index != -1:
                 self.properties_panel.text_tab.legend_pos_combo.setCurrentIndex(hide_index)
         
@@ -306,8 +302,6 @@ class MainWindow(QMainWindow):
             best_index = self.properties_panel.text_tab.legend_pos_combo.findData('best')
             if best_index != -1:
                 self.properties_panel.text_tab.legend_pos_combo.setCurrentIndex(best_index)
-        
-        self.properties_panel.propertiesChanged.connect(self.graph_manager.update_graph)
         
         self.graph_manager.update_graph()
 

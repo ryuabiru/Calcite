@@ -26,7 +26,7 @@ class GraphManager:
             self.clear_canvas()
             return
         
-        df = self.main.model._data.copy()
+        df = self.main.model._data
         properties = self.main.properties_panel.get_properties()
         data_settings = self.main.properties_panel.data_tab.get_current_settings()
         
