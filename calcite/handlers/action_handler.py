@@ -1,6 +1,9 @@
 # handlers/action_handler.py
 
 import pandas as pd
+import json
+import zipfile
+import tempfile
 import numpy as np
 import io
 import os
@@ -21,6 +24,23 @@ from ..dialogs.advanced_filter_dialog import AdvancedFilterDialog
 from ..dialogs.license_dialog import LicenseDialog
 
 from .statistical_handler import StatisticalHandler
+
+class NumpyArrayEncoder(json.JSONEncoder):
+    """
+    NumPyのndarrayや数値型を、JSONが理解できるPythonの基本型に変換する。
+    """
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist() # ndarray -> list
+        if isinstance(obj, pd.Series):
+            return obj.tolist()
+        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
+                            np.int16, np.int32, np.int64, np.uint8,
+                            np.uint16, np.uint32, np.uint64)):
+            return int(obj)     # numpy int -> python int
+        if isinstance(obj, (np.float64, np.float16, np.float32)):
+            return float(obj)  # numpy float -> python float
+        return json.JSONEncoder.default(self, obj)
 
 class ActionHandler:
     
@@ -100,6 +120,135 @@ class ActionHandler:
             
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to paste from clipboard: {e}")
+
+
+    def save_project(self):
+        """現在の作業状態を .calcite プロジェクトファイルとして保存する"""
+        if not hasattr(self.main, 'model') or self.main.model is None:
+            QMessageBox.warning(self.main, "Warning", "No data to save.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self.main, "Save Calcite Project", "", "Calcite Project Files (*.calcite)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            # 一時的な作業ディレクトリを作成
+            with tempfile.TemporaryDirectory() as temp_dir:
+                print(f"DEBUG: Created temporary directory: {temp_dir}")
+                
+                # 1. データをCSVとして保存
+                csv_path = os.path.join(temp_dir, 'data.csv')
+                self.main.model._data.to_csv(csv_path, index=False)
+                print("DEBUG: Saved data.csv")
+
+                # 2. グラフ設定をJSONとして保存
+                settings_path = os.path.join(temp_dir, 'settings.json')
+                settings = self.main.properties_panel.get_properties()
+                with open(settings_path, 'w') as f:
+                    json.dump(settings, f, indent=4)
+                print("DEBUG: Saved settings.json")
+
+                # 3. 解析結果をJSONとして保存
+                analysis_path = os.path.join(temp_dir, 'analysis.json')
+                analysis_data = {
+                    'statistical_annotations': self.main.statistical_annotations,
+                    'paired_annotations': self.main.paired_annotations,
+                    'regression_line_params': self.main.regression_line_params,
+                    'fit_params': self.main.fit_params,
+                }
+                with open(analysis_path, 'w') as f:
+                    json.dump(analysis_data, f, indent=4, cls=NumpyArrayEncoder)
+                print("DEBUG: Saved analysis.json")
+
+                # 4. 一時ディレクトリの中身をzipファイルに圧縮
+                with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    for root, _, files in os.walk(temp_dir):
+                        for file in files:
+                            full_path = os.path.join(root, file)
+                            arcname = os.path.relpath(full_path, temp_dir)
+                            zf.write(full_path, arcname)
+                print(f"DEBUG: Project successfully zipped to {file_path}")
+
+            QMessageBox.information(self.main, "Success", f"Project saved to:\n{file_path}")
+            self.main.statusBar().showMessage(f"Project saved: {os.path.basename(file_path)}")
+
+        except Exception as e:
+            QMessageBox.critical(self.main, "Error", f"Failed to save project: {e}")
+            traceback.print_exc()
+
+
+    def open_project(self):
+        """ .calcite プロジェクトファイルを読み込み、作業状態を復元する"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self.main, "Open Calcite Project", "", "Calcite Project Files (*.calcite)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # zipファイルを一時ディレクトリに展開
+                with zipfile.ZipFile(file_path, 'r') as zf:
+                    zf.extractall(temp_dir)
+                print(f"DEBUG: Project extracted to {temp_dir}")
+
+                # 1. データをCSVから読み込む
+                csv_path = os.path.join(temp_dir, 'data.csv')
+                if os.path.exists(csv_path):
+                    df = pd.read_csv(csv_path)
+                    self.main.load_dataframe(df) # MainWindowの既存のメソッドを再利用
+                    print("DEBUG: Loaded data.csv")
+
+                # 2. グラフ設定をJSONから読み込む (TODO: 復元ロジック)
+                settings_path = os.path.join(temp_dir, 'settings.json')
+                if os.path.exists(settings_path):
+                    with open(settings_path, 'r') as f:
+                        settings = json.load(f)
+                    self.main.properties_panel.set_properties(settings)
+                    print("DEBUG: Loaded and applied settings.json to UI.")
+
+                # 3. 解析結果をJSONから読み込む
+                analysis_path = os.path.join(temp_dir, 'analysis.json')
+                if os.path.exists(analysis_path):
+                    with open(analysis_path, 'r') as f:
+                        analysis_data = json.load(f)
+                    self.main.statistical_annotations = analysis_data.get('statistical_annotations', [])
+                    self.main.paired_annotations = analysis_data.get('paired_annotations', [])
+
+                    reg_params = analysis_data.get('regression_line_params')
+                    if reg_params:
+                        if 'x_line' in reg_params: # 単一フィットの場合
+                            reg_params['x_line'] = np.array(reg_params['x_line'])
+                            reg_params['y_line'] = np.array(reg_params['y_line'])
+                        else: # サブグループごとのフィットの場合
+                            for group in reg_params:
+                                reg_params[group]['x_line'] = np.array(reg_params[group]['x_line'])
+                                reg_params[group]['y_line'] = np.array(reg_params[group]['y_line'])
+                    self.main.regression_line_params = reg_params
+
+                    # fit_params の復元
+                    fit_params = analysis_data.get('fit_params')
+                    if fit_params:
+                        if 'params' in fit_params: # 単一フィットの場合
+                            fit_params['params'] = np.array(fit_params['params'])
+                            fit_params['log_x_data'] = np.array(fit_params['log_x_data'])
+                        else: # サブグループごとのフィットの場合
+                            for group in fit_params:
+                                fit_params[group]['params'] = np.array(fit_params[group]['params'])
+                                fit_params[group]['log_x_data'] = np.array(fit_params[group]['log_x_data'])
+                    self.main.fit_params = fit_params
+
+            self.main.graph_manager.update_graph()
+            self.main.statusBar().showMessage(f"Project opened: {os.path.basename(file_path)}")
+
+        except Exception as e:
+            QMessageBox.critical(self.main, "Error", f"Failed to open project: {e}")
+            traceback.print_exc()
 
 
     def show_calculate_dialog(self):

@@ -25,9 +25,7 @@ class PropertiesWidget(QWidget):
 
         tab_widget.addTab(self.data_tab, "データ")
         tab_widget.addTab(self.format_tab, "フォーマット")
-        # ▼▼▼ タブ名を変更 ▼▼▼
         tab_widget.addTab(self.text_tab, "テキストと凡例")
-        # ▲▲▲ ここまで ▲▲▲
         tab_widget.addTab(self.axes_tab, "軸")
 
         update_button = QPushButton("Update Graph")
@@ -46,10 +44,20 @@ class PropertiesWidget(QWidget):
     def get_properties(self):
         """全てのタブから設定値を取得し、一つの辞書に統合して返す"""
         props = {}
+        props.update(self.data_tab.get_current_settings())
         props.update(self.format_tab.get_properties())
         props.update(self.text_tab.get_properties())
         props.update(self.axes_tab.get_properties())
         return props
+    
+    def set_properties(self, props):
+        """全てのタブに設定値を渡し、UIを復元する"""
+        print("DEBUG: Setting properties for all tabs...")
+        self.data_tab.set_settings(props)
+        self.format_tab.set_properties(props)
+        self.text_tab.set_properties(props) # 追加したメソッドを呼び出す
+        self.axes_tab.set_properties(props) # 追加したメソッドを呼び出す
+        print("DEBUG: All tab properties set.")
 
     def set_columns(self, columns):
         """DataTabに列名リストを渡す"""

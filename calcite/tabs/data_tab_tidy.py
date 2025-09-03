@@ -78,3 +78,11 @@ class TidyDataTab(QWidget):
             'subgroup_col': self.subgroup_combo.currentText(),
             'facet_col': self.facet_col_combo.currentText(),
         }
+        
+    def set_settings(self, settings):
+        """保存された設定からコンボボックスの状態を復元する"""
+        print("DEBUG: Restoring TidyDataTab settings...")
+        self.x_axis_combo.setCurrentText(settings.get('x_col', ''))
+        self.y_axis_combo.setCurrentText(settings.get('y_col', ''))
+        self.subgroup_combo.setCurrentText(settings.get('subgroup_col', ''))
+        self.facet_col_combo.setCurrentText(settings.get('facet_col', ''))

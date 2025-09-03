@@ -64,3 +64,11 @@ class DataTab(QWidget):
         if hasattr(current_widget, 'get_settings'):
             return current_widget.get_settings()
         return {}
+    
+    def set_settings(self, settings):
+        """現在表示されているタブの設定値を復元する"""
+        # stacked_widgetの現在の子ウィジェット（TidyDataTabなど）の
+        # set_settingsメソッドを呼び出す
+        current_widget = self.stacked_widget.currentWidget()
+        if hasattr(current_widget, 'set_settings'):
+            current_widget.set_settings(settings)

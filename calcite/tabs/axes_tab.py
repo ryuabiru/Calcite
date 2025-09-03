@@ -92,3 +92,24 @@ class AxesTab(QWidget):
             'tick_length': self.tick_length_spin.value(),
             'tick_direction': self.tick_direction_combo.currentData(),
         }
+
+
+    def set_properties(self, props):
+        print("DEBUG: Setting properties for AxesTab...")
+        self.xmin_edit.setText(props.get('xmin', ''))
+        self.xmax_edit.setText(props.get('xmax', ''))
+        self.ymin_edit.setText(props.get('ymin', ''))
+        self.ymax_edit.setText(props.get('ymax', ''))
+        
+        self.grid_check.setChecked(props.get('show_grid', False))
+        self.x_log_scale_check.setChecked(props.get('x_log_scale', False))
+        self.y_log_scale_check.setChecked(props.get('y_log_scale', False))
+        
+        self.axis_linewidth_spin.setValue(props.get('axis_linewidth', 1.0))
+        self.tick_length_spin.setValue(props.get('tick_length', 4.0))
+        
+        tick_dir_data = props.get('tick_direction', 'out')
+        index = self.tick_direction_combo.findData(tick_dir_data)
+        if index != -1:
+            self.tick_direction_combo.setCurrentIndex(index)
+        print("DEBUG: AxesTab properties set.")

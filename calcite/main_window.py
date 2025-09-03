@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QMenu, QLineEdit, QApplication
 )
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import Qt, QEvent, QSettings
 
 # --- Local Imports ---
 from .graph_widget import GraphWidget
@@ -27,7 +27,6 @@ class MainWindow(QMainWindow):
     def __init__(self, data=None):
         super().__init__()
         self.setWindowTitle("Calcite")
-        self.setGeometry(100, 100, 1000, 650)
         
         self.model = None
         self.current_graph_type = 'scatter'
@@ -51,6 +50,25 @@ class MainWindow(QMainWindow):
         if data is not None:
             self.load_dataframe(data)
 
+        self.restore_settings()
+
+    def restore_settings(self):
+        """起動時にウィンドウのサイズと位置を復元する"""
+        settings = QSettings()
+        # "geometry" というキーで保存された情報を読み込む
+        geometry = settings.value("geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+        else:
+            # 設定がなければデフォルトのサイズで表示
+            self.setGeometry(100, 100, 1000, 650)
+
+    def closeEvent(self, event):
+        """ウィンドウが閉じられるときに呼び出され、設定を保存する"""
+        settings = QSettings()
+        # "geometry" というキーで現在のウィンドウ情報を保存
+        settings.setValue("geometry", self.saveGeometry())
+        super().closeEvent(event)
 
     def load_dataframe(self, df):
         """
@@ -136,41 +154,63 @@ class MainWindow(QMainWindow):
         
         # File Menu
         file_menu = menu_bar.addMenu("File")
+        
+        open_project_action = QAction("Open Project...", self)
+        open_project_action.triggered.connect(self.action_handler.open_project)
+        file_menu.addAction(open_project_action)
+        
+        save_project_action = QAction("Save Project As...", self)
+        save_project_action.triggered.connect(self.action_handler.save_project)
+        file_menu.addAction(save_project_action)
+        
+        file_menu.addSeparator()
+        
         open_action = QAction("Open CSV...", self)
         open_action.triggered.connect(self.action_handler.open_csv_file)
         file_menu.addAction(open_action)
+        
         save_table_action = QAction("Save Table As...", self)
         save_table_action.triggered.connect(self.action_handler.save_table_as_csv)
         file_menu.addAction(save_table_action)
+        
         file_menu.addSeparator()
+        
         save_graph_action = QAction("Save Graph As...", self)
         save_graph_action.triggered.connect(self.graph_manager.save_graph)
         file_menu.addAction(save_graph_action)
         
         # Edit Menu
         edit_menu = menu_bar.addMenu("Edit")
+        
         paste_action = QAction("Paste from Clipboard", self)
         paste_action.triggered.connect(self.action_handler.paste_from_clipboard)
         edit_menu.addAction(paste_action)
+        
         edit_menu.addSeparator()
+        
         clear_graph_action = QAction("Clear Graph", self)
         clear_graph_action.triggered.connect(self.graph_manager.clear_graph)
         edit_menu.addAction(clear_graph_action)
+        
         clear_annotations_action = QAction("Clear Annotations", self)
         clear_annotations_action.triggered.connect(self.graph_manager.clear_annotations)
         edit_menu.addAction(clear_annotations_action)
         
         # Data Menu
         data_menu = menu_bar.addMenu("Data")
+        
         restructure_action = QAction("Restructure (Wide to Long)...", self)
         restructure_action.triggered.connect(self.action_handler.show_restructure_dialog)
         data_menu.addAction(restructure_action)
+        
         pivot_action = QAction("Pivot (Long to Wide)...", self)
         pivot_action.triggered.connect(self.action_handler.show_pivot_dialog)
         data_menu.addAction(pivot_action)
+        
         filter_action = QAction("Filter...", self)
         filter_action.triggered.connect(self.action_handler.show_advanced_filter_dialog)
         data_menu.addAction(filter_action)
+        
         calculate_action = QAction("Calculate New Column...", self)
         calculate_action.triggered.connect(self.action_handler.show_calculate_dialog)
         data_menu.addAction(calculate_action)

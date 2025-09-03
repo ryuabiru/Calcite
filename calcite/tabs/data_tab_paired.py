@@ -48,3 +48,9 @@ class PairedDataTab(QWidget):
             'col1': self.col1_combo.currentText(),
             'col2': self.col2_combo.currentText(),
         }
+        
+    def set_settings(self, settings):
+        """保存された設定からコンボボックスの状態を復元する"""
+        print("DEBUG: Restoring PairedDataTab settings...")
+        self.col1_combo.setCurrentText(settings.get('col1', ''))
+        self.col2_combo.setCurrentText(settings.get('col2', ''))

@@ -14,6 +14,9 @@ def plot(data=None):
     if not QApplication.instance():
         QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     
+    QCoreApplication.setOrganizationName("CalciteApp") # 任意の組織名
+    QCoreApplication.setApplicationName("Calcite")
+    
     app = QApplication.instance() or QApplication(sys.argv)
     
     sns.set_theme(style="ticks")

@@ -116,6 +116,29 @@ class TextTab(QWidget):
             'legend_alpha': self.legend_alpha_spin.value(),
         }
 
+    def set_properties(self, props):
+        print("DEBUG: Setting properties for TextTab...")
+        self.title_edit.setText(props.get('title', ''))
+        self.xaxis_edit.setText(props.get('xlabel', ''))
+        self.yaxis_edit.setText(props.get('ylabel', ''))
+        self.paired_label1_edit.setText(props.get('paired_label1', ''))
+        self.paired_label2_edit.setText(props.get('paired_label2', ''))
+        
+        self.title_fontsize_spin.setValue(props.get('title_fontsize', 16))
+        self.xlabel_fontsize_spin.setValue(props.get('xlabel_fontsize', 12))
+        self.ylabel_fontsize_spin.setValue(props.get('ylabel_fontsize', 12))
+        self.ticks_fontsize_spin.setValue(props.get('ticks_fontsize', 10))
+        
+        # 凡例 (ComboBoxは currentData から index を見つけて設定)
+        legend_pos_data = props.get('legend_position', 'best')
+        index = self.legend_pos_combo.findData(legend_pos_data)
+        if index != -1:
+            self.legend_pos_combo.setCurrentIndex(index)
+            
+        self.legend_title_edit.setText(props.get('legend_title', ''))
+        self.legend_alpha_spin.setValue(props.get('legend_alpha', 1.0))
+        print("DEBUG: TextTab properties set.")
+
     def update_paired_labels_visibility(self, visible):
         """Show or hide the paired scatter labels"""
         for widget in self.paired_widgets:

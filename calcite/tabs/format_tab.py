@@ -232,6 +232,46 @@ class FormatTab(QWidget):
             'subgroup_colors': self.subgroup_colors,
         }
 
+    def set_properties(self, props):
+        print("DEBUG: Setting properties for FormatTab...")
+        self.spines_check.setChecked(props.get('hide_top_right_spines', True))
+        self.scatter_overlay_check.setChecked(props.get('scatter_overlay', False))
+
+        # Marker properties
+        self.marker_style_combo.setCurrentText(props.get('marker_style', 'o'))
+        self.marker_edgewidth_spin.setValue(props.get('marker_edgewidth', 1.0))
+        self.marker_size_spin.setValue(props.get('marker_size', 5.0))
+        self.marker_alpha_spin.setValue(props.get('marker_alpha', 1.0))
+        
+        # Line properties
+        self.linestyle_combo.setCurrentText(props.get('linestyle', '-'))
+        self.linewidth_spin.setValue(props.get('linewidth', 1.5))
+        
+        # Bar properties
+        self.bar_edgewidth_spin.setValue(props.get('bar_edgewidth', 1.0))
+        self.capsize_spin.setValue(props.get('capsize', 4))
+        
+        # Error bar type
+        self.error_bar_combo.setCurrentText(props.get('error_bar_type', 'sem'))
+        
+        # Colors (Note: ボタンの色の復元は少し工夫が必要)
+        self.current_marker_edgecolor = props.get('marker_edgecolor', 'black')
+        self.marker_edgecolor_button.setStyleSheet(f"background-color: {self.current_marker_edgecolor};")
+        
+        self.current_bar_edgecolor = props.get('bar_edgecolor', 'black')
+        self.bar_edgecolor_button.setStyleSheet(f"background-color: {self.current_bar_edgecolor};")
+        
+        self.current_regression_color = props.get('regression_color', 'red')
+        self.regression_color_button.setStyleSheet(f"background-color: {self.current_regression_color};")
+        
+        self.current_color = props.get('single_color')
+        if self.current_color:
+            self.single_color_button.setStyleSheet(f"background-color: {self.current_color};")
+
+        # サブグループの色は update_subgroup_color_ui 経由で復元される想定
+        self.subgroup_colors = props.get('subgroup_colors', {})
+        print("DEBUG: FormatTab properties set.")
+
     def open_regression_color_dialog(self):
         color = QColorDialog.getColor()
         if color.isValid():
