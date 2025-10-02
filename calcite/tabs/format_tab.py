@@ -114,12 +114,12 @@ class FormatTab(QWidget):
         error_bar_layout = QFormLayout(error_bar_sub_group)
 
         self.error_bar_combo = NoScrollComboBox()
-        self.error_bar_combo.addItem("SEM (Standard Error)", "sem")
         self.error_bar_combo.addItem("SD (Standard Deviation)", "std")
+        self.error_bar_combo.addItem("SEM (Standard Error)", "sem")
         error_bar_layout.addRow(QLabel("Type:"), self.error_bar_combo)
         
         self.capsize_spin = NoScrollSpinBox()
-        self.capsize_spin.setRange(0, 20); self.capsize_spin.setValue(4)
+        self.capsize_spin.setRange(0, 20); self.capsize_spin.setValue(0)
         error_bar_layout.addRow(QLabel("Cap Size:"), self.capsize_spin)
 
         elements_layout.addWidget(error_bar_sub_group)
@@ -249,10 +249,10 @@ class FormatTab(QWidget):
         
         # Bar properties
         self.bar_edgewidth_spin.setValue(props.get('bar_edgewidth', 1.0))
-        self.capsize_spin.setValue(props.get('capsize', 4))
+        self.capsize_spin.setValue(props.get('capsize', 0))
         
         # Error bar type
-        self.error_bar_combo.setCurrentText(props.get('error_bar_type', 'sem'))
+        self.error_bar_combo.setCurrentText(props.get('error_bar_type', 'std'))
         
         # Colors (Note: ボタンの色の復元は少し工夫が必要)
         self.current_marker_edgecolor = props.get('marker_edgecolor', 'black')

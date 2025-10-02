@@ -136,7 +136,7 @@ class GraphManager:
                     group_cols = [current_x]
                     if visual_hue_col and visual_hue_col != current_x: group_cols.append(visual_hue_col)
                     
-                    error_agg_func = properties.get('error_bar_type', 'sem') # デフォルトはsem
+                    error_agg_func = properties.get('error_bar_type', 'std') # デフォルトはstd
                     
                     summary_stats = original_subset_df.groupby(group_cols, as_index=False).agg(
                         mean_y=(current_y, 'mean'),
@@ -158,9 +158,9 @@ class GraphManager:
                     else:
                         single_color = properties.get('single_color'); 
                         if single_color: base_kwargs['color'] = single_color
-                    if base_kind == 'bar': base_kwargs.update({'edgecolor': properties.get('bar_edgecolor', 'black'), 'linewidth': properties.get('bar_edgewidth', 1.0), 'capsize': properties.get('capsize', 4) * 0.01})
+                    if base_kind == 'bar': base_kwargs.update({'edgecolor': properties.get('bar_edgecolor', 'black'), 'linewidth': properties.get('bar_edgewidth', 1.0), 'error_kw': {'capsize': properties.get('capsize', 0)}})
                     if base_kind in ['pointplot', 'lineplot']: base_kwargs.update({'linestyle': properties.get('linestyle', '-'), 'linewidth': properties.get('linewidth', 1.5)})
-                    if base_kind == 'pointplot': base_kwargs.update({'capsize': properties.get('capsize', 4) * 0.02})
+                    if base_kind == 'pointplot': base_kwargs.update({'capsize': properties.get('capsize', 0) * 0.02})
                     
                     if base_kind == 'lineplot' and 'order' in base_kwargs:
                         del base_kwargs['order']
@@ -186,9 +186,9 @@ class GraphManager:
                     if base_kind == 'summary_scatter':
                         if visual_hue_col:
                             for hue_val, grp in plot_df.groupby(visual_hue_col):
-                                ax.errorbar(x=grp[current_x], y=grp[current_y], yerr=grp['err_y'], fmt='none', capsize=properties.get('capsize', 4), ecolor=subgroup_palette.get(str(hue_val), 'black'))
+                                ax.errorbar(x=grp[current_x], y=grp[current_y], yerr=grp['err_y'], fmt='none', capsize=properties.get('capsize', 0), ecolor=subgroup_palette.get(str(hue_val), 'black'))
                         else:
-                            ax.errorbar(x=plot_df[current_x], y=plot_df[current_y], yerr=plot_df['err_y'], fmt='none', capsize=properties.get('capsize', 4), ecolor=properties.get('marker_edgecolor', 'black'))
+                            ax.errorbar(x=plot_df[current_x], y=plot_df[current_y], yerr=plot_df['err_y'], fmt='none', capsize=properties.get('capsize', 0), ecolor=properties.get('marker_edgecolor', 'black'))
                 if properties.get('scatter_overlay') and (base_kind in base_plot_map):
                     if not original_subset_df.empty:
                         
@@ -270,7 +270,7 @@ class GraphManager:
             if is_faceted:
                 shared_xlabel = properties.get('xlabel') or current_x;
                 for ax in axes.flat: ax.set_xlabel('')
-                fig.supxlabel(shared_xlabel, fontsize=properties.get('xlabel_fontsize', 12))
+                fig.supxlabel(shared_xlabel, fontsize=properties.get('xlabel_fontsize', 15))
 
             if base_kind in ['scatter', 'summary_scatter'] and not is_faceted:
                 ax = axes[0, 0]
@@ -402,14 +402,14 @@ class GraphManager:
         for ax in fig.axes:
             # ファセットグラフではない場合にのみ、個別のX軸ラベルを設定する
             if not is_faceted:
-                ax.set_xlabel(properties.get('xlabel') or ax.get_xlabel(), fontsize=properties.get('xlabel_fontsize', 12))
+                ax.set_xlabel(properties.get('xlabel') or ax.get_xlabel(), fontsize=properties.get('xlabel_fontsize', 15))
             
             # Y軸ラベルは常に個別で設定
-            ax.set_ylabel(properties.get('ylabel') or ax.get_ylabel(), fontsize=properties.get('ylabel_fontsize', 12))
+            ax.set_ylabel(properties.get('ylabel') or ax.get_ylabel(), fontsize=properties.get('ylabel_fontsize', 15))
             
             ax.tick_params(
                 axis='both', which='major', 
-                labelsize=properties.get('ticks_fontsize', 10),
+                labelsize=properties.get('ticks_fontsize', 12),
                 width=axis_linewidth,
                 length=tick_length,
                 direction=tick_direction
