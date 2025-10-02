@@ -52,11 +52,11 @@ class TextTab(QWidget):
         self.title_fontsize_spin = NoScrollSpinBox()
         self.title_fontsize_spin.setRange(6, 48); self.title_fontsize_spin.setValue(16)
         self.xlabel_fontsize_spin = NoScrollSpinBox()
-        self.xlabel_fontsize_spin.setRange(6, 48); self.xlabel_fontsize_spin.setValue(12)
+        self.xlabel_fontsize_spin.setRange(6, 48); self.xlabel_fontsize_spin.setValue(15)
         self.ylabel_fontsize_spin = NoScrollSpinBox()
-        self.ylabel_fontsize_spin.setRange(6, 48); self.ylabel_fontsize_spin.setValue(12)
+        self.ylabel_fontsize_spin.setRange(6, 48); self.ylabel_fontsize_spin.setValue(15)
         self.ticks_fontsize_spin = NoScrollSpinBox()
-        self.ticks_fontsize_spin.setRange(6, 48); self.ticks_fontsize_spin.setValue(10)
+        self.ticks_fontsize_spin.setRange(6, 48); self.ticks_fontsize_spin.setValue(12)
         
         font_layout.addRow(QLabel("Title:"), self.title_fontsize_spin)
         font_layout.addRow(QLabel("X-Label:"), self.xlabel_fontsize_spin)
@@ -125,9 +125,9 @@ class TextTab(QWidget):
         self.paired_label2_edit.setText(props.get('paired_label2', ''))
         
         self.title_fontsize_spin.setValue(props.get('title_fontsize', 16))
-        self.xlabel_fontsize_spin.setValue(props.get('xlabel_fontsize', 12))
-        self.ylabel_fontsize_spin.setValue(props.get('ylabel_fontsize', 12))
-        self.ticks_fontsize_spin.setValue(props.get('ticks_fontsize', 10))
+        self.xlabel_fontsize_spin.setValue(props.get('xlabel_fontsize', 15))
+        self.ylabel_fontsize_spin.setValue(props.get('ylabel_fontsize', 15))
+        self.ticks_fontsize_spin.setValue(props.get('ticks_fontsize', 12))
         
         # 凡例 (ComboBoxは currentData から index を見つけて設定)
         legend_pos_data = props.get('legend_position', 'best')
