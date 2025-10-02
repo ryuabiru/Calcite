@@ -117,7 +117,7 @@ class GraphManager:
 
             fig, axes = plt.subplots(
                 n_rows, n_cols, figsize=(n_cols * 5, n_rows * 4),
-                sharex=False, sharey=True, squeeze=False
+                sharex=False, sharey=True, squeeze=False, layout='constrained'
             )
             all_relevant_annotations = [ann for ann in self.main.statistical_annotations if ann.get('value_col') == current_y]
 
@@ -158,7 +158,7 @@ class GraphManager:
                     else:
                         single_color = properties.get('single_color'); 
                         if single_color: base_kwargs['color'] = single_color
-                    if base_kind == 'bar': base_kwargs.update({'edgecolor': properties.get('bar_edgecolor', 'black'), 'linewidth': properties.get('bar_edgewidth', 1.0), 'error_kw': {'capsize': properties.get('capsize', 0)}})
+                    if base_kind == 'bar': base_kwargs.update({'edgecolor': properties.get('bar_edgecolor', 'black'), 'linewidth': properties.get('bar_edgewidth', 1.0), 'capsize': properties.get('capsize', 0) * 0.01})
                     if base_kind in ['pointplot', 'lineplot']: base_kwargs.update({'linestyle': properties.get('linestyle', '-'), 'linewidth': properties.get('linewidth', 1.5)})
                     if base_kind == 'pointplot': base_kwargs.update({'capsize': properties.get('capsize', 0) * 0.02})
                     
@@ -210,7 +210,7 @@ class GraphManager:
                         )
                 
                 title_parts = []; 
-                if facet_col: title_parts.append(f"{facet_col} = {col_cat}")
+                if facet_col: title_parts.append(f"{col_cat}")
                 ax.set_title(" | ".join(title_parts))
                 if j > 0:
                     bottom, top = ax.get_ylim(); extension = (top - bottom) * 0.10; ax.spines['left'].set_bounds(bottom - extension, top)
@@ -333,7 +333,7 @@ class GraphManager:
         col1 = data_settings.get('col1')
         col2 = data_settings.get('col2')
         if not (col1 and col2 and col1 != col2): return None
-        fig, ax = plt.subplots(tight_layout=True)
+        fig, ax = plt.subplots(layout='constrained')
         try:
             plot_df_long = self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
             
@@ -424,7 +424,7 @@ class GraphManager:
             if properties.get('x_log_scale'): ax.set_xscale('log')
             if properties.get('y_log_scale'): ax.set_yscale('log')
             
-        fig.tight_layout(pad=1.5)
+
 
 
     def clear_canvas(self):
@@ -534,7 +534,7 @@ class GraphManager:
         if not value_col: return None
         hue_col = data_settings.get('subgroup_col')
         if not hue_col: hue_col = None
-        fig, ax = plt.subplots(tight_layout=True)
+        fig, ax = plt.subplots(layout='constrained')
         plot_kwargs = {}
         
         if hue_col:
