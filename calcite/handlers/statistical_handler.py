@@ -70,7 +70,7 @@ class StatisticalHandler:
             return
         
         df = self.main.model._data.copy()
-        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        data_settings = self.main.data_widget.get_current_settings()
         value_col = data_settings.get('y_col')
         group_col = data_settings.get('x_col')
         
@@ -197,7 +197,7 @@ class StatisticalHandler:
             return
         
         df = self.main.model._data.copy()
-        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        data_settings = self.main.data_widget.get_current_settings()
         value_col = data_settings.get('y_col')
         group_col = data_settings.get('x_col')
         
@@ -323,7 +323,7 @@ class StatisticalHandler:
                 return
             
             df = self.main.model._data.copy()
-            data_settings = self.main.properties_panel.data_tab.get_current_settings()
+            data_settings = self.main.data_widget.get_current_settings()
             value_col = data_settings.get('y_col')
             group_col = data_settings.get('x_col')
             
@@ -374,7 +374,7 @@ class StatisticalHandler:
                         
                         _, p_value = f_oneway(*samples)
                         
-                        results_summary.append(f"--- Facet: {facet_col} = {category} ---\n"
+                        results_summary.append(f"--- Facet: {facet_col} = {category} ---\n" \
                                             f"F-statistic: _, p-value: {p_value:.4f}\n")
                         
                         if p_value < 0.05 and len(samples) >= 2:
@@ -452,7 +452,7 @@ class StatisticalHandler:
                 return
             
             df = self.main.model._data.copy()
-            data_settings = self.main.properties_panel.data_tab.get_current_settings()
+            data_settings = self.main.data_widget.get_current_settings()
             value_col = data_settings.get('y_col')
             group_col = data_settings.get('x_col')
             
@@ -758,7 +758,7 @@ class StatisticalHandler:
             return
         
         df = self.main.model._data.copy()
-        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        data_settings = self.main.data_widget.get_current_settings()
         value_col = data_settings.get('y_col')
         group_col = data_settings.get('x_col')
         hue_col = data_settings.get('subgroup_col')
@@ -785,13 +785,13 @@ class StatisticalHandler:
             result_text += f"Value Column: {value_col}\n"
             result_text += f"Grouping by: {group_name}\n\n"
             result_text += "p > 0.05 suggests that the data is normally distributed.\n\n"
-            result_text += "-----------------------------------------\n"
+            result_text += "-----------------------------------------"
             
             # 各グループに対してループ処理
             for group in unique_groups:
                 data = df[value_col][effective_groups == group].dropna()
                 
-                result_text += f"Group: {group} (n={len(data)})\n"
+                result_text += f"\nGroup: {group} (n={len(data)})\n"
                 
                 # サンプル数が3未満の場合、検定は実行できない
                 if len(data) < 3:
@@ -804,7 +804,7 @@ class StatisticalHandler:
                         result_text += "  - Conclusion: Data likely follows a normal distribution.\n"
                     else:
                         result_text += "  - Conclusion: Data likely does not follow a normal distribution.\n"
-                result_text += "-----------------------------------------\n"
+                result_text += "-----------------------------------------"
                 
             # 結果をダイアログで表示
             self.main.results_widget.set_results_text("Normality Test Results", result_text)
@@ -837,7 +837,7 @@ class StatisticalHandler:
                 QMessageBox.warning(self.main, "Warning", "Please select both X and Y columns.")
                 return
             
-            data_settings = self.main.properties_panel.data_tab.get_current_settings()
+            data_settings = self.main.data_widget.get_current_settings()
             subgroup_col = data_settings.get('subgroup_col')
 
             if subgroup_col == x_col: # X軸と同じなら分析上は無視
