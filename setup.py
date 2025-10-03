@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="calcite",
-    version="0.4.4",
+    version="0.4.5",
     author="R. Abiru",
     author_email="",
     description="A desktop application for data analysis and publication-quality graphing.",

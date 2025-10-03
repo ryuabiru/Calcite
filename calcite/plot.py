@@ -64,7 +64,7 @@ def plot_bar(data, x, y, hue=None, facet=None, individual_points=False,
     stripplot_kws.setdefault('edgecolor', 'black'); stripplot_kws.setdefault('linewidth', 1.5)
 
     if facet:
-        facet_values = sorted(data[facet].unique()); n_facets = len(facet_values)
+        n_facets = len(facet_values)
         nrows, ncols = 1, n_facets
     else:
         facet_values = [None]; n_facets = 1; nrows, ncols = 1, 1
