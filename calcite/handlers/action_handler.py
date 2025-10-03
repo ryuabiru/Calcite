@@ -88,7 +88,7 @@ class ActionHandler:
                 
                 self.main.model = PandasModel(df)
                 self.main.table_view.setModel(self.main.model)
-                self.main.properties_panel.set_columns(df.columns)
+                self.main.properties_widget.set_columns(df.columns)
                 self.main.results_widget.clear_results()
                 
                 # GraphManagerのupdate_graphに接続する
@@ -111,7 +111,7 @@ class ActionHandler:
             df = pd.read_csv(io.StringIO(text), sep='\t')
             self.main.model = PandasModel(df)
             self.main.table_view.setModel(self.main.model)
-            self.main.properties_panel.set_columns(df.columns)
+            self.main.properties_widget.set_columns(df.columns)
             self.main.results_widget.clear_results() # ★★★ 追加 ★★★
             
             self.main.table_view.selectionModel().selectionChanged.connect(self.main.graph_manager.update_graph)
@@ -147,7 +147,7 @@ class ActionHandler:
 
                 # 2. グラフ設定をJSONとして保存
                 settings_path = os.path.join(temp_dir, 'settings.json')
-                settings = self.main.properties_panel.get_properties()
+                settings = self.main.properties_widget.get_properties()
                 with open(settings_path, 'w') as f:
                     json.dump(settings, f, indent=4)
                 print("DEBUG: Saved settings.json")
@@ -209,7 +209,7 @@ class ActionHandler:
                 if os.path.exists(settings_path):
                     with open(settings_path, 'r') as f:
                         settings = json.load(f)
-                    self.main.properties_panel.set_properties(settings)
+                    self.main.properties_widget.set_properties(settings)
                     print("DEBUG: Loaded and applied settings.json to UI.")
 
                 # 3. 解析結果をJSONから読み込む
@@ -278,7 +278,7 @@ class ActionHandler:
             df[new_col_name] = df.eval(formula, engine='python')
             
             self.main.model.refresh_model()
-            self.main.properties_panel.set_columns(df.columns)
+            self.main.properties_widget.set_columns(df.columns)
             
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to calculate column: {e}")
@@ -318,7 +318,7 @@ class ActionHandler:
             new_window = self.main.__class__()
             new_window.model = PandasModel(new_df)
             new_window.table_view.setModel(new_window.model)
-            new_window.properties_panel.set_columns(new_df.columns)
+            new_window.properties_widget.set_columns(new_df.columns)
             new_window.setWindowTitle(self.main.windowTitle() + " [Restructured]")
             new_window.show()
             
@@ -366,7 +366,7 @@ class ActionHandler:
             new_window = self.main.__class__()
             new_window.model = PandasModel(new_df)
             new_window.table_view.setModel(new_window.model)
-            new_window.properties_panel.set_columns(new_df.columns)
+            new_window.properties_widget.set_columns(new_df.columns)
             new_window.setWindowTitle(self.main.windowTitle() + " [Pivoted]")
             new_window.show()
             
