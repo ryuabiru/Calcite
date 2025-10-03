@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import (
     QMainWindow, QSplitter, QTableView, QMessageBox, QToolBar,
-    QMenu, QLineEdit, QApplication
+    QMenu, QLineEdit, QApplication, QTabWidget, QScrollArea
 )
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtCore import Qt, QEvent, QSettings
@@ -12,6 +12,7 @@ from .graph_widget import GraphWidget
 from .properties_widget import PropertiesWidget
 from .results_widget import ResultsWidget
 from .pandas_model import PandasModel
+from .data_widget import DataWidget
 
 # --- Handlers ---
 from .handlers.action_handler import ActionHandler
@@ -81,16 +82,16 @@ class MainWindow(QMainWindow):
         try:
             self.model = PandasModel(df)
             self.table_view.setModel(self.model)
-            self.properties_panel.set_columns(df.columns)
+            self.data_widget.set_columns(df.columns)
             self.results_widget.clear_results()
             
-            # グラフ更新のためのシグナルを接続
-            self.table_view.selectionModel().selectionChanged.connect(self.graph_manager.update_graph)
-            self.model.dataChanged.connect(self.graph_manager.update_graph)
-            self.model.headerDataChanged.connect(self.graph_manager.update_graph)
+            # グラフ更新のためのシグナルを接続しないように変更
+            # self.table_view.selectionModel().selectionChanged.connect(self.graph_manager.update_graph)
+            # self.model.dataChanged.connect(self.graph_manager.update_graph)
+            # self.model.headerDataChanged.connect(self.graph_manager.update_graph)
             
-            # 初期グラフを描画
-            self.graph_manager.update_graph()
+            # 初期グラフを描画しないように変更
+            # self.graph_manager.update_graph()
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error loading DataFrame: {e}")
@@ -100,10 +101,22 @@ class MainWindow(QMainWindow):
         # メインの分割を水平（左右）にする
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(main_splitter)
+
+        # --- 左カラム（タブ形式） ---
+        left_tab_widget = QTabWidget()
         
-        # --- 左カラム ---
+        # データフレームタブ
         self.table_view = QTableView()
-        main_splitter.addWidget(self.table_view)
+        left_tab_widget.addTab(self.table_view, "データフレーム")
+        
+        # プロパティタブ
+        self.properties_widget = PropertiesWidget()
+        properties_scroll_area = QScrollArea()
+        properties_scroll_area.setWidgetResizable(True)
+        properties_scroll_area.setWidget(self.properties_widget)
+        left_tab_widget.addTab(properties_scroll_area, "プロパティ")
+        
+        main_splitter.addWidget(left_tab_widget)
         
         # --- 右カラム（ここは垂直に分割）---
         right_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -111,13 +124,13 @@ class MainWindow(QMainWindow):
         # --- 右カラムの上段（ここは水平に分割）---
         top_right_splitter = QSplitter(Qt.Orientation.Horizontal)
         
-        self.properties_panel = PropertiesWidget()
-        top_right_splitter.addWidget(self.properties_panel)
+        self.data_widget = DataWidget()
+        top_right_splitter.addWidget(self.data_widget)
         
         self.results_widget = ResultsWidget()
         top_right_splitter.addWidget(self.results_widget)
         
-        top_right_splitter.setSizes([400, 250])
+        top_right_splitter.setSizes([250, 350])
         
         right_splitter.addWidget(top_right_splitter)
         
@@ -127,7 +140,7 @@ class MainWindow(QMainWindow):
         
         right_splitter.setSizes([200, 450])
         main_splitter.addWidget(right_splitter)
-        main_splitter.setSizes([400, 800])
+        main_splitter.setSizes([400, 600])
 
 
     def _connect_signals(self):
@@ -136,9 +149,9 @@ class MainWindow(QMainWindow):
         self.table_view.horizontalHeader().sectionClicked.connect(self.sort_table)
         self.table_view.horizontalHeader().sectionDoubleClicked.connect(self.edit_header)
         
-        # self.properties_panel.propertiesChanged.connect(self.graph_manager.update_graph)
-        self.properties_panel.graphUpdateRequest.connect(self.graph_manager.update_graph)
-        self.properties_panel.subgroupColumnChanged.connect(self.on_subgroup_column_changed)
+        # self.properties_widget.propertiesChanged.connect(self.graph_manager.update_graph)
+        self.data_widget.graphUpdateRequest.connect(self.graph_manager.update_graph)
+        self.data_widget.subgroupColumnChanged.connect(self.on_subgroup_column_changed)
 
 
     def sort_table(self, logicalIndex):
@@ -328,22 +341,22 @@ class MainWindow(QMainWindow):
         previous_graph_type = self.current_graph_type
         self.current_graph_type = graph_type
         
-        self.properties_panel.data_tab.set_graph_type(graph_type)
-        self.properties_panel.text_tab.update_paired_labels_visibility(graph_type == 'paired_scatter')
+        self.data_widget.data_tab.set_graph_type(graph_type)
+        self.properties_widget.text_tab.update_paired_labels_visibility(graph_type == 'paired_scatter')
         
-        current_legend_setting = self.properties_panel.text_tab.legend_pos_combo.currentData()
+        current_legend_setting = self.properties_widget.text_tab.legend_pos_combo.currentData()
         
         if graph_type == 'summary_scatter' and current_legend_setting == 'best':
-            hide_index = self.properties_panel.text_tab.legend_pos_combo.findData('hide')
+            hide_index = self.properties_widget.text_tab.legend_pos_combo.findData('hide')
             if hide_index != -1:
-                self.properties_panel.text_tab.legend_pos_combo.setCurrentIndex(hide_index)
+                self.properties_widget.text_tab.legend_pos_combo.setCurrentIndex(hide_index)
         
         elif previous_graph_type == 'summary_scatter' and current_legend_setting == 'hide':
-            best_index = self.properties_panel.text_tab.legend_pos_combo.findData('best')
+            best_index = self.properties_widget.text_tab.legend_pos_combo.findData('best')
             if best_index != -1:
-                self.properties_panel.text_tab.legend_pos_combo.setCurrentIndex(best_index)
+                self.properties_widget.text_tab.legend_pos_combo.setCurrentIndex(best_index)
         
-        self.graph_manager.update_graph()
+        # self.graph_manager.update_graph()
 
 
     def edit_header(self, logicalIndex):
@@ -363,7 +376,7 @@ class MainWindow(QMainWindow):
             new_text = self.header_editor.text()
             model = self.table_view.model()
             model.setHeaderData(logicalIndex, Qt.Orientation.Horizontal, new_text, Qt.ItemDataRole.EditRole)
-            self.properties_panel.set_columns(model._data.columns)
+            self.data_widget.set_columns(model._data.columns)
             self.header_editor.close(); self.header_editor = None
 
 
@@ -527,13 +540,13 @@ class MainWindow(QMainWindow):
 
     def on_subgroup_column_changed(self, column_name):
         if not hasattr(self, 'model') or not column_name:
-            self.properties_panel.format_tab.update_subgroup_color_ui([])
+            self.properties_widget.format_tab.update_subgroup_color_ui([])
             return
         try:
             unique_categories = self.model._data[column_name].unique()
-            self.properties_panel.format_tab.update_subgroup_color_ui(sorted(unique_categories))
+            self.properties_widget.format_tab.update_subgroup_color_ui(sorted(unique_categories))
         except KeyError:
-            self.properties_panel.format_tab.update_subgroup_color_ui([])
+            self.properties_widget.format_tab.update_subgroup_color_ui([])
 
 
     def insert_row(self):

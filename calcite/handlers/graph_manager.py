@@ -27,8 +27,9 @@ class GraphManager:
             return
         
         df = self.main.model._data
-        properties = self.main.properties_panel.get_properties()
-        data_settings = self.main.properties_panel.data_tab.get_current_settings()
+        properties = self.main.properties_widget.get_properties()
+        data_settings = self.main.data_widget.get_current_settings()
+        properties.update(data_settings)
         
         fig = None
         if self.main.current_graph_type == 'paired_scatter':
