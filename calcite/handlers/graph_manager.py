@@ -1,24 +1,33 @@
 # handlers/graph_manager.py
 
-import numpy as np
-import pandas as pd
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 import seaborn as sns
 from statannotations.Annotator import Annotator
 import traceback
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
+from calcite.models import PlotRequest
+from calcite.services.plot_service import (
+    BASE_PLOT_KINDS,
+    build_annotation_spec,
+    build_facet_plot_data,
+    build_base_plot_kwargs,
+    build_four_pl_overlay_lines,
+    build_legend_handles_labels,
+    build_paired_annotation_spec,
+    build_paired_plot_data,
+    build_regression_overlay_lines,
+    build_scatter_plot_kwargs,
+    build_stripplot_kwargs,
+    build_summary_errorbar_specs,
+    get_facet_values,
+    get_x_order,
+    normalize_plot_request,
+    prepare_plot_dataframe,
+)
 
 class GraphManager:
     def __init__(self, main_window):
         self.main = main_window
-
-
-    def sigmoid_4pl(self, x, bottom, top, hill_slope, log_ec50):
-        """4パラメータロジスティック（4PL）モデルの関数。xとlog_ec50はlog10スケール。"""
-        return bottom + (top - bottom) / (1 + 10**((log_ec50 - x) * hill_slope))
 
 
     def update_graph(self):
@@ -27,56 +36,47 @@ class GraphManager:
             return
         
         df = self.main.model._data
-        properties = self.main.properties_widget.get_properties()
-        data_settings = self.main.data_widget.get_current_settings()
-        properties.update(data_settings)
+        request = PlotRequest.from_sources(
+            graph_type=self.main.current_graph_type,
+            data_settings=self.main.data_widget.get_current_settings(),
+            properties=self.main.properties_widget.get_properties(),
+        )
+        request = normalize_plot_request(request)
         
         fig = None
-        if self.main.current_graph_type == 'paired_scatter':
-            fig = self.draw_paired_scatter(df, properties, data_settings)
-        elif self.main.current_graph_type == 'histogram':
-            fig = self.draw_histogram(df, properties, data_settings)
+        if request.graph_type == 'paired_scatter':
+            fig = self.draw_paired_scatter(df, request)
+        elif request.graph_type == 'histogram':
+            fig = self.draw_histogram(df, request.properties, request.properties)
         else:
-            # ★★★ 新しい描画関数を呼び出す ★★★
-            fig = self.draw_categorical_plot(df, properties, data_settings)
+            fig = self.draw_categorical_plot(df, request)
             
         if fig:
             self.replace_canvas(fig)
-            self.update_graph_properties(fig, properties)
+            self.update_graph_properties(fig, request.properties)
 
 
     def apply_annotations(self, ax, df, data_settings, hue_order, annotations_to_plot):
-        if not annotations_to_plot:
-            return
-        
         try:
-            current_y = data_settings.get('y_col')
-            current_x = data_settings.get('x_col')
-            subgroup_col = data_settings.get('subgroup_col')
-            if current_x == subgroup_col:
-                subgroup_col = None
-                
-            box_pairs = [ann['box_pair'] for ann in annotations_to_plot]
-            p_values = [ann['p_value'] for ann in annotations_to_plot]
-            
-            if not box_pairs:
+            annotation_spec = build_annotation_spec(
+                df,
+                PlotRequest(
+                    graph_type="",
+                    x_col=data_settings.get("x_col", ""),
+                    y_col=data_settings.get("y_col", ""),
+                    subgroup_col=data_settings.get("subgroup_col", ""),
+                ),
+                annotations_to_plot,
+                ax,
+                hue_order,
+            )
+            if annotation_spec is None:
                 return
-            
-            annotator_kwargs = {
-                'ax': ax,
-                'pairs': box_pairs,
-                'data': df,
-                'x': current_x,
-                'y': current_y,
-            }
-            if subgroup_col:
-                annotator_kwargs['hue'] = subgroup_col
-                annotator_kwargs['hue_order'] = hue_order
-            
-            annotator = Annotator(**annotator_kwargs)
+
+            annotator = Annotator(**annotation_spec.annotator_kwargs)
             pvalue_thresholds = [[1e-4, "****"], [1e-3, "***"], [1e-2, "**"], [0.05, "*"], [1.0, "n.s."]]
             annotator.configure(text_format='star', loc='inside', verbose=0, pvalue_thresholds=pvalue_thresholds)
-            annotator.set_pvalues(p_values)
+            annotator.set_pvalues(annotation_spec.p_values)
             annotator.annotate()
             
         except Exception as e:
@@ -84,36 +84,27 @@ class GraphManager:
             traceback.print_exc()
 
 
-    def draw_categorical_plot(self, df, properties, data_settings):
+    def draw_categorical_plot(self, df, request: PlotRequest):
         """
         レイヤー化アーキテクチャに基づき、カテゴリカルなグラフを描画する。
         """
-        current_x = data_settings.get('x_col')
-        current_y = data_settings.get('y_col')
+        properties = request.properties
+        current_x = request.x_col
+        current_y = request.y_col
         if not current_x or not current_y:
             self.clear_canvas()
             return None
 
-        base_kind = self.main.current_graph_type
-        visual_hue_col = data_settings.get('subgroup_col')
-        if not visual_hue_col:
-            visual_hue_col = None
-        
-        # 分析上のhueは、X軸と異なる場合のみ意味を持つ
-        analysis_hue_col = visual_hue_col if visual_hue_col != current_x else None
-        facet_col = data_settings.get('facet_col')
+        base_kind = request.graph_type
+        visual_hue_col = request.subgroup_col or None
+        facet_col = request.facet_col
 
         try:
-            df_processed = df.copy()
-            if visual_hue_col:
-                df_processed[visual_hue_col] = df_processed[visual_hue_col].astype(str)
-            if base_kind not in ['scatter', 'summary_scatter', 'lineplot']:
-                df_processed[current_x] = df_processed[current_x].astype(str)
-            
-            x_order = df_processed[current_x].unique()
+            df_processed = prepare_plot_dataframe(df, request)
+            x_order = get_x_order(df_processed, request)
             
             subgroup_palette = properties.get('subgroup_colors', {})
-            col_categories = df_processed[facet_col].unique() if facet_col else [None]
+            col_categories = get_facet_values(df_processed, request)
             n_rows, n_cols = 1, len(col_categories)
 
             fig, axes = plt.subplots(
@@ -121,94 +112,36 @@ class GraphManager:
                 sharex=False, sharey=True, squeeze=False, layout='constrained'
             )
             all_relevant_annotations = [ann for ann in self.main.statistical_annotations if ann.get('value_col') == current_y]
+            facet_plot_data = build_facet_plot_data(df_processed, request)
 
-            for j, col_cat in enumerate(col_categories):
+            for j, facet_data in enumerate(facet_plot_data):
                 ax = axes[0, j]
-                facet_selector = pd.Series(True, index=df_processed.index)
-                if facet_col: facet_selector &= (df_processed[facet_col] == col_cat)
-                original_subset_df = df_processed[facet_selector]
+                col_cat = facet_data.facet_value
+                original_subset_df = facet_data.source_df
 
                 if original_subset_df.empty:
                     ax.set_title(f"No data for {col_cat}"); continue
                 
-                plot_df = original_subset_df
-
-                if base_kind == 'summary_scatter':
-                    group_cols = [current_x]
-                    if visual_hue_col and visual_hue_col != current_x: group_cols.append(visual_hue_col)
-                    
-                    error_agg_func = properties.get('error_bar_type', 'std') # デフォルトはstd
-                    
-                    summary_stats = original_subset_df.groupby(group_cols, as_index=False).agg(
-                        mean_y=(current_y, 'mean'),
-                        err_y=(current_y, error_agg_func) # ここでsemかstdを切り替え
-                    )
-                    summary_stats.rename(columns={'mean_y': current_y}, inplace=True)
-                    plot_df = summary_stats
+                plot_df = facet_data.plot_df
                 
                 base_plot_map = { 'bar': sns.barplot, 'boxplot': sns.boxplot, 'violin': sns.violinplot, 'pointplot': sns.pointplot, 'lineplot': sns.lineplot }
                 if base_kind in base_plot_map:
-                    base_kwargs = {'data': plot_df, 'x': current_x, 'y': current_y, 'ax': ax, 'order': x_order}
-                    
-                    if base_kind in ['bar', 'boxplot', 'violin', 'pointplot']:
-                        base_kwargs['order'] = x_order
-                    
-                    if visual_hue_col:
-                        base_kwargs['hue'] = visual_hue_col
-                        base_kwargs['palette'] = subgroup_palette
-                    else:
-                        single_color = properties.get('single_color'); 
-                        if single_color: base_kwargs['color'] = single_color
-                    if base_kind == 'bar': base_kwargs.update({'edgecolor': properties.get('bar_edgecolor', 'black'), 'linewidth': properties.get('bar_edgewidth', 1.0), 'capsize': properties.get('capsize', 0) * 0.01})
-                    if base_kind in ['pointplot', 'lineplot']: base_kwargs.update({'linestyle': properties.get('linestyle', '-'), 'linewidth': properties.get('linewidth', 1.5)})
-                    if base_kind == 'pointplot': base_kwargs.update({'capsize': properties.get('capsize', 0) * 0.02})
-                    
-                    if base_kind == 'lineplot' and 'order' in base_kwargs:
-                        del base_kwargs['order']
-                    
+                    base_kwargs = build_base_plot_kwargs(request, plot_df, x_order, properties)
+                    base_kwargs['ax'] = ax
                     base_plot_map[base_kind](**base_kwargs)
 
                 if base_kind in ['scatter', 'summary_scatter']:
-                    scatter_kwargs = {
-                        'data': plot_df, 'x': current_x, 'y': current_y, 'ax': ax,
-                        'marker': properties.get('marker_style', 'o'),
-                        'edgecolor': properties.get('marker_edgecolor', 'black'),
-                        'linewidth': properties.get('marker_edgewidth', 1.0),
-                        's': properties.get('marker_size', 5.0)**2,
-                        'alpha': properties.get('marker_alpha', 1.0)
-                    }
-                    if visual_hue_col:
-                        scatter_kwargs['hue'] = visual_hue_col; scatter_kwargs['palette'] = subgroup_palette
-                    else:
-                        single_color = properties.get('single_color'); 
-                        if single_color: scatter_kwargs['color'] = single_color
-                    
+                    scatter_kwargs = build_scatter_plot_kwargs(request, plot_df, properties)
+                    scatter_kwargs['ax'] = ax
                     sns.scatterplot(**scatter_kwargs)
                     if base_kind == 'summary_scatter':
-                        if visual_hue_col:
-                            for hue_val, grp in plot_df.groupby(visual_hue_col):
-                                ax.errorbar(x=grp[current_x], y=grp[current_y], yerr=grp['err_y'], fmt='none', capsize=properties.get('capsize', 0), ecolor=subgroup_palette.get(str(hue_val), 'black'))
-                        else:
-                            ax.errorbar(x=plot_df[current_x], y=plot_df[current_y], yerr=plot_df['err_y'], fmt='none', capsize=properties.get('capsize', 0), ecolor=properties.get('marker_edgecolor', 'black'))
-                if properties.get('scatter_overlay') and (base_kind in base_plot_map):
+                        for errorbar_spec in build_summary_errorbar_specs(plot_df, request, properties):
+                            ax.errorbar(**errorbar_spec)
+                if properties.get('scatter_overlay') and (base_kind in BASE_PLOT_KINDS):
                     if not original_subset_df.empty:
-                        
-                        should_dodge = bool(analysis_hue_col) and base_kind != 'pointplot'
-                        
-                        sns.stripplot(
-                            data=original_subset_df, x=current_x, y=current_y,
-                            hue=visual_hue_col,
-                            ax=ax,
-                            jitter=True,
-                            alpha=properties.get('marker_alpha', 0.6),
-                            palette=subgroup_palette,
-                            marker=properties.get('marker_style', 'o'),
-                            edgecolor=properties.get('marker_edgecolor', 'black'),
-                            linewidth=properties.get('marker_edgewidth', 1.0),
-                            s=properties.get('marker_size', 5.0),
-                            dodge=should_dodge,
-                            order=x_order
-                        )
+                        stripplot_kwargs = build_stripplot_kwargs(request, original_subset_df, x_order, properties)
+                        stripplot_kwargs['ax'] = ax
+                        sns.stripplot(**stripplot_kwargs)
                 
                 title_parts = []; 
                 if facet_col: title_parts.append(f"{col_cat}")
@@ -217,50 +150,21 @@ class GraphManager:
                     bottom, top = ax.get_ylim(); extension = (top - bottom) * 0.10; ax.spines['left'].set_bounds(bottom - extension, top)
                 annotations_for_this_facet = [ann for ann in all_relevant_annotations if ann.get('facet_value') == (col_cat if facet_col else None)]
                 hue_order = sorted(df_processed[visual_hue_col].unique()) if visual_hue_col else None
-                self.apply_annotations(ax, df_processed, data_settings, hue_order, annotations_for_this_facet)
+                self.apply_annotations(ax, df_processed, properties, hue_order, annotations_for_this_facet)
 
             # --- 凡例統合レイヤー ---
             if visual_hue_col:
-                handles, labels = [], []
-
-                # --- Step 1: 既存の凡例をすべてクリア ---
                 for ax in axes.flat:
                     if ax.get_legend() is not None:
                         ax.get_legend().remove()
 
-                # --- Step 2: グラフタイプに応じて凡例の「部品」を生成 ---
-                base_kind = self.main.current_graph_type
-                
-                # Bar, Box, Violinの場合は、凡例の部品を手動で作成する
-                if base_kind in ['bar', 'boxplot', 'violin']:
-                    hue_categories = sorted(df_processed[visual_hue_col].unique())
-                    palette = properties.get('subgroup_colors', {})
-                    
-                    for category in hue_categories:
-                        str_category = str(category)
-                        color = palette.get(str_category, 'black')
-                        patch = mpatches.Patch(color=color, label=str_category)
-                        if str_category not in labels:
-                            handles.append(patch)
-                            labels.append(str_category)
-
-                # それ以外のグラフタイプは、自動生成された部品を収集する
-                else:
-                    for ax in axes.flat:
-                        h, l = ax.get_legend_handles_labels()
-                        for i, label in enumerate(l):
-                            if label not in labels:
-                                labels.append(label)
-                                handles.append(h[i])
-
-                # --- Step 3: 収集・作成した部品を使って凡例を描画 ---
+                handles, labels = build_legend_handles_labels(df_processed, request, properties, axes.flat)
                 if properties.get('legend_position') != 'hide' and handles:
                     legend_title = properties.get('legend_title') or visual_hue_col
                     legend_pos = properties.get('legend_position', 'best')
-                    legend_alpha = properties.get('legend_alpha', 1.0)
 
                     target_ax = axes.flat[-1]
-                    leg = target_ax.legend(
+                    target_ax.legend(
                         handles=handles, 
                         labels=labels, 
                         title=legend_title,
@@ -276,51 +180,19 @@ class GraphManager:
             if base_kind in ['scatter', 'summary_scatter'] and not is_faceted:
                 ax = axes[0, 0]
 
-                if self.main.regression_line_params:
-                    params_dict = self.main.regression_line_params
-                    # サブグループごとに描画するか、単一で描画するかを判断
-                    if params_dict and 'x_line' not in params_dict: # サブグループごとのデータ
-                        for group_name, params in params_dict.items():
-                            color = properties.get('subgroup_colors', {}).get(str(group_name), 'red')
-                            ax.plot(params["x_line"], params["y_line"], color=color,
-                                    linestyle=properties.get('linestyle', '--'), linewidth=properties.get('linewidth', 1.5),
-                                    label=f"{group_name} Fit (R²={params['r_squared']:.3f})")
-                        ax.legend()
-                    
-                    elif 'x_line' in params_dict: # 単一のデータ
-                        params = params_dict
-                        ax.plot(params["x_line"], params["y_line"], color=properties.get('regression_color', 'red'),
-                                linestyle=properties.get('linestyle', '--'), linewidth=properties.get('linewidth', 1.5),
-                                label=f"Linear Fit (R²={params['r_squared']:.3f})")
-                        ax.legend()
-
-                # ▼▼▼ 4PL非線形回帰の描画ロジックを修正 ▼▼▼
-                if self.main.fit_params:
-                    params_dict = self.main.fit_params
-                    if params_dict and 'params' not in params_dict: # サブグループごとのデータ
-                        for group_name, params_info in params_dict.items():
-                            fit_params = params_info["params"]
-                            x_min, x_max = params_info["log_x_data"].min(), params_info["log_x_data"].max()
-                            x_fit = np.linspace(x_min, x_max, 200)
-                            y_fit = self.sigmoid_4pl(x_fit, *fit_params)
-                            color = properties.get('subgroup_colors', {}).get(str(group_name), 'red')
-                            
-                            ax.plot(10**x_fit, y_fit, color=color,
-                                    linestyle=properties.get('linestyle', '--'), linewidth=properties.get('linewidth', 1.5),
-                                    label=f"{group_name} 4PL (R²={params_info['r_squared']:.3f})")
-                        ax.legend()
-                    
-                    elif 'params' in params_dict: # 単一のデータ
-                        params_info = params_dict
-                        fit_params = params_info["params"]
-                        x_min, x_max = params_info["log_x_data"].min(), params_info["log_x_data"].max()
-                        x_fit = np.linspace(x_min, x_max, 200)
-                        y_fit = self.sigmoid_4pl(x_fit, *fit_params)
-                        
-                        ax.plot(10**x_fit, y_fit, color=properties.get('regression_color', 'red'),
-                                linestyle=properties.get('linestyle', '--'), linewidth=properties.get('linewidth', 1.5),
-                                label=f"4PL Fit (R²={params_info['r_squared']:.3f})")
-                        ax.legend()
+                overlay_lines = build_regression_overlay_lines(self.main.regression_line_params, properties)
+                overlay_lines.extend(build_four_pl_overlay_lines(self.main.fit_params, properties))
+                for overlay_line in overlay_lines:
+                    ax.plot(
+                        overlay_line.x,
+                        overlay_line.y,
+                        color=overlay_line.color,
+                        linestyle=properties.get('linestyle', '--'),
+                        linewidth=properties.get('linewidth', 1.5),
+                        label=overlay_line.label,
+                    )
+                if overlay_lines:
+                    ax.legend()
             
             return fig
         except Exception as e:
@@ -329,14 +201,17 @@ class GraphManager:
             return None
 
 
-    def draw_paired_scatter(self, df, properties, data_settings):
-        
-        col1 = data_settings.get('col1')
-        col2 = data_settings.get('col2')
-        if not (col1 and col2 and col1 != col2): return None
+    def draw_paired_scatter(self, df, request: PlotRequest):
+        properties = request.properties
+        paired_plot_data = build_paired_plot_data(df, request)
+        if paired_plot_data is None:
+            return None
+
+        col1 = request.col1
+        col2 = request.col2
         fig, ax = plt.subplots(layout='constrained')
         try:
-            plot_df_long = self._draw_paired_plot_seaborn(ax, df, col1, col2, properties)
+            plot_df_long = self._draw_paired_plot_seaborn(ax, paired_plot_data, properties)
             
             if plot_df_long is not None and self.main.paired_annotations:
                 # このプロットに関連するアノテーションのみを抽出
@@ -344,17 +219,12 @@ class GraphManager:
                     ann for ann in self.main.paired_annotations
                     if set(ann['box_pair']) == {col1, col2}
                 ]
-                if annotations_to_plot:
-                    pairs = [ann['box_pair'] for ann in annotations_to_plot]
-                    p_values = [ann['p_value'] for ann in annotations_to_plot]
-                    
-                    annotator = Annotator(
-                        ax, pairs, data=plot_df_long,
-                        x='Condition', y='Value'
-                    )
+                annotation_spec = build_paired_annotation_spec(plot_df_long, annotations_to_plot, ax)
+                if annotation_spec is not None:
+                    annotator = Annotator(**annotation_spec.annotator_kwargs)
                     pvalue_thresholds = [[1e-4, "****"], [1e-3, "***"], [1e-2, "**"], [0.05, "*"], [1.0, "n.s."]]
                     annotator.configure(text_format='star', loc='outside', verbose=0, pvalue_thresholds=pvalue_thresholds)
-                    annotator.set_pvalues(p_values)
+                    annotator.set_pvalues(annotation_spec.p_values)
                     annotator.annotate()
             
             self.update_graph_properties(fig, properties)
@@ -479,16 +349,9 @@ class GraphManager:
         self.update_graph()
 
 
-    def _draw_paired_plot_seaborn(self, ax, df, col1, col2, properties):
+    def _draw_paired_plot_seaborn(self, ax, paired_plot_data, properties):
         try:
-            plot_df = df[[col1, col2]].dropna().copy()
-            if plot_df.empty: return None
-            plot_df['ID'] = range(len(plot_df))
-            plot_df_long = pd.melt(plot_df, id_vars='ID', value_vars=[col1, col2], var_name='Condition', value_name='Value')
-            
-            # 1. 専用のラベルを取得（なければ元の列名を使用）
-            label1 = properties.get('paired_label1') or col1
-            label2 = properties.get('paired_label2') or col2
+            plot_df_long = paired_plot_data.plot_df_long
             
             # 2. 線のスタイルをプロパティから適用
             sns.lineplot(data=plot_df_long, x='Condition', y='Value', units='ID', 
@@ -504,12 +367,20 @@ class GraphManager:
                             linewidth=properties.get('marker_edgewidth', 1.0), 
                             ax=ax, legend=False)
             
-            mean_df = plot_df_long.groupby('Condition')['Value'].mean().reindex([col1, col2])
-            ax.plot(mean_df.index, mean_df.values, color='red', marker='_', markersize=20, mew=2.5, linestyle='None', label='Mean')
+            ax.plot(
+                paired_plot_data.mean_x,
+                paired_plot_data.mean_y.values,
+                color='red',
+                marker='_',
+                markersize=20,
+                mew=2.5,
+                linestyle='None',
+                label='Mean',
+            )
             
             # 4. X軸の目盛りラベルを設定
             ax.set_xticks([0, 1])
-            ax.set_xticklabels([label1, label2])
+            ax.set_xticklabels(paired_plot_data.tick_labels)
             
             # 5. X軸のメインラベルは不要なので消去
             ax.set_xlabel('')

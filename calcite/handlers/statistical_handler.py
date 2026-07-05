@@ -4,13 +4,20 @@ import pandas as pd
 import numpy as np
 from PySide6.QtWidgets import QMessageBox
 from scipy.stats import (
-    ttest_ind, ttest_rel, f_oneway, linregress, chi2_contingency,
-    shapiro, spearmanr, mannwhitneyu, wilcoxon, kruskal
+    ttest_ind, ttest_rel, linregress, chi2_contingency,
+    shapiro, spearmanr, mannwhitneyu, wilcoxon
 )
 from scipy.optimize import curve_fit
-from statsmodels.stats.multicomp import pairwise_tukeyhsd
-import scikit_posthocs as sp
 import traceback
+from calcite.models import AnalysisRequest
+from calcite.services.statistics_service import (
+    UNIQUE_SEPARATOR,
+    build_effective_groups,
+    format_annotation_pair,
+    prepare_analysis_dataframe,
+    run_anova,
+    run_kruskal,
+)
 
 # --- Dialogs ---
 from ..dialogs.anova_dialog import AnovaDialog
@@ -24,7 +31,7 @@ from ..dialogs.regression_dialog import RegressionDialog
 from ..dialogs.contingency_dialog import ContingencyDialog
 
 class StatisticalHandler:
-    _UNIQUE_SEPARATOR = '_#%%%_'
+    _UNIQUE_SEPARATOR = UNIQUE_SEPARATOR
 
 
     def __init__(self, main_window):
@@ -35,12 +42,7 @@ class StatisticalHandler:
         """
         【生成】ヘルパー：X軸とサブグループ（hue）から検定用のグループ列を生成する。
         """
-        if hue_col and hue_col in df.columns:
-            interaction_col_name = f"{x_col}_{hue_col}_interaction"
-            effective_groups = df[x_col].astype(str) + self._UNIQUE_SEPARATOR + df[hue_col].astype(str)
-            return effective_groups, interaction_col_name
-        else:
-            return df[x_col].astype(str), x_col
+        return build_effective_groups(df, x_col, hue_col)
 
 
     def _format_pair_for_annotation(self, pair, hue_col):
@@ -48,17 +50,18 @@ class StatisticalHandler:
         【翻訳】ヘルパー：Tukey検定などから得られたシンプルなペアを、
         statannotationsが要求する形式に変換する。
         """
-        if hue_col:
-            # hueがある場合: ('A_#%%%_c', 'B_#%%%_c') -> (('A', 'c'), ('B', 'c'))
-            try:
-                group1 = tuple(pair[0].split(self._UNIQUE_SEPARATOR))
-                group2 = tuple(pair[1].split(self._UNIQUE_SEPARATOR))
-                return (group1, group2)
-            except Exception:
-                return pair # 念のため、分割に失敗した場合は元のペアを返す
-        else:
-            # hueがない場合: ('Control', 'Drug_A') -> ('Control', 'Drug_A')
-            return pair
+        return format_annotation_pair(pair, hue_col)
+
+    def _get_analysis_context(self):
+        df = self.main.model._data.copy()
+        request = AnalysisRequest.from_settings(self.main.data_widget.get_current_settings())
+        return prepare_analysis_dataframe(df, request)
+
+    def _warn_if_missing_axes(self, value_col, group_col):
+        if value_col and group_col:
+            return False
+        QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+        return True
 
 
 # --- 統計処理を行うメソッド---
@@ -69,27 +72,14 @@ class StatisticalHandler:
             QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
             return
         
-        df = self.main.model._data.copy()
-        data_settings = self.main.data_widget.get_current_settings()
-        value_col = data_settings.get('y_col')
-        group_col = data_settings.get('x_col')
+        df, request = self._get_analysis_context()
+        value_col = request.value_col
+        group_col = request.group_col
+        hue_col = request.subgroup_col or None
+        facet_col = request.facet_col
         
-        hue_col = data_settings.get('subgroup_col')
-        if not hue_col: hue_col = None
-        
-        if group_col == hue_col:
-            hue_col = None
-        
-        facet_col = data_settings.get('facet_col')
-        
-        if not value_col or not group_col:
-            QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+        if self._warn_if_missing_axes(value_col, group_col):
             return
-        
-        
-        df[group_col] = df[group_col].astype(str)
-        if hue_col and hue_col in df.columns:
-            df[hue_col] = df[hue_col].astype(str)
         
         x_values = [str(v) for v in df[group_col].dropna().unique()]
         hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
@@ -196,27 +186,14 @@ class StatisticalHandler:
             QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
             return
         
-        df = self.main.model._data.copy()
-        data_settings = self.main.data_widget.get_current_settings()
-        value_col = data_settings.get('y_col')
-        group_col = data_settings.get('x_col')
+        df, request = self._get_analysis_context()
+        value_col = request.value_col
+        group_col = request.group_col
+        hue_col = request.subgroup_col or None
+        facet_col = request.facet_col
         
-        hue_col = data_settings.get('subgroup_col')
-        if not hue_col: hue_col = None
-        
-        if group_col == hue_col:
-            hue_col = None
-            
-        facet_col = data_settings.get('facet_col')
-        
-        if not value_col or not group_col:
-            QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+        if self._warn_if_missing_axes(value_col, group_col):
             return
-        
-        df[group_col] = df[group_col].astype(str)
-        if hue_col and hue_col in df.columns:
-            df[hue_col] = df[hue_col].astype(str)
-            
         x_values = [str(v) for v in df[group_col].dropna().unique()]
         hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
         
@@ -322,24 +299,14 @@ class StatisticalHandler:
                 QMessageBox.warning(self.main, "Warning", "Please load data first.")
                 return
             
-            df = self.main.model._data.copy()
-            data_settings = self.main.data_widget.get_current_settings()
-            value_col = data_settings.get('y_col')
-            group_col = data_settings.get('x_col')
-            
-            if not value_col or not group_col:
-                QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+            df, request = self._get_analysis_context()
+            value_col = request.value_col
+            group_col = request.group_col
+            hue_col = request.subgroup_col or None
+            facet_col = request.facet_col
+
+            if self._warn_if_missing_axes(value_col, group_col):
                 return
-            
-            hue_col = data_settings.get('subgroup_col')
-            if not hue_col or group_col == hue_col:
-                hue_col = None
-                
-            df[group_col] = df[group_col].astype(str)
-            if hue_col and hue_col in df.columns:
-                df[hue_col] = df[hue_col].astype(str)
-                
-            facet_col = data_settings.get('facet_col')
             
             x_values = [str(v) for v in df[group_col].dropna().unique()]
             hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col and hue_col in df.columns else []
@@ -356,87 +323,28 @@ class StatisticalHandler:
                     QMessageBox.warning(self.main, "Warning", "Please build a list of at least 2 groups to compare.")
                     return
                 
-                effective_groups, _ = self._get_interaction_group_col(df, group_col, hue_col)
-                
-                results_summary = []
-                
-                if facet_col and facet_col in df.columns:
-                    facet_categories = df[facet_col].dropna().unique()
-                    
-                    for category in facet_categories:
-                        subset_df = df[df[facet_col] == category].copy()
-                        current_facet_groups, _ = self._get_interaction_group_col(subset_df, group_col, hue_col)
-                        
-                        samples = [subset_df.loc[current_facet_groups == g, value_col].dropna() for g in selected_groups]
-                        samples = [s for s in samples if not s.empty]
-                        
-                        if len(samples) < 2: continue
-                        
-                        _, p_value = f_oneway(*samples)
-                        
-                        results_summary.append(f"--- Facet: {facet_col} = {category} ---\n" \
-                                            f"F-statistic: _, p-value: {p_value:.4f}\n")
-                        
-                        if p_value < 0.05 and len(samples) >= 2:
-                            selected_data_indices = current_facet_groups.isin(selected_groups)
-                            all_data = subset_df.loc[selected_data_indices, value_col].dropna()
-                            group_labels = current_facet_groups[selected_data_indices].dropna()
-                            
-                            tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
-                            df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
-                            
-                            results_summary.append(str(tukey_result) + "\n")
-                            
-                            for _, row in df_tukey.iterrows():
-                                if row['p-adj'] < 0.05:
-                                    simple_pair = (str(row['group1']), str(row['group2']))
-                                    formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
-                                    
-                                    annotation = {
-                                        "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
-                                        "facet_col": facet_col, "facet_value": category,
-                                        "box_pair": formatted_pair, "p_value": row['p-adj']
-                                    }
-                                    if annotation not in self.main.statistical_annotations:
-                                        self.main.statistical_annotations.append(annotation)
-                
-                else: # ファセットなし
-                    samples = [df.loc[effective_groups == g, value_col].dropna() for g in selected_groups]
-                    samples = [s for s in samples if not s.empty]
-                    
-                    if len(samples) < 2:
-                        QMessageBox.warning(self.main, "Warning", "Not enough data for the selected groups.")
-                        return
-                    
-                    f_stat, p_value = f_oneway(*samples)
-                    results_summary.append(f"F-statistic: {f_stat:.4f}\np-value: {p_value:.4f}\n")
-                    
-                    if p_value < 0.05 and len(samples) >= 2:
-                        selected_data_indices = effective_groups.isin(selected_groups)
-                        all_data = df.loc[selected_data_indices, value_col].dropna()
-                        group_labels = effective_groups[selected_data_indices].dropna()
-                        
-                        tukey_result = pairwise_tukeyhsd(endog=all_data, groups=group_labels, alpha=0.05)
-                        df_tukey = pd.DataFrame(data=tukey_result._results_table.data[1:], columns=tukey_result._results_table.data[0])
-                        results_summary.append("\nPost-hoc test (Tukey's HSD):\n" + str(tukey_result))
-                        
-                        for _, row in df_tukey.iterrows():
-                            if row['p-adj'] < 0.05:
-                                simple_pair = (str(row['group1']), str(row['group2']))
-                                formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
-                                
-                                annotation = {
-                                    "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
-                                    "facet_col": None, "facet_value": None,
-                                    "box_pair": formatted_pair, "p_value": row['p-adj']
-                                }
-                                if annotation not in self.main.statistical_annotations:
-                                    self.main.statistical_annotations.append(annotation)
-                
-                if results_summary:
-                    final_summary = "One-way ANOVA Results\n======================\n\n" + "\n".join(results_summary)
-                    
+                result = run_anova(
+                    df,
+                    value_col=value_col,
+                    group_col=group_col,
+                    subgroup_col=hue_col or "",
+                    facet_col=facet_col or "",
+                    selected_groups=selected_groups,
+                )
+
+                if not result.has_valid_samples:
+                    QMessageBox.warning(self.main, "Warning", "Not enough data for the selected groups.")
+                    return
+
+                for annotation in result.annotations:
+                    if annotation not in self.main.statistical_annotations:
+                        self.main.statistical_annotations.append(annotation)
+
+                if result.summary_lines:
+                    final_summary = "One-way ANOVA Results\n======================\n\n" + "\n".join(result.summary_lines)
                     self.main.results_widget.set_results_text(final_summary)
+                else:
+                    self.main.results_widget.clear_results()
                     
                 self.main.graph_manager.update_graph()
                 
@@ -451,24 +359,15 @@ class StatisticalHandler:
             if not hasattr(self.main, 'model'):
                 return
             
-            df = self.main.model._data.copy()
-            data_settings = self.main.data_widget.get_current_settings()
-            value_col = data_settings.get('y_col')
-            group_col = data_settings.get('x_col')
-            
-            if not value_col or not group_col:
-                QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis.")
+            df, request = self._get_analysis_context()
+            value_col = request.value_col
+            group_col = request.group_col
+            hue_col = request.subgroup_col or None
+            facet_col = request.facet_col
+
+            if self._warn_if_missing_axes(value_col, group_col):
                 return
-            
-            hue_col = data_settings.get('subgroup_col')
-            if not hue_col or group_col == hue_col:
-                hue_col = None
-                
-            df[group_col] = df[group_col].astype(str)
-            if hue_col and hue_col in df.columns:
-                df[hue_col] = df[hue_col].astype(str)
-                
-            facet_col = data_settings.get('facet_col')
+
             x_values = [str(v) for v in df[group_col].dropna().unique()]
             hue_values = [str(v) for v in df[hue_col].dropna().unique()] if hue_col else []
             
@@ -481,72 +380,29 @@ class StatisticalHandler:
                     QMessageBox.warning(self.main, "Warning", "Please select at least 2 groups.")
                     return
                 
-                effective_groups, interaction_col_name = self._get_interaction_group_col(df, group_col, hue_col)
-                df[interaction_col_name] = effective_groups
-                
-                results_summary = []
-                
-                if facet_col and facet_col in df.columns:
-                    for category in df[facet_col].dropna().unique():
-                        subset_df = df[df[facet_col] == category].copy()
-                        
-                        samples = [subset_df.loc[subset_df[interaction_col_name] == g, value_col].dropna() for g in selected_groups]
-                        samples = [s for s in samples if not s.empty]
-                        
-                        if len(samples) < 2: continue
-                        
-                        h_stat, p_value = kruskal(*samples)
-                        results_summary.append(f"--- Facet: {facet_col} = {category} ---")
-                        results_summary.append(f"Kruskal-Wallis H-statistic: {h_stat:.4f}, p-value: {p_value:.4f}")
-                        
-                        if p_value < 0.05 and len(samples) > 2:
-                            posthoc_df = sp.posthoc_dunn(subset_df, val_col=value_col, group_col=interaction_col_name)
-                            results_summary.append("\nDunn's Post-hoc Test (p-values):\n" + posthoc_df.to_string())
-                            
-                            for group1 in posthoc_df.columns:
-                                for group2, p_adj in posthoc_df.loc[group1].items():
-                                    if group1 != group2 and pd.notna(p_adj) and p_adj < 0.05:
-                                        simple_pair = tuple(sorted((group1, group2)))
-                                        formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
-                                        annotation = {
-                                            "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
-                                            "facet_col": facet_col, "facet_value": category,
-                                            "box_pair": formatted_pair, "p_value": p_adj
-                                        }
-                                        if annotation not in self.main.statistical_annotations:
-                                            self.main.statistical_annotations.append(annotation)
-                        results_summary.append("-" * 20)
-                else:
-                    samples = [df.loc[df[interaction_col_name] == g, value_col].dropna() for g in selected_groups]
-                    samples = [s for s in samples if not s.empty]
-                    
-                    if len(samples) < 2: return
-                    
-                    h_stat, p_value = kruskal(*samples)
-                    results_summary.append(f"Kruskal-Wallis H-statistic: {h_stat:.4f}, p-value: {p_value:.4f}")
-                    
-                    if p_value < 0.05 and len(samples) > 2:
-                        posthoc_df = sp.posthoc_dunn(df, val_col=value_col, group_col=interaction_col_name)
-                        results_summary.append("\nDunn's Post-hoc Test (p-values):\n" + posthoc_df.to_string())
-                        
-                        for group1 in posthoc_df.columns:
-                            for group2, p_adj in posthoc_df.loc[group1].items():
-                                if group1 != group2 and pd.notna(p_adj) and p_adj < 0.05:
-                                    simple_pair = tuple(sorted((str(group1), str(group2))))
-                                    formatted_pair = self._format_pair_for_annotation(simple_pair, hue_col)
-                                    annotation = {
-                                        "value_col": value_col, "group_col": group_col, "hue_col": hue_col,
-                                        "facet_col": None, "facet_value": None,
-                                        "box_pair": formatted_pair, "p_value": p_adj
-                                    }
-                                    if annotation not in self.main.statistical_annotations:
-                                        self.main.statistical_annotations.append(annotation)
-                                        
-                if results_summary:
-                    final_summary = "Kruskal-Wallis Test Results\n======================\n\n" + "\n".join(results_summary)
-                    
+                result = run_kruskal(
+                    df,
+                    value_col=value_col,
+                    group_col=group_col,
+                    subgroup_col=hue_col or "",
+                    facet_col=facet_col or "",
+                    selected_groups=selected_groups,
+                )
+
+                if not result.has_valid_samples:
+                    QMessageBox.warning(self.main, "Warning", "Not enough data for the selected groups.")
+                    return
+
+                for annotation in result.annotations:
+                    if annotation not in self.main.statistical_annotations:
+                        self.main.statistical_annotations.append(annotation)
+
+                if result.summary_lines:
+                    final_summary = "Kruskal-Wallis Test Results\n======================\n\n" + "\n".join(result.summary_lines)
                     self.main.results_widget.set_results_text(final_summary)
-                    
+                else:
+                    self.main.results_widget.clear_results()
+
                 self.main.graph_manager.update_graph()
                 
         except Exception as e:
@@ -757,19 +613,13 @@ class StatisticalHandler:
             QMessageBox.warning(self.main, "Data Not Found", "Please import data before performing an analysis.")
             return
         
-        df = self.main.model._data.copy()
-        data_settings = self.main.data_widget.get_current_settings()
-        value_col = data_settings.get('y_col')
-        group_col = data_settings.get('x_col')
-        hue_col = data_settings.get('subgroup_col')
-        
-        if not value_col or not group_col:
-            QMessageBox.warning(self.main, "Warning", "Please select Y-Axis and X-Axis in the 'Data' tab first.")
+        df, request = self._get_analysis_context()
+        value_col = request.value_col
+        group_col = request.group_col
+        hue_col = request.subgroup_col or None
+
+        if self._warn_if_missing_axes(value_col, group_col):
             return
-        
-        # X軸とサブグループが同じ場合は、hueを分析上無視する
-        if group_col == hue_col:
-            hue_col = None
             
         try:
             effective_groups, group_name = self._get_interaction_group_col(df, group_col, hue_col)

@@ -1,0 +1,22 @@
+[project]
+name = "calcite"
+version = "0.1.0"
+description = "Desktop application for data analysis and publication-quality graphing."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "PySide6",
+    "scikit-posthocs",
+    "scipy",
+    "seaborn",
+    "statannotations",
+    "statsmodels",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]

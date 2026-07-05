@@ -1,20 +1,25 @@
 # handlers/action_handler.py
 
 import pandas as pd
-import json
-import zipfile
-import tempfile
-import numpy as np
-import io
 import os
 import traceback
 
-from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication, QVBoxLayout
-from scipy.optimize import curve_fit
-from statsmodels.stats.multicomp import pairwise_tukeyhsd
-import scikit_posthocs as sp
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication
 
 from ..pandas_model import PandasModel
+from ..services.data_service import (
+    filter_dataframe,
+    pivot_dataframe,
+    restructure_dataframe,
+    subset_rows,
+)
+from ..services.project_service import (
+    ProjectState,
+    dataframe_from_clipboard_text,
+    optimize_imported_dataframe,
+    read_project_archive,
+    write_project_archive,
+)
 
 # --- Dialogs ---
 from ..dialogs.restructure_dialog import RestructureDialog
@@ -25,23 +30,6 @@ from ..dialogs.license_dialog import LicenseDialog
 
 from .statistical_handler import StatisticalHandler
 
-class NumpyArrayEncoder(json.JSONEncoder):
-    """
-    NumPyのndarrayや数値型を、JSONが理解できるPythonの基本型に変換する。
-    """
-    def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist() # ndarray -> list
-        if isinstance(obj, pd.Series):
-            return obj.tolist()
-        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
-                            np.int16, np.int32, np.int64, np.uint8,
-                            np.uint16, np.uint32, np.uint64)):
-            return int(obj)     # numpy int -> python int
-        if isinstance(obj, (np.float64, np.float16, np.float32)):
-            return float(obj)  # numpy float -> python float
-        return json.JSONEncoder.default(self, obj)
-
 class ActionHandler:
     
     _UNIQUE_SEPARATOR = '_#%%%_'
@@ -50,6 +38,15 @@ class ActionHandler:
         self.main = main_window
         # StatisticalHandlerのインスタンスを生成し、参照を保持する
         self.statistical_handler = StatisticalHandler(main_window)
+
+    def _set_main_dataframe(self, df: pd.DataFrame):
+        self.main.model = PandasModel(df)
+        self.main.table_view.setModel(self.main.model)
+        self.main.properties_widget.set_columns(df.columns)
+        self.main.results_widget.clear_results()
+        self.main.table_view.selectionModel().selectionChanged.connect(self.main.graph_manager.update_graph)
+        self.main.model.dataChanged.connect(self.main.graph_manager.update_graph)
+        self.main.model.headerDataChanged.connect(self.main.graph_manager.update_graph)
 
 
     def save_table_as_csv(self):
@@ -75,27 +72,8 @@ class ActionHandler:
         file_path, _ = QFileDialog.getOpenFileName(self.main, "Open CSV File", "", "CSV Files (*.csv);;All Files (*)")
         if file_path:
             try:
-                df = pd.read_csv(file_path)
-                
-                # メモリ削減のためにcategory型に変換
-                for col in df.select_dtypes(include=['object']).columns:
-                    num_unique_values = df[col].nunique()
-                    num_total_values = len(df[col])
-                    # ユニークな値の割合が50%未満ならcategory型に変換
-                    if num_unique_values / num_total_values < 0.5:
-                        print(f"Converting column '{col}' to 'category' type.")
-                        df[col] = df[col].astype('category')
-                
-                self.main.model = PandasModel(df)
-                self.main.table_view.setModel(self.main.model)
-                self.main.properties_widget.set_columns(df.columns)
-                self.main.results_widget.clear_results()
-                
-                # GraphManagerのupdate_graphに接続する
-                self.main.table_view.selectionModel().selectionChanged.connect(self.main.graph_manager.update_graph)
-                self.main.model.dataChanged.connect(self.main.graph_manager.update_graph)
-                self.main.model.headerDataChanged.connect(self.main.graph_manager.update_graph)
-                
+                df = optimize_imported_dataframe(pd.read_csv(file_path))
+                self._set_main_dataframe(df)
             except Exception as e:
                 QMessageBox.critical(self.main, "Error", f"Error opening file: {e}")
 
@@ -108,16 +86,8 @@ class ActionHandler:
             if not text:
                 return
             
-            df = pd.read_csv(io.StringIO(text), sep='\t')
-            self.main.model = PandasModel(df)
-            self.main.table_view.setModel(self.main.model)
-            self.main.properties_widget.set_columns(df.columns)
-            self.main.results_widget.clear_results() # ★★★ 追加 ★★★
-            
-            self.main.table_view.selectionModel().selectionChanged.connect(self.main.graph_manager.update_graph)
-            self.main.model.dataChanged.connect(self.main.graph_manager.update_graph)
-            self.main.model.headerDataChanged.connect(self.main.graph_manager.update_graph)
-            
+            df = dataframe_from_clipboard_text(text)
+            self._set_main_dataframe(df)
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to paste from clipboard: {e}")
 
@@ -136,42 +106,17 @@ class ActionHandler:
             return
 
         try:
-            # 一時的な作業ディレクトリを作成
-            with tempfile.TemporaryDirectory() as temp_dir:
-                print(f"DEBUG: Created temporary directory: {temp_dir}")
-                
-                # 1. データをCSVとして保存
-                csv_path = os.path.join(temp_dir, 'data.csv')
-                self.main.model._data.to_csv(csv_path, index=False)
-                print("DEBUG: Saved data.csv")
-
-                # 2. グラフ設定をJSONとして保存
-                settings_path = os.path.join(temp_dir, 'settings.json')
-                settings = self.main.properties_widget.get_properties()
-                with open(settings_path, 'w') as f:
-                    json.dump(settings, f, indent=4)
-                print("DEBUG: Saved settings.json")
-
-                # 3. 解析結果をJSONとして保存
-                analysis_path = os.path.join(temp_dir, 'analysis.json')
-                analysis_data = {
-                    'statistical_annotations': self.main.statistical_annotations,
-                    'paired_annotations': self.main.paired_annotations,
-                    'regression_line_params': self.main.regression_line_params,
-                    'fit_params': self.main.fit_params,
-                }
-                with open(analysis_path, 'w') as f:
-                    json.dump(analysis_data, f, indent=4, cls=NumpyArrayEncoder)
-                print("DEBUG: Saved analysis.json")
-
-                # 4. 一時ディレクトリの中身をzipファイルに圧縮
-                with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    for root, _, files in os.walk(temp_dir):
-                        for file in files:
-                            full_path = os.path.join(root, file)
-                            arcname = os.path.relpath(full_path, temp_dir)
-                            zf.write(full_path, arcname)
-                print(f"DEBUG: Project successfully zipped to {file_path}")
+            write_project_archive(
+                file_path,
+                ProjectState(
+                    dataframe=self.main.model._data,
+                    settings=self.main.properties_widget.get_properties(),
+                    statistical_annotations=self.main.statistical_annotations,
+                    paired_annotations=self.main.paired_annotations,
+                    regression_line_params=self.main.regression_line_params,
+                    fit_params=self.main.fit_params,
+                ),
+            )
 
             QMessageBox.information(self.main, "Success", f"Project saved to:\n{file_path}")
             self.main.statusBar().showMessage(f"Project saved: {os.path.basename(file_path)}")
@@ -191,57 +136,15 @@ class ActionHandler:
             return
 
         try:
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # zipファイルを一時ディレクトリに展開
-                with zipfile.ZipFile(file_path, 'r') as zf:
-                    zf.extractall(temp_dir)
-                print(f"DEBUG: Project extracted to {temp_dir}")
-
-                # 1. データをCSVから読み込む
-                csv_path = os.path.join(temp_dir, 'data.csv')
-                if os.path.exists(csv_path):
-                    df = pd.read_csv(csv_path)
-                    self.main.load_dataframe(df) # MainWindowの既存のメソッドを再利用
-                    print("DEBUG: Loaded data.csv")
-
-                # 2. グラフ設定をJSONから読み込む (TODO: 復元ロジック)
-                settings_path = os.path.join(temp_dir, 'settings.json')
-                if os.path.exists(settings_path):
-                    with open(settings_path, 'r') as f:
-                        settings = json.load(f)
-                    self.main.properties_widget.set_properties(settings)
-                    print("DEBUG: Loaded and applied settings.json to UI.")
-
-                # 3. 解析結果をJSONから読み込む
-                analysis_path = os.path.join(temp_dir, 'analysis.json')
-                if os.path.exists(analysis_path):
-                    with open(analysis_path, 'r') as f:
-                        analysis_data = json.load(f)
-                    self.main.statistical_annotations = analysis_data.get('statistical_annotations', [])
-                    self.main.paired_annotations = analysis_data.get('paired_annotations', [])
-
-                    reg_params = analysis_data.get('regression_line_params')
-                    if reg_params:
-                        if 'x_line' in reg_params: # 単一フィットの場合
-                            reg_params['x_line'] = np.array(reg_params['x_line'])
-                            reg_params['y_line'] = np.array(reg_params['y_line'])
-                        else: # サブグループごとのフィットの場合
-                            for group in reg_params:
-                                reg_params[group]['x_line'] = np.array(reg_params[group]['x_line'])
-                                reg_params[group]['y_line'] = np.array(reg_params[group]['y_line'])
-                    self.main.regression_line_params = reg_params
-
-                    # fit_params の復元
-                    fit_params = analysis_data.get('fit_params')
-                    if fit_params:
-                        if 'params' in fit_params: # 単一フィットの場合
-                            fit_params['params'] = np.array(fit_params['params'])
-                            fit_params['log_x_data'] = np.array(fit_params['log_x_data'])
-                        else: # サブグループごとのフィットの場合
-                            for group in fit_params:
-                                fit_params[group]['params'] = np.array(fit_params[group]['params'])
-                                fit_params[group]['log_x_data'] = np.array(fit_params[group]['log_x_data'])
-                    self.main.fit_params = fit_params
+            state = read_project_archive(file_path)
+            if state.dataframe is not None:
+                self.main.load_dataframe(state.dataframe)
+            if state.settings:
+                self.main.properties_widget.set_properties(state.settings)
+            self.main.statistical_annotations = state.statistical_annotations
+            self.main.paired_annotations = state.paired_annotations
+            self.main.regression_line_params = state.regression_line_params
+            self.main.fit_params = state.fit_params
 
             self.main.graph_manager.update_graph()
             self.main.statusBar().showMessage(f"Project opened: {os.path.basename(file_path)}")
@@ -306,13 +209,7 @@ class ActionHandler:
         """pd.meltを使用してデータをワイドからロングフォーマットに変換し、新しいウィンドウで結果を表示する。"""
         try:
             df = self.main.model._data
-            new_df = pd.melt(
-                df,
-                id_vars=settings['id_vars'],
-                value_vars=settings['value_vars'],
-                var_name=settings['var_name'],
-                value_name=settings['value_name']
-            )
+            new_df = restructure_dataframe(df, settings)
             
             # self.main.__class__() を使って新しいウィンドウを生成
             new_window = self.main.__class__()
@@ -356,12 +253,7 @@ class ActionHandler:
         """pd.pivot_tableを使用してデータをロングからワイドフォーマットに変換し、新しいウィンドウで結果を表示する。"""
         try:
             df = self.main.model._data
-            new_df = pd.pivot_table(
-                df,
-                index=settings['id_vars'],
-                columns=settings['var_name'],
-                values=settings['value_name']
-            ).reset_index()
+            new_df = pivot_dataframe(df, settings)
             
             new_window = self.main.__class__()
             new_window.model = PandasModel(new_df)
@@ -405,38 +297,9 @@ class ActionHandler:
 
     def apply_advanced_filter(self, settings):
         """指定された複数条件に基づいてデータをフィルタリングする"""
-        query_parts = []
         try:
             df = self.main.model._data.copy()
-            
-            # --- 翻訳担当のコアロジック ---
-            for i, condition in enumerate(settings):
-                col = condition['column']
-                op = condition['operator']
-                val = condition['value']
-                
-                # 値を安全にクエリ文字列用にフォーマット
-                query_val = f'"{val}"' if isinstance(val, str) else str(val)
-                
-                # 個々の条件式を作成
-                if op in ["contains", "not contains", "startswith", "endswith"]:
-                    if op == "not contains":
-                        part = f'~`{col}`.str.contains({query_val})'
-                    else:
-                        part = f'`{col}`.str.{op}({query_val})'
-                else:
-                    part = f'`{col}` {op} {query_val}'
-                    
-                # 最初の条件でなければ、AND/ORで連結する
-                if i > 0:
-                    connector = condition['connector']
-                    query_parts.append(f" {connector} ({part})")
-                else:
-                    query_parts.append(f"({part})")
-            
-            final_query = "".join(query_parts)
-            
-            new_df = df.query(final_query, engine='python').reset_index(drop=True)
+            new_df, final_query = filter_dataframe(df, settings)
             
             if new_df.empty:
                 QMessageBox.information(self.main, "Info", "The filter returned no data.")
@@ -452,8 +315,12 @@ class ActionHandler:
             app.main_windows.append(new_window)
             
         except Exception as e:
-            final_query_str = "".join(query_parts)
-            QMessageBox.critical(self.main, "Error", f"Failed to apply filter: {e}\n\nAttempted Query: {final_query_str}")
+            attempted_query = ""
+            try:
+                _, attempted_query = filter_dataframe(self.main.model._data.copy(), settings)
+            except Exception:
+                pass
+            QMessageBox.critical(self.main, "Error", f"Failed to apply filter: {e}\n\nAttempted Query: {attempted_query}")
             traceback.print_exc()
 
 
@@ -478,7 +345,7 @@ class ActionHandler:
             
             # 元のデータフレームから、選択された行を番号で抽出する
             original_df = self.main.model._data
-            new_df = original_df.iloc[row_indices].copy().reset_index(drop=True)
+            new_df = subset_rows(original_df, row_indices)
             
             # 既存のロジックを再利用して、新しいウィンドウを生成・表示
             new_window = self.main.__class__(data=new_df)
