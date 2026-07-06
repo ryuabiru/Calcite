@@ -66,6 +66,10 @@ impl ProjectState {
         self.set_loaded_table(path.to_path_buf(), table);
         Ok(())
     }
+
+    pub fn set_graph_type(&mut self, graph_type: impl Into<String>) {
+        self.current_graph_type = graph_type.into();
+    }
 }
 
 pub fn load_csv_table(path: impl AsRef<Path>) -> Result<DataTable, String> {

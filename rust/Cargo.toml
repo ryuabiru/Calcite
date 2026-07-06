@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 eframe = "0.33"
 csv = "1.3"
+rfd = "0.15"

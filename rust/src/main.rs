@@ -1,9 +1,11 @@
+mod backend;
+mod core;
 mod state;
 
-use std::path::PathBuf;
-
+use backend::AppBackend;
+use core::AppCommand;
 use eframe::egui;
-use state::ProjectState;
+use rfd::FileDialog;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -29,16 +31,22 @@ enum LeftTab {
 
 struct CalciteRustApp {
     left_tab: LeftTab,
-    project: ProjectState,
+    backend: AppBackend,
     csv_path_input: String,
+    x_column_input: String,
+    y_column_input: String,
+    subgroup_column_input: String,
 }
 
 impl Default for CalciteRustApp {
     fn default() -> Self {
         Self {
             left_tab: LeftTab::DataFrame,
-            project: ProjectState::new(),
+            backend: AppBackend::new(),
             csv_path_input: String::new(),
+            x_column_input: String::new(),
+            y_column_input: String::new(),
+            subgroup_column_input: String::new(),
         }
     }
 }
@@ -64,13 +72,15 @@ impl eframe::App for CalciteRustApp {
                         "Proportion Plot",
                         "Histogram",
                     ] {
-                        let selected = self.project.current_graph_type == label;
+                        let selected = self.backend.project().current_graph_type == label;
                         if ui.selectable_label(selected, label).clicked() {
-                            self.project.current_graph_type = label.to_owned();
+                            let _ = self.backend.dispatch(AppCommand::SetGraphType {
+                                graph_type: label.to_owned(),
+                            });
                         }
                     }
                     ui.separator();
-                    ui.label(&self.project.status_message);
+                    ui.label(&self.backend.project().status_message);
                 });
             });
 
@@ -99,7 +109,10 @@ impl eframe::App for CalciteRustApp {
                 ui.horizontal(|ui| {
                     ui.heading("Graph");
                     ui.separator();
-                    ui.label(format!("Current type: {}", self.project.current_graph_type));
+                    ui.label(format!(
+                        "Current type: {}",
+                        self.backend.project().current_graph_type
+                    ));
                 });
                 ui.add_space(8.0);
                 self.placeholder_surface(
@@ -170,7 +183,8 @@ impl CalciteRustApp {
     fn show_dataframe_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("DataFrame");
         ui.label(
-            self.project
+            self.backend
+                .project()
                 .loaded_file_name()
                 .as_deref()
                 .map_or("No file loaded yet.", |name| name),
@@ -212,7 +226,7 @@ impl CalciteRustApp {
 
     fn show_csv_loader(&mut self, ui: &mut egui::Ui) {
         ui.heading("CSV Loader");
-        ui.label("Enter a CSV path and load it into the Rust app state.");
+        ui.label("Select a CSV file or enter a path manually.");
         ui.add_space(6.0);
 
         ui.horizontal(|ui| {
@@ -224,35 +238,56 @@ impl CalciteRustApp {
         });
 
         ui.add_space(8.0);
-        let load_clicked = ui
-            .add_sized(
-                [ui.available_width(), 36.0],
-                egui::Button::new("Load CSV")
-                    .fill(egui::Color32::from_rgb(164, 74, 27))
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(140, 63, 22))),
-            )
-            .clicked();
+        ui.horizontal(|ui| {
+            let select_clicked = ui
+                .add_sized(
+                    [ui.available_width() * 0.48, 36.0],
+                    egui::Button::new("Select CSV...")
+                        .fill(egui::Color32::from_rgb(164, 74, 27))
+                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(140, 63, 22))),
+                )
+                .clicked();
 
-        if load_clicked {
-            let path = PathBuf::from(self.csv_path_input.trim());
-            if path.as_os_str().is_empty() {
-                self.project.status_message = "CSV path is empty".to_owned();
-                return;
+            let load_clicked = ui
+                .add_sized(
+                    [ui.available_width(), 36.0],
+                    egui::Button::new("Load CSV")
+                        .fill(egui::Color32::from_rgb(164, 74, 27))
+                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(140, 63, 22))),
+                )
+                .clicked();
+
+            if select_clicked
+                && let Some(path) = FileDialog::new().add_filter("CSV", &["csv"]).pick_file()
+            {
+                self.csv_path_input = path.display().to_string();
+                self.load_csv_path(path);
             }
 
-            match self.project.open_csv_path(&path) {
-                Ok(()) => {
-                    self.project.status_message = format!("Loaded {}", path.display());
-                    self.project.results_preview = format!(
-                        "Loaded table\n\nRows: {}\nColumns: {}",
-                        self.project.data_table.row_count(),
-                        self.project.data_table.column_count()
-                    );
+            if load_clicked {
+                let path = self.csv_path_input.trim().to_owned();
+                let path = std::path::PathBuf::from(path);
+                if path.as_os_str().is_empty() {
+                    self.backend.project_mut().status_message = "CSV path is empty".to_owned();
+                    return;
                 }
-                Err(error) => {
-                    self.project.status_message = "CSV load failed".to_owned();
-                    self.project.results_preview = error;
-                }
+
+                self.load_csv_path(path);
+            }
+        });
+    }
+
+    fn load_csv_path(&mut self, path: std::path::PathBuf) {
+        match self
+            .backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+        {
+            Ok(()) => {
+                self.backend.project_mut().status_message = format!("Loaded {}", path.display());
+            }
+            Err(error) => {
+                self.backend.project_mut().status_message = "CSV load failed".to_owned();
+                self.backend.project_mut().results_preview = error;
             }
         }
     }
@@ -260,7 +295,7 @@ impl CalciteRustApp {
     fn show_table_preview(&self, ui: &mut egui::Ui) {
         ui.heading("Table Preview");
         ui.add_space(6.0);
-        let table = &self.project.data_table;
+        let table = &self.backend.project().data_table;
         if table.is_empty() {
             ui.label("No table data loaded.");
             return;
@@ -303,20 +338,30 @@ impl CalciteRustApp {
             .spacing([12.0, 10.0])
             .show(ui, |ui| {
                 ui.label("Graph Type");
-                ui.label(&self.project.current_graph_type);
+                ui.label(&self.backend.project().current_graph_type);
                 ui.end_row();
 
                 ui.label("X Column");
-                ui.text_edit_singleline(&mut self.project.x_column);
+                let x_changed = ui.text_edit_singleline(&mut self.x_column_input).changed();
                 ui.end_row();
 
                 ui.label("Y Column");
-                ui.text_edit_singleline(&mut self.project.y_column);
+                let y_changed = ui.text_edit_singleline(&mut self.y_column_input).changed();
                 ui.end_row();
 
                 ui.label("Sub-group");
-                ui.text_edit_singleline(&mut self.project.subgroup_column);
+                let subgroup_changed = ui
+                    .text_edit_singleline(&mut self.subgroup_column_input)
+                    .changed();
                 ui.end_row();
+
+                if x_changed || y_changed || subgroup_changed {
+                    let _ = self.backend.dispatch(AppCommand::SetColumns {
+                        x_column: self.x_column_input.clone(),
+                        y_column: self.y_column_input.clone(),
+                        subgroup_column: self.subgroup_column_input.clone(),
+                    });
+                }
             });
 
         ui.add_space(12.0);
@@ -330,7 +375,7 @@ impl CalciteRustApp {
         ui.heading("Analysis Results");
         ui.add_space(8.0);
         egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.monospace(&self.project.results_preview);
+            ui.monospace(&self.backend.project().results_preview);
         });
     }
 }
