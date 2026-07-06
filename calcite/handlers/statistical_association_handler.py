@@ -46,7 +46,13 @@ class StatisticalAssociationHandler(StatisticalHandlerBase):
 
         try:
             result = self.run_chi_squared_analysis_use_case.execute(df, rows_col, cols_col)
-            self._show_results(format_chi_squared_result(result, rows_col, cols_col))
+            self.state.chi_squared_highlight = {
+                "rows_col": rows_col,
+                "cols_col": cols_col,
+                "standardized_residuals": result.standardized_residuals.round(6).to_dict(),
+                "p_value": result.p_value,
+            }
+            self._show_results(format_chi_squared_result(result, rows_col, cols_col), update_graph=True)
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to perform Chi-squared test: {e}")
 
@@ -62,7 +68,18 @@ class StatisticalAssociationHandler(StatisticalHandlerBase):
 
         try:
             result = self.run_two_proportion_analysis_use_case.execute(df, rows_col, cols_col)
-            self._show_results(format_two_proportion_result(result, rows_col, cols_col))
+            self.state.two_proportion_highlight = {
+                "rows_col": rows_col,
+                "cols_col": cols_col,
+                "group1_label": result.group1_label,
+                "group2_label": result.group2_label,
+                "success_label": result.success_label,
+                "difference_in_proportions": result.difference_in_proportions,
+                "ci_low_difference": result.ci_low_difference,
+                "ci_high_difference": result.ci_high_difference,
+                "p_value": result.p_value,
+            }
+            self._show_results(format_two_proportion_result(result, rows_col, cols_col), update_graph=True)
         except Exception as e:
             QMessageBox.critical(self.main, "Error", f"Failed to perform 2-proportion z-test: {e}")
 

@@ -9,11 +9,13 @@ class ResultsWidget(QWidget):
     """
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("panelSurface")
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(5, 5, 5, 5) # 少し余白を持たせる
+        main_layout.setContentsMargins(12, 12, 12, 12)
 
         title_label = QLabel("<b>Analysis Results</b>")
+        title_label.setObjectName("sectionTitle")
         
         self.results_text_edit = QTextEdit()
         self.results_text_edit.setReadOnly(True) # 編集不可にする

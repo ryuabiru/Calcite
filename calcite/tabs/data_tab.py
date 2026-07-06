@@ -38,7 +38,7 @@ class DataTab(QWidget):
     def set_graph_type(self, graph_type):
         """表示するUIをグラフタイプに応じて切り替える"""
 
-        if graph_type in ['scatter', 'summary_scatter', 'bar', 'countplot', 'stacked_bar', 'stacked_bar_100', 'mosaic', 'heatmap', 'correlation_heatmap', 'histogram', 'boxplot', 'violin', 'pointplot', 'lineplot']:
+        if graph_type in ['scatter', 'summary_scatter', 'bar', 'countplot', 'stacked_bar', 'stacked_bar_100', 'proportion_plot', 'mosaic', 'heatmap', 'correlation_heatmap', 'histogram', 'boxplot', 'violin', 'pointplot', 'lineplot']:
             self.stacked_widget.setCurrentWidget(self.tidy_tab)
             self.tidy_tab.x_axis_label.setVisible(True)
             self.tidy_tab.x_axis_combo.setVisible(True)
@@ -53,7 +53,7 @@ class DataTab(QWidget):
                 self.tidy_tab.x_axis_label.setText("X-Axis (Category):")
                 self.tidy_tab.y_axis_label.setText("Count:")
                 self.tidy_tab.y_axis_combo.setVisible(False)
-            elif graph_type in ['stacked_bar', 'stacked_bar_100', 'mosaic']:
+            elif graph_type in ['stacked_bar', 'stacked_bar_100', 'proportion_plot', 'mosaic']:
                 self.tidy_tab.x_axis_label.setText("X-Axis (Category):")
                 self.tidy_tab.y_axis_label.setText("Count:")
                 self.tidy_tab.y_axis_combo.setVisible(False)

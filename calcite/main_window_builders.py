@@ -26,6 +26,7 @@ def build_graph_toolbar(window):
         ("Count Plot", "countplot", False),
         ("Stacked Bar", "stacked_bar", False),
         ("100% Stacked Bar", "stacked_bar_100", False),
+        ("Proportion Plot", "proportion_plot", False),
         ("Mosaic Plot", "mosaic", False),
         ("Heatmap", "heatmap", False),
         ("Correlation Heatmap", "correlation_heatmap", False),

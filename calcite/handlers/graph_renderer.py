@@ -4,6 +4,7 @@ import traceback
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
 import seaborn as sns
 from PySide6.QtWidgets import QMessageBox
 from statannotations.Annotator import Annotator
@@ -17,6 +18,7 @@ from calcite.services.plot_service import (
     build_facet_plot_data,
     build_heatmap_plot_data,
     build_mosaic_plot_data,
+    build_proportion_plot_data,
     build_stacked_bar_plot_data,
     build_four_pl_overlay_lines,
     build_legend_handles_labels,
@@ -152,6 +154,10 @@ class GraphRenderer:
                 squeeze=False,
                 layout="constrained",
             )
+            normalization_mode = request.properties.get("heatmap_normalization", "count")
+            show_annotations = request.properties.get("heatmap_show_annotations", True)
+            cmap = request.properties.get("heatmap_colormap", "Blues")
+            value_format = ".0f" if normalization_mode == "count" else ".2f"
 
             for j, heatmap_data in enumerate(heatmap_plot_data):
                 ax = axes[0, j]
@@ -163,13 +169,17 @@ class GraphRenderer:
                 sns.heatmap(
                     heatmap_data.matrix,
                     ax=ax,
-                    annot=True,
-                    fmt=".0f",
-                    cmap="Blues",
+                    annot=show_annotations,
+                    fmt=value_format,
+                    cmap=cmap,
                     cbar=(j == n_cols - 1),
                 )
                 ax.set_xlabel(request.x_col)
-                ax.set_ylabel(request.y_col)
+                if normalization_mode == "count":
+                    ax.set_ylabel(request.y_col)
+                else:
+                    ax.set_ylabel(f"{request.y_col} ({normalization_mode}-normalized)")
+                self._apply_heatmap_highlights(ax, heatmap_data.matrix, request)
                 if request.facet_col:
                     ax.set_title(str(heatmap_data.facet_value))
 
@@ -228,7 +238,7 @@ class GraphRenderer:
                 for column in matrix.columns:
                     values = matrix[column].to_numpy()
                     color = palette.get(str(column))
-                    ax.bar(
+                    bars = ax.bar(
                         matrix.index,
                         values,
                         bottom=bottom,
@@ -237,11 +247,13 @@ class GraphRenderer:
                         edgecolor=request.properties.get("bar_edgecolor", "black"),
                         linewidth=request.properties.get("bar_edgewidth", 1.0),
                     )
+                    self._apply_stacked_bar_labels(ax, bars, values, bottom, request)
                     bottom = values if bottom is None else bottom + values
 
                 if request.graph_type == "stacked_bar_100":
                     ax.set_ylim(0, 1)
                     ax.set_ylabel("Proportion")
+                    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0, decimals=0))
                 else:
                     ax.set_ylabel("Count")
                 ax.set_xlabel(request.x_col)
@@ -251,12 +263,86 @@ class GraphRenderer:
             if request.subgroup_col:
                 handles, labels = axes[0, -1].get_legend_handles_labels()
                 if handles and request.properties.get("legend_position") != "hide":
-                    axes[0, -1].legend(
+                    legend = axes[0, -1].legend(
                         handles=handles,
                         labels=labels,
                         title=request.properties.get("legend_title") or request.subgroup_col,
-                        loc=request.properties.get("legend_position", "best"),
+                        **self._get_legend_kwargs(request.properties, categorical_default=True),
                     )
+                    if legend is not None:
+                        legend.set_frame_alpha(request.properties.get("legend_alpha", 1.0))
+            return fig
+        except Exception as e:
+            QMessageBox.critical(self.main, "Graph Error", f"An unexpected error occurred: {e}")
+            traceback.print_exc()
+            return None
+
+    def render_proportion_plot(self, df, request: PlotRequest):
+        if not request.x_col or not request.subgroup_col:
+            return None
+
+        try:
+            df_processed = prepare_plot_dataframe(df, request)
+            proportion_plot_data = build_proportion_plot_data(df_processed, request)
+            n_cols = max(len(proportion_plot_data), 1)
+            fig, axes = plt.subplots(1, n_cols, figsize=(n_cols * 5, 4), squeeze=False, layout="constrained")
+            palette = request.properties.get("subgroup_colors", {})
+
+            for j, proportion_data in enumerate(proportion_plot_data):
+                ax = axes[0, j]
+                if not proportion_data.points:
+                    ax.set_title(f"No data for {proportion_data.facet_value}")
+                    continue
+
+                bar_color = palette.get(
+                    proportion_data.success_label,
+                    request.properties.get("single_color") or sns.color_palette(n_colors=1)[0],
+                )
+                categories = [point.category for point in proportion_data.points]
+                proportions = [point.proportion for point in proportion_data.points]
+                ci_lows = [point.proportion - point.ci_low for point in proportion_data.points]
+                ci_highs = [point.ci_high - point.proportion for point in proportion_data.points]
+
+                ax.bar(
+                    categories,
+                    proportions,
+                    color=bar_color,
+                    edgecolor=request.properties.get("bar_edgecolor", "black"),
+                    linewidth=request.properties.get("bar_edgewidth", 1.0),
+                )
+                ax.errorbar(
+                    categories,
+                    proportions,
+                    yerr=[ci_lows, ci_highs],
+                    fmt="none",
+                    ecolor=request.properties.get("marker_edgecolor", "black"),
+                    elinewidth=request.properties.get("line_width", request.properties.get("linewidth", 1.5)),
+                    capsize=request.properties.get("capsize", 0),
+                )
+
+                if request.properties.get("proportion_label_mode", "percent") != "hide":
+                    for point in proportion_data.points:
+                        label = (
+                            f"{point.success_count}/{point.total_count}"
+                            if request.properties.get("proportion_label_mode") == "count"
+                            else f"{point.proportion:.1%}"
+                        )
+                        ax.text(
+                            point.category,
+                            min(point.ci_high + 0.03, 1.02),
+                            label,
+                            ha="center",
+                            va="bottom",
+                        )
+
+                ax.set_ylim(0, 1.05)
+                ax.set_xlabel(request.x_col)
+                ax.set_ylabel(f"Proportion ({proportion_data.success_label})")
+                ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0, decimals=0))
+                self._apply_two_proportion_highlight(ax, request, proportion_data)
+                if request.facet_col:
+                    ax.set_title(str(proportion_data.facet_value))
+
             return fig
         except Exception as e:
             QMessageBox.critical(self.main, "Graph Error", f"An unexpected error occurred: {e}")
@@ -296,11 +382,13 @@ class GraphRenderer:
                 for subgroup in mosaic_plot_data[0].subgroups
             ] if mosaic_plot_data else []
             if handles and request.properties.get("legend_position") != "hide":
-                axes[0, -1].legend(
+                legend = axes[0, -1].legend(
                     handles=handles,
                     title=request.properties.get("legend_title") or request.subgroup_col,
-                    loc=request.properties.get("legend_position", "best"),
+                    **self._get_legend_kwargs(request.properties, categorical_default=True),
                 )
+                if legend is not None:
+                    legend.set_frame_alpha(request.properties.get("legend_alpha", 1.0))
             return fig
         except Exception as e:
             QMessageBox.critical(self.main, "Graph Error", f"An unexpected error occurred: {e}")
@@ -403,6 +491,66 @@ class GraphRenderer:
         except Exception:
             traceback.print_exc()
 
+    def _apply_heatmap_highlights(self, ax, matrix, request):
+        overlay = self.main.app_state.chi_squared_highlight
+        if not overlay:
+            return
+        if overlay.get("rows_col") != request.y_col or overlay.get("cols_col") != request.x_col:
+            return
+
+        residuals = overlay.get("standardized_residuals", {})
+        for row_index, row_label in enumerate(matrix.index):
+            for col_index, col_label in enumerate(matrix.columns):
+                residual = residuals.get(str(row_label), {}).get(str(col_label))
+                if residual is None or abs(residual) < 2.0:
+                    continue
+                color = "crimson" if residual > 0 else "royalblue"
+                rect = mpatches.Rectangle(
+                    (col_index, row_index),
+                    1,
+                    1,
+                    fill=False,
+                    edgecolor=color,
+                    linewidth=min(3.5, 1.0 + abs(residual) * 0.35),
+                )
+                ax.add_patch(rect)
+
+    def _apply_two_proportion_highlight(self, ax, request, proportion_data):
+        overlay = self.main.app_state.two_proportion_highlight
+        if not overlay:
+            return
+        if overlay.get("rows_col") != request.x_col or overlay.get("cols_col") != request.subgroup_col:
+            return
+        if overlay.get("success_label") != proportion_data.success_label:
+            return
+
+        patch_by_label = {}
+        for patch, point in zip(ax.patches, proportion_data.points):
+            patch_by_label[point.category] = patch
+
+        group1_patch = patch_by_label.get(overlay.get("group1_label"))
+        group2_patch = patch_by_label.get(overlay.get("group2_label"))
+        if group1_patch is None or group2_patch is None:
+            return
+
+        highlight_color = "crimson" if overlay.get("p_value", 1.0) < 0.05 else "dimgray"
+        for patch in (group1_patch, group2_patch):
+            patch.set_edgecolor(highlight_color)
+            patch.set_linewidth(max(float(patch.get_linewidth()), 2.5))
+
+        y_max = max(point.ci_high for point in proportion_data.points) + 0.06
+        x1 = group1_patch.get_x() + (group1_patch.get_width() / 2)
+        x2 = group2_patch.get_x() + (group2_patch.get_width() / 2)
+        ax.plot([x1, x1, x2, x2], [y_max - 0.01, y_max, y_max, y_max - 0.01], color=highlight_color, linewidth=1.5)
+        ax.text(
+            (x1 + x2) / 2,
+            min(y_max + 0.015, 1.04),
+            f"p={overlay.get('p_value', 1.0):.3f}",
+            ha="center",
+            va="bottom",
+            color=highlight_color,
+        )
+
     def _apply_shared_legend(self, fig, axes, df_processed, request, properties, visual_hue_col):
         if not visual_hue_col:
             return
@@ -412,12 +560,17 @@ class GraphRenderer:
         handles, labels = build_legend_handles_labels(df_processed, request, properties, axes.flat)
         if properties.get("legend_position") != "hide" and handles:
             target_ax = axes.flat[-1]
-            target_ax.legend(
+            legend = target_ax.legend(
                 handles=handles,
                 labels=labels,
                 title=properties.get("legend_title") or visual_hue_col,
-                loc=properties.get("legend_position", "best"),
+                **self._get_legend_kwargs(
+                    properties,
+                    categorical_default=request.graph_type in {"bar", "countplot", "boxplot", "violin", "pointplot", "lineplot"},
+                ),
             )
+            if legend is not None:
+                legend.set_frame_alpha(properties.get("legend_alpha", 1.0))
 
     def _apply_shared_xlabel(self, fig, axes, is_faceted, current_x, properties):
         if not is_faceted:
@@ -443,7 +596,9 @@ class GraphRenderer:
                 label=overlay_line.label,
             )
         if overlay_lines:
-            ax.legend()
+            legend = ax.legend()
+            if legend is not None:
+                legend.set_frame_alpha(properties.get("legend_alpha", 1.0))
 
     def _draw_paired_plot(self, ax, paired_plot_data, properties):
         plot_df_long = paired_plot_data.plot_df_long
@@ -487,7 +642,45 @@ class GraphRenderer:
         if handles:
             legend_pos = properties.get("legend_position", "best")
             if legend_pos == "best":
-                ax.legend(handles=handles, labels=labels, loc="upper left", bbox_to_anchor=(1.02, 1))
+                legend = ax.legend(handles=handles, labels=labels, loc="upper left", bbox_to_anchor=(1.02, 1))
             else:
-                ax.legend(handles=handles, labels=labels, loc=legend_pos)
+                legend = ax.legend(handles=handles, labels=labels, loc=legend_pos)
+            if legend is not None:
+                legend.set_frame_alpha(properties.get("legend_alpha", 1.0))
         return plot_df_long
+
+    def _apply_stacked_bar_labels(self, ax, bars, values, bottom, request):
+        label_mode = request.properties.get("stacked_bar_label_mode", "hide")
+        if label_mode == "hide":
+            return
+
+        for index, (bar, value) in enumerate(zip(bars, values)):
+            if value <= 0:
+                continue
+            if request.graph_type == "stacked_bar_100":
+                if value < 0.04:
+                    continue
+                label = f"{value:.0%}" if label_mode == "percent" else f"{value:.2f}"
+                text_color = "white"
+            else:
+                if label_mode == "percent":
+                    continue
+                label = f"{int(round(value))}" if abs(value - round(value)) < 1e-9 else f"{value:.2f}"
+                text_color = "black"
+
+            base = 0.0 if bottom is None else float(bottom[index])
+            ax.text(
+                bar.get_x() + (bar.get_width() / 2),
+                base + (value / 2),
+                label,
+                ha="center",
+                va="center",
+                color=text_color,
+                fontsize=max(request.properties.get("ticks_fontsize", 12) - 1, 8),
+            )
+
+    def _get_legend_kwargs(self, properties, categorical_default: bool = False):
+        legend_position = properties.get("legend_position", "best")
+        if categorical_default and legend_position == "best":
+            return {"loc": "upper left", "bbox_to_anchor": (1.02, 1)}
+        return {"loc": legend_position}

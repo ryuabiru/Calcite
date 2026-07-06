@@ -17,6 +17,7 @@ class GraphWidget(QWidget):
         ウィジェットを初期化し、MatplotlibのFigureとAxesをセットアップする。
         """
         super().__init__(parent)
+        self.setObjectName("panelSurface")
 
         # Figureを作成する。
         # main.pyの高DPI設定により、Qtが自動的にキャンバスをスケーリングするため、
@@ -27,6 +28,6 @@ class GraphWidget(QWidget):
 
         # ウィジェットのレイアウトを設定
         layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0) # ウィジェット周りの余白をなくす
+        layout.setContentsMargins(12, 12, 12, 12)
         layout.addWidget(self.canvas)
         self.setLayout(layout)

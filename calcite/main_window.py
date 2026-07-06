@@ -34,6 +34,8 @@ class MainWindow(QMainWindow):
     def __init__(self, data=None):
         super().__init__()
         self.setWindowTitle("Calcite")
+        self.resize(1380, 920)
+        self.setMinimumSize(1180, 760)
         
         self.model = None
         self.app_state = AppState()
@@ -134,9 +136,11 @@ class MainWindow(QMainWindow):
 
         # --- 左カラム（タブ形式） ---
         left_tab_widget = QTabWidget()
+        left_tab_widget.setDocumentMode(True)
         
         # データフレームタブ
         self.table_view = QTableView()
+        self.table_view.setAlternatingRowColors(True)
         left_tab_widget.addTab(self.table_view, "データフレーム")
         
         # プロパティタブ

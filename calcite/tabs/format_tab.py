@@ -122,6 +122,50 @@ class FormatTab(QWidget):
         self.capsize_spin.setRange(0, 20); self.capsize_spin.setValue(0)
         error_bar_layout.addRow(QLabel("Cap Size:"), self.capsize_spin)
 
+        self.proportion_success_combo = NoScrollComboBox()
+        self.proportion_success_combo.addItem("Auto (first category)", "")
+        error_bar_layout.addRow(QLabel("Proportion Success:"), self.proportion_success_combo)
+
+        self.proportion_label_combo = NoScrollComboBox()
+        self.proportion_label_combo.addItem("Percent", "percent")
+        self.proportion_label_combo.addItem("Count", "count")
+        self.proportion_label_combo.addItem("Hide", "hide")
+        error_bar_layout.addRow(QLabel("Proportion Labels:"), self.proportion_label_combo)
+
+        self.heatmap_colormap_combo = NoScrollComboBox()
+        for cmap in ["Blues", "viridis", "magma", "cividis", "rocket", "crest", "coolwarm"]:
+            self.heatmap_colormap_combo.addItem(cmap, cmap)
+        error_bar_layout.addRow(QLabel("Heatmap Colormap:"), self.heatmap_colormap_combo)
+
+        self.heatmap_annotations_check = QCheckBox("Show heatmap cell labels")
+        self.heatmap_annotations_check.setChecked(True)
+        error_bar_layout.addRow(self.heatmap_annotations_check)
+
+        self.heatmap_normalization_combo = NoScrollComboBox()
+        self.heatmap_normalization_combo.addItem("Counts", "count")
+        self.heatmap_normalization_combo.addItem("Row proportion", "row")
+        self.heatmap_normalization_combo.addItem("Column proportion", "column")
+        self.heatmap_normalization_combo.addItem("Overall proportion", "total")
+        error_bar_layout.addRow(QLabel("Heatmap Normalize:"), self.heatmap_normalization_combo)
+
+        self.stacked_bar_label_combo = NoScrollComboBox()
+        self.stacked_bar_label_combo.addItem("Hide", "hide")
+        self.stacked_bar_label_combo.addItem("Percent", "percent")
+        self.stacked_bar_label_combo.addItem("Count", "count")
+        error_bar_layout.addRow(QLabel("Stacked Labels:"), self.stacked_bar_label_combo)
+
+        self.category_order_combo = NoScrollComboBox()
+        self.category_order_combo.addItem("Data order", "data")
+        self.category_order_combo.addItem("Alphabetical", "alphabetical")
+        self.category_order_combo.addItem("Largest total first", "total_desc")
+        error_bar_layout.addRow(QLabel("Category Order:"), self.category_order_combo)
+
+        self.subgroup_order_combo = NoScrollComboBox()
+        self.subgroup_order_combo.addItem("Data order", "data")
+        self.subgroup_order_combo.addItem("Alphabetical", "alphabetical")
+        self.subgroup_order_combo.addItem("Largest total first", "total_desc")
+        error_bar_layout.addRow(QLabel("Sub-group Order:"), self.subgroup_order_combo)
+
         elements_layout.addWidget(error_bar_sub_group)
         
         # --- 2c. Lines のサブグループ ---
@@ -199,6 +243,14 @@ class FormatTab(QWidget):
         self.regression_color_button.clicked.connect(self.open_regression_color_dialog)
         self.palette_combo.currentTextChanged.connect(self.on_palette_changed)
         self.error_bar_combo.currentIndexChanged.connect(lambda:self.propertiesChanged.emit())
+        self.proportion_success_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
+        self.proportion_label_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
+        self.heatmap_colormap_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
+        self.heatmap_annotations_check.stateChanged.connect(lambda: self.propertiesChanged.emit())
+        self.heatmap_normalization_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
+        self.stacked_bar_label_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
+        self.category_order_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
+        self.subgroup_order_combo.currentIndexChanged.connect(lambda: self.propertiesChanged.emit())
 
 
     def get_properties(self):
@@ -221,6 +273,14 @@ class FormatTab(QWidget):
             # error bar
             'capsize': self.capsize_spin.value(),
             'error_bar_type': self.error_bar_combo.currentData(),
+            'proportion_success_label': self.proportion_success_combo.currentData(),
+            'proportion_label_mode': self.proportion_label_combo.currentData(),
+            'heatmap_colormap': self.heatmap_colormap_combo.currentData(),
+            'heatmap_show_annotations': self.heatmap_annotations_check.isChecked(),
+            'heatmap_normalization': self.heatmap_normalization_combo.currentData(),
+            'stacked_bar_label_mode': self.stacked_bar_label_combo.currentData(),
+            'category_order_mode': self.category_order_combo.currentData(),
+            'subgroup_order_mode': self.subgroup_order_combo.currentData(),
             
             # Line properties
             'linestyle': self.linestyle_combo.currentData(),
@@ -252,6 +312,35 @@ class FormatTab(QWidget):
         
         # Error bar type
         self.error_bar_combo.setCurrentText(props.get('error_bar_type', 'std'))
+        proportion_success_label = props.get('proportion_success_label', '')
+        index = self.proportion_success_combo.findData(proportion_success_label)
+        if index != -1:
+            self.proportion_success_combo.setCurrentIndex(index)
+        proportion_label_mode = props.get('proportion_label_mode', 'percent')
+        index = self.proportion_label_combo.findData(proportion_label_mode)
+        if index != -1:
+            self.proportion_label_combo.setCurrentIndex(index)
+        heatmap_colormap = props.get('heatmap_colormap', 'Blues')
+        index = self.heatmap_colormap_combo.findData(heatmap_colormap)
+        if index != -1:
+            self.heatmap_colormap_combo.setCurrentIndex(index)
+        self.heatmap_annotations_check.setChecked(props.get('heatmap_show_annotations', True))
+        heatmap_normalization = props.get('heatmap_normalization', 'count')
+        index = self.heatmap_normalization_combo.findData(heatmap_normalization)
+        if index != -1:
+            self.heatmap_normalization_combo.setCurrentIndex(index)
+        stacked_bar_label_mode = props.get('stacked_bar_label_mode', 'hide')
+        index = self.stacked_bar_label_combo.findData(stacked_bar_label_mode)
+        if index != -1:
+            self.stacked_bar_label_combo.setCurrentIndex(index)
+        category_order_mode = props.get('category_order_mode', 'data')
+        index = self.category_order_combo.findData(category_order_mode)
+        if index != -1:
+            self.category_order_combo.setCurrentIndex(index)
+        subgroup_order_mode = props.get('subgroup_order_mode', 'data')
+        index = self.subgroup_order_combo.findData(subgroup_order_mode)
+        if index != -1:
+            self.subgroup_order_combo.setCurrentIndex(index)
         
         # Colors (Note: ボタンの色の復元は少し工夫が必要)
         self.current_marker_edgecolor = props.get('marker_edgecolor', 'black')
@@ -356,3 +445,16 @@ class FormatTab(QWidget):
             button.clicked.connect(partial(self.open_subgroup_color_dialog, str_category))
             self.subgroup_color_layout.addRow(QLabel(f"{str_category}:"), button)
             self.subgroup_widgets[str_category] = button
+
+    def update_proportion_success_ui(self, categories):
+        current_value = self.proportion_success_combo.currentData()
+        self.proportion_success_combo.blockSignals(True)
+        self.proportion_success_combo.clear()
+        self.proportion_success_combo.addItem("Auto (first category)", "")
+        for category in categories:
+            str_category = str(category)
+            self.proportion_success_combo.addItem(str_category, str_category)
+        index = self.proportion_success_combo.findData(current_value)
+        if index != -1:
+            self.proportion_success_combo.setCurrentIndex(index)
+        self.proportion_success_combo.blockSignals(False)

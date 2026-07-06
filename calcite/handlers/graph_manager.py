@@ -32,6 +32,8 @@ class GraphManager:
             fig = self.renderer.render_histogram(df, request.properties, request.properties)
         elif request.graph_type in {"stacked_bar", "stacked_bar_100"}:
             fig = self.renderer.render_stacked_bar(df, request)
+        elif request.graph_type == "proportion_plot":
+            fig = self.renderer.render_proportion_plot(df, request)
         elif request.graph_type == "mosaic":
             fig = self.renderer.render_mosaic(df, request)
         elif request.graph_type == "heatmap":

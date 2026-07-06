@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
+from statsmodels.stats.proportion import proportion_confint
 
 from calcite.models import PlotRequest
 
@@ -88,11 +89,29 @@ class MosaicPlotData:
     subgroups: list[str]
 
 
-BASE_PLOT_KINDS = {"bar", "boxplot", "violin", "pointplot", "lineplot", "countplot"}
+@dataclass(frozen=True)
+class ProportionPoint:
+    category: str
+    proportion: float
+    ci_low: float
+    ci_high: float
+    success_count: int
+    total_count: int
+
+
+@dataclass(frozen=True)
+class ProportionPlotData:
+    facet_value: object
+    success_label: str
+    points: list[ProportionPoint]
+
+
+BASE_PLOT_KINDS = {"bar", "boxplot", "violin", "pointplot", "lineplot", "countplot", "proportion_plot"}
 
 
 def get_x_order(df: pd.DataFrame, request: PlotRequest):
-    return df[request.x_col].unique()
+    values = [str(value) for value in df[request.x_col].dropna().unique()]
+    return resolve_label_order(values, request.properties.get("category_order_mode", "data"))
 
 
 def get_facet_values(df: pd.DataFrame, request: PlotRequest) -> list[object]:
@@ -161,9 +180,32 @@ def build_heatmap_matrix(df: pd.DataFrame, request: PlotRequest) -> pd.DataFrame
     x_values = source_df[request.x_col].astype(str)
     y_values = source_df[request.y_col].astype(str)
     matrix = pd.crosstab(y_values, x_values)
-    row_order = pd.Index(y_values.drop_duplicates())
-    col_order = pd.Index(x_values.drop_duplicates())
-    return matrix.reindex(index=row_order, columns=col_order, fill_value=0)
+    row_order = pd.Index(
+        resolve_label_order(
+            [str(value) for value in y_values.drop_duplicates()],
+            request.properties.get("subgroup_order_mode", "data"),
+        )
+    )
+    col_order = pd.Index(
+        resolve_label_order(
+            [str(value) for value in x_values.drop_duplicates()],
+            request.properties.get("category_order_mode", "data"),
+        )
+    )
+    matrix = matrix.reindex(index=row_order, columns=col_order, fill_value=0)
+
+    normalization_mode = request.properties.get("heatmap_normalization", "count")
+    if normalization_mode == "row":
+        totals = matrix.sum(axis=1).replace(0, np.nan)
+        matrix = matrix.div(totals, axis=0).fillna(0.0)
+    elif normalization_mode == "column":
+        totals = matrix.sum(axis=0).replace(0, np.nan)
+        matrix = matrix.div(totals, axis=1).fillna(0.0)
+    elif normalization_mode == "total":
+        total = matrix.to_numpy().sum()
+        matrix = matrix / total if total else matrix.astype(float)
+
+    return matrix
 
 
 def build_heatmap_plot_data(df: pd.DataFrame, request: PlotRequest) -> list[HeatmapPlotData]:
@@ -203,9 +245,13 @@ def build_stacked_bar_matrix(df: pd.DataFrame, request: PlotRequest, normalize: 
         hue_values = source_df[request.subgroup_col].astype(str)
         matrix = pd.crosstab(index=x_values, columns=hue_values)
 
-    row_order = pd.Index(x_values.drop_duplicates())
-    col_order = pd.Index(matrix.columns)
+    row_order = pd.Index([str(value) for value in x_values.drop_duplicates()])
+    if len(source_cols) == 1:
+        col_order = pd.Index(matrix.columns)
+    else:
+        col_order = pd.Index([str(value) for value in source_df[request.subgroup_col].astype(str).drop_duplicates()])
     matrix = matrix.reindex(index=row_order, columns=col_order, fill_value=0)
+    matrix = reorder_matrix(matrix, request)
 
     if normalize:
         totals = matrix.sum(axis=1).replace(0, np.nan)
@@ -232,6 +278,93 @@ def build_stacked_bar_plot_data(df: pd.DataFrame, request: PlotRequest) -> list[
         )
 
     return stacked_data
+
+
+def resolve_proportion_success_label(matrix: pd.DataFrame, request: PlotRequest) -> str:
+    if matrix.empty:
+        return ""
+
+    requested_label = str(request.properties.get("proportion_success_label", "")).strip()
+    available_labels = [str(label) for label in matrix.columns]
+    if requested_label and requested_label in available_labels:
+        return requested_label
+    return available_labels[0]
+
+
+def resolve_label_order(labels: list[str], mode: str, totals: dict[str, float] | None = None) -> list[str]:
+    ordered_labels = list(dict.fromkeys(str(label) for label in labels))
+    if mode == "alphabetical":
+        return sorted(ordered_labels)
+    if mode == "total_desc":
+        totals = totals or {}
+        return sorted(ordered_labels, key=lambda label: (-totals.get(label, 0.0), label))
+    return ordered_labels
+
+
+def reorder_matrix(matrix: pd.DataFrame, request: PlotRequest) -> pd.DataFrame:
+    if matrix.empty:
+        return matrix
+
+    row_totals = {str(label): float(value) for label, value in matrix.sum(axis=1).items()}
+    col_totals = {str(label): float(value) for label, value in matrix.sum(axis=0).items()}
+    row_order = resolve_label_order(list(matrix.index), request.properties.get("category_order_mode", "data"), row_totals)
+    col_order = resolve_label_order(list(matrix.columns), request.properties.get("subgroup_order_mode", "data"), col_totals)
+    return matrix.reindex(index=row_order, columns=col_order, fill_value=0)
+
+
+def build_proportion_plot_data(df: pd.DataFrame, request: PlotRequest) -> list[ProportionPlotData]:
+    proportion_data: list[ProportionPlotData] = []
+
+    for facet_value in get_facet_values(df, request):
+        if request.facet_col:
+            source_df = df[df[request.facet_col] == facet_value]
+        else:
+            source_df = df
+
+        matrix = build_stacked_bar_matrix(source_df, request, normalize=False)
+        if matrix.empty:
+            proportion_data.append(
+                ProportionPlotData(
+                    facet_value=facet_value,
+                    success_label="",
+                    points=[],
+                )
+            )
+            continue
+
+        success_label = resolve_proportion_success_label(matrix, request)
+        points: list[ProportionPoint] = []
+        for category, row in matrix.iterrows():
+            total_count = int(row.sum())
+            success_count = int(row.get(success_label, 0))
+            if total_count == 0:
+                proportion = 0.0
+                ci_low = 0.0
+                ci_high = 0.0
+            else:
+                proportion = success_count / total_count
+                ci_low, ci_high = proportion_confint(success_count, total_count, alpha=0.05, method="wilson")
+
+            points.append(
+                ProportionPoint(
+                    category=str(category),
+                    proportion=float(proportion),
+                    ci_low=float(ci_low),
+                    ci_high=float(ci_high),
+                    success_count=success_count,
+                    total_count=total_count,
+                )
+            )
+
+        proportion_data.append(
+            ProportionPlotData(
+                facet_value=facet_value,
+                success_label=success_label,
+                points=points,
+            )
+        )
+
+    return proportion_data
 
 
 def build_mosaic_plot_data(df: pd.DataFrame, request: PlotRequest) -> list[MosaicPlotData]:

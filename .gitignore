@@ -13,3 +13,7 @@ MANIFEST.info
 
 # python env
 calcite_env/
+
+# Rust
+target/
+rust/target/

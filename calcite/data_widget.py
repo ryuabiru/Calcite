@@ -11,11 +11,14 @@ class DataWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("panelSurface")
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 10, 0, 0)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(12)
 
         self.data_tab = DataTab()
         update_button = QPushButton("Update Graph")
+        update_button.setObjectName("primaryButton")
         
         main_layout.addWidget(self.data_tab)
         main_layout.addWidget(update_button)

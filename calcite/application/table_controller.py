@@ -34,12 +34,14 @@ class TableController:
     def sync_subgroup_colors(self, model, column_name: str, properties_widget) -> None:
         if model is None or not column_name:
             properties_widget.format_tab.update_subgroup_color_ui([])
+            properties_widget.format_tab.update_proportion_success_ui([])
             return
         try:
             categories = sorted(model._data[column_name].unique())
         except KeyError:
             categories = []
         properties_widget.format_tab.update_subgroup_color_ui(categories)
+        properties_widget.format_tab.update_proportion_success_ui(categories)
 
     def insert_row(self, model, current_index) -> None:
         if model is None:

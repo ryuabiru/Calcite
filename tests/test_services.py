@@ -17,6 +17,7 @@ from calcite.services.plot_service import (
     build_heatmap_matrix,
     build_legend_handles_labels,
     build_mosaic_plot_data,
+    build_proportion_plot_data,
     build_paired_annotation_spec,
     build_paired_plot_data,
     build_plot_dataframe_for_graph_type,
@@ -27,6 +28,9 @@ from calcite.services.plot_service import (
     build_summary_errorbar_specs,
     normalize_plot_request,
     prepare_plot_dataframe,
+    reorder_matrix,
+    resolve_proportion_success_label,
+    resolve_label_order,
 )
 from calcite.services.statistics_service import (
     UNIQUE_SEPARATOR,
@@ -283,6 +287,86 @@ class PlotServiceTests(unittest.TestCase):
         self.assertEqual(list(matrix.columns), ["A", "B"])
         self.assertEqual(list(matrix.index), ["top", "bottom"])
 
+    def test_build_heatmap_matrix_normalizes_rows(self):
+        matrix = build_heatmap_matrix(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "B", "B"],
+                    "y": ["top", "top", "top", "bottom"],
+                }
+            ),
+            PlotRequest(
+                graph_type="heatmap",
+                x_col="x",
+                y_col="y",
+                properties={"heatmap_normalization": "row"},
+            ),
+        )
+
+        self.assertAlmostEqual(matrix.loc["top"].sum(), 1.0)
+        self.assertAlmostEqual(matrix.loc["bottom"].sum(), 1.0)
+        self.assertAlmostEqual(matrix.loc["top", "A"], 2 / 3)
+
+    def test_build_heatmap_matrix_normalizes_columns(self):
+        matrix = build_heatmap_matrix(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "B", "B"],
+                    "y": ["top", "top", "top", "bottom"],
+                }
+            ),
+            PlotRequest(
+                graph_type="heatmap",
+                x_col="x",
+                y_col="y",
+                properties={"heatmap_normalization": "column"},
+            ),
+        )
+
+        self.assertAlmostEqual(matrix["A"].sum(), 1.0)
+        self.assertAlmostEqual(matrix["B"].sum(), 1.0)
+        self.assertAlmostEqual(matrix.loc["top", "A"], 1.0)
+
+    def test_build_heatmap_matrix_normalizes_total(self):
+        matrix = build_heatmap_matrix(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "B", "B"],
+                    "y": ["top", "top", "top", "bottom"],
+                }
+            ),
+            PlotRequest(
+                graph_type="heatmap",
+                x_col="x",
+                y_col="y",
+                properties={"heatmap_normalization": "total"},
+            ),
+        )
+
+        self.assertAlmostEqual(matrix.to_numpy().sum(), 1.0)
+        self.assertAlmostEqual(matrix.loc["top", "A"], 0.5)
+
+    def test_resolve_label_order_supports_total_desc(self):
+        ordered = resolve_label_order(["B", "A", "C"], "total_desc", totals={"A": 2, "B": 5, "C": 1})
+
+        self.assertEqual(ordered, ["B", "A", "C"])
+
+    def test_reorder_matrix_applies_category_and_subgroup_modes(self):
+        matrix = pd.DataFrame({"g2": [1, 4], "g1": [3, 2]}, index=["B", "A"])
+
+        reordered = reorder_matrix(
+            matrix,
+            PlotRequest(
+                graph_type="stacked_bar",
+                x_col="x",
+                subgroup_col="group",
+                properties={"category_order_mode": "alphabetical", "subgroup_order_mode": "total_desc"},
+            ),
+        )
+
+        self.assertEqual(list(reordered.index), ["A", "B"])
+        self.assertEqual(list(reordered.columns), ["g1", "g2"])
+
     def test_build_stacked_bar_matrix_counts_categories(self):
         matrix = build_stacked_bar_matrix(
             pd.DataFrame(
@@ -327,6 +411,62 @@ class PlotServiceTests(unittest.TestCase):
         self.assertEqual(len(plot_data), 1)
         self.assertEqual(plot_data[0].counts[("A", "g1")], 1)
         self.assertEqual(plot_data[0].counts[("B", "g1")], 2)
+
+    def test_resolve_proportion_success_label_uses_requested_category_when_present(self):
+        matrix = pd.DataFrame({"success": [2, 1], "failure": [1, 3]}, index=["A", "B"])
+
+        success_label = resolve_proportion_success_label(
+            matrix,
+            PlotRequest(
+                graph_type="proportion_plot",
+                x_col="x",
+                subgroup_col="outcome",
+                properties={"proportion_success_label": "failure"},
+            ),
+        )
+
+        self.assertEqual(success_label, "failure")
+
+    def test_build_proportion_plot_data_calculates_wilson_intervals(self):
+        plot_data = build_proportion_plot_data(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "A", "B", "B", "B", "B"],
+                    "outcome": ["yes", "yes", "no", "yes", "no", "no", "no"],
+                }
+            ),
+            PlotRequest(
+                graph_type="proportion_plot",
+                x_col="x",
+                subgroup_col="outcome",
+                properties={"proportion_success_label": "yes"},
+            ),
+        )
+
+        self.assertEqual(len(plot_data), 1)
+        self.assertEqual(plot_data[0].success_label, "yes")
+        self.assertAlmostEqual(plot_data[0].points[0].proportion, 2 / 3)
+        self.assertEqual(plot_data[0].points[0].success_count, 2)
+        self.assertEqual(plot_data[0].points[1].total_count, 4)
+        self.assertLess(plot_data[0].points[0].ci_low, plot_data[0].points[0].proportion)
+        self.assertGreater(plot_data[0].points[0].ci_high, plot_data[0].points[0].proportion)
+
+    def test_build_proportion_plot_data_defaults_to_first_subgroup_category(self):
+        plot_data = build_proportion_plot_data(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "B", "B"],
+                    "outcome": ["no", "yes", "no", "no"],
+                }
+            ),
+            PlotRequest(
+                graph_type="proportion_plot",
+                x_col="x",
+                subgroup_col="outcome",
+            ),
+        )
+
+        self.assertEqual(plot_data[0].success_label, "no")
 
     def test_prepare_plot_dataframe_keeps_numeric_x_for_correlation_heatmap(self):
         df = pd.DataFrame({"x": [1, 2], "y": [3, 4]})
@@ -401,6 +541,8 @@ class ApplicationUseCaseTests(unittest.TestCase):
             paired_annotations=[{"box_pair": ("A", "B")}],
             regression_line_params={"x_line": np.array([1, 2])},
             fit_params={"params": np.array([1, 2, 3, 4])},
+            chi_squared_highlight={"rows_col": "rows"},
+            two_proportion_highlight={"rows_col": "group"},
         )
 
         state.reset_analysis_results()
@@ -409,6 +551,8 @@ class ApplicationUseCaseTests(unittest.TestCase):
         self.assertEqual(state.paired_annotations, [])
         self.assertIsNone(state.regression_line_params)
         self.assertIsNone(state.fit_params)
+        self.assertIsNone(state.chi_squared_highlight)
+        self.assertIsNone(state.two_proportion_highlight)
 
     def test_app_state_deduplicates_annotations(self):
         state = AppState()

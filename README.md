@@ -50,6 +50,19 @@ Python 3.10 or higher is required.
 pip install calcite
 ```
 
+## 🧪 Rust Bootstrap
+
+The repository now includes an early Rust migration bootstrap under [`rust/`](./rust). The current Rust app is a native shell built with `eframe/egui` and is intentionally limited to layout and state bootstrapping.
+
+Run it with:
+
+```bash
+cd rust
+cargo run
+```
+
+At this stage, the Rust app is not feature-complete and coexists with the Python application while migration planning and UI scaffolding continue.
+
 ## 🚀 Quick Start
 
 1. Launch Calcite from your terminal:
