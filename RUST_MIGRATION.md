@@ -126,6 +126,10 @@ Current Status:
 - Rust app shell is bootstrapped in `rust/`
 - `ProjectState` and `DataTable` live in Rust
 - CSV loading and table previews are wired into the UI
+- Table sorting and row selection are wired into the Rust table preview
+- Column metadata is inferred from loaded CSV files and displayed in the UI
+- CSV import now reports concise status text and detailed error summaries
+- Rust project persistence schema now mirrors manifest, settings, table, and analysis buckets
 
 ### Phase 2: Data Loading and Table UX
 
@@ -271,7 +275,6 @@ Exit Criteria:
 
 ## Immediate Next Steps
 
-1. Table sorting and selection state を Rust 側に追加する
-2. CSV import を file dialog から起動できるようにする
-3. Project persistence の Rust schema を定義する
-4. Graph type との接続を state model 経由に寄せる
+1. project persistence の read/write 実装を追加する
+2. Graph type との接続を state model 経由に寄せる
+3. table filtering の最小機能を Rust 側に入れる

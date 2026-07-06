@@ -8,6 +8,12 @@ pub enum AppCommand {
     SetGraphType {
         graph_type: String,
     },
+    ToggleSortByColumn {
+        column_index: usize,
+    },
+    ToggleRowSelection {
+        row_index: usize,
+    },
     SetColumns {
         x_column: String,
         y_column: String,

@@ -1,5 +1,6 @@
 mod backend;
 mod core;
+mod project_persistence;
 mod state;
 
 use backend::AppBackend;
@@ -200,6 +201,8 @@ impl CalciteRustApp {
         self.show_csv_loader(ui);
         ui.add_space(10.0);
         self.show_table_preview(ui);
+        ui.add_space(10.0);
+        self.show_column_metadata(ui);
     }
 
     fn show_properties_panel(&mut self, ui: &mut egui::Ui) {
@@ -278,21 +281,16 @@ impl CalciteRustApp {
     }
 
     fn load_csv_path(&mut self, path: std::path::PathBuf) {
-        match self
+        if let Err(error) = self
             .backend
             .dispatch(AppCommand::LoadCsv { path: path.clone() })
         {
-            Ok(()) => {
-                self.backend.project_mut().status_message = format!("Loaded {}", path.display());
-            }
-            Err(error) => {
-                self.backend.project_mut().status_message = "CSV load failed".to_owned();
-                self.backend.project_mut().results_preview = error;
-            }
+            self.backend.project_mut().status_message = error.clone();
+            self.backend.project_mut().results_preview = error;
         }
     }
 
-    fn show_table_preview(&self, ui: &mut egui::Ui) {
+    fn show_table_preview(&mut self, ui: &mut egui::Ui) {
         ui.heading("Table Preview");
         ui.add_space(6.0);
         let table = &self.backend.project().data_table;
@@ -301,10 +299,30 @@ impl CalciteRustApp {
             return;
         }
 
+        let headers = table.headers.clone();
+        let preview_rows: Vec<Vec<String>> =
+            table.preview_rows(20).map(|row| row.to_owned()).collect();
+        let table_view = self.backend.project().table_view.clone();
         ui.label(format!(
             "{} rows, {} columns",
             table.row_count(),
             table.column_count()
+        ));
+        ui.label(format!(
+            "Sort: {} | Selected rows: {}",
+            table_view
+                .sort_column
+                .and_then(|column_index| headers.get(column_index).map(String::as_str))
+                .map(|header| {
+                    let direction = if table_view.sort_ascending {
+                        "ascending"
+                    } else {
+                        "descending"
+                    };
+                    format!("{header} ({direction})")
+                })
+                .unwrap_or_else(|| "none".to_owned()),
+            table_view.selected_rows.len()
         ));
         ui.add_space(6.0);
 
@@ -314,16 +332,70 @@ impl CalciteRustApp {
                 .spacing([12.0, 8.0])
                 .show(ui, |ui| {
                     ui.strong("#");
-                    for header in &table.headers {
-                        ui.strong(header);
+                    for (column_index, header) in headers.iter().enumerate() {
+                        let label = if table_view.sort_column == Some(column_index) {
+                            let direction = if table_view.sort_ascending { "^" } else { "v" };
+                            format!("{header} {direction}")
+                        } else {
+                            header.clone()
+                        };
+
+                        if ui.button(label).clicked() {
+                            let _ = self
+                                .backend
+                                .dispatch(AppCommand::ToggleSortByColumn { column_index });
+                        }
                     }
                     ui.end_row();
 
-                    for (row_index, row) in table.preview_rows(20).enumerate() {
-                        ui.label((row_index + 1).to_string());
+                    for (row_index, row) in preview_rows.iter().enumerate() {
+                        let selected = table_view.selected_rows.contains(&row_index);
+                        if ui
+                            .selectable_label(selected, (row_index + 1).to_string())
+                            .clicked()
+                        {
+                            let _ = self
+                                .backend
+                                .dispatch(AppCommand::ToggleRowSelection { row_index });
+                        }
                         for cell in row {
                             ui.label(cell);
                         }
+                        ui.end_row();
+                    }
+                });
+        });
+    }
+
+    fn show_column_metadata(&self, ui: &mut egui::Ui) {
+        let table = &self.backend.project().data_table;
+        if table.column_metadata().is_empty() {
+            return;
+        }
+
+        ui.heading("Column Metadata");
+        ui.add_space(6.0);
+        egui::ScrollArea::both().max_height(180.0).show(ui, |ui| {
+            egui::Grid::new("column_metadata_grid")
+                .striped(true)
+                .spacing([12.0, 8.0])
+                .show(ui, |ui| {
+                    ui.strong("Column");
+                    ui.strong("Type");
+                    ui.strong("Non-empty");
+                    ui.strong("Distinct");
+                    ui.end_row();
+
+                    for meta in table.column_metadata() {
+                        ui.label(format!("{} ({})", meta.name, meta.index + 1));
+                        ui.label(match meta.kind {
+                            crate::state::ColumnKind::Empty => "empty",
+                            crate::state::ColumnKind::Numeric => "numeric",
+                            crate::state::ColumnKind::Text => "text",
+                            crate::state::ColumnKind::Mixed => "mixed",
+                        });
+                        ui.label(meta.non_empty_count.to_string());
+                        ui.label(meta.distinct_count.to_string());
                         ui.end_row();
                     }
                 });
