@@ -38,18 +38,37 @@ class DataTab(QWidget):
     def set_graph_type(self, graph_type):
         """表示するUIをグラフタイプに応じて切り替える"""
 
-        if graph_type in ['scatter', 'summary_scatter', 'bar', 'histogram', 'boxplot', 'violin', 'pointplot', 'lineplot']:
+        if graph_type in ['scatter', 'summary_scatter', 'bar', 'countplot', 'stacked_bar', 'stacked_bar_100', 'mosaic', 'heatmap', 'correlation_heatmap', 'histogram', 'boxplot', 'violin', 'pointplot', 'lineplot']:
             self.stacked_widget.setCurrentWidget(self.tidy_tab)
+            self.tidy_tab.x_axis_label.setVisible(True)
+            self.tidy_tab.x_axis_combo.setVisible(True)
+            self.tidy_tab.y_axis_label.setVisible(True)
+            self.tidy_tab.y_axis_combo.setVisible(True)
 
             if graph_type == 'histogram':
                 self.tidy_tab.y_axis_label.setText("Value Column:")
                 self.tidy_tab.x_axis_label.setVisible(False)
                 self.tidy_tab.x_axis_combo.setVisible(False)
+            elif graph_type == 'countplot':
+                self.tidy_tab.x_axis_label.setText("X-Axis (Category):")
+                self.tidy_tab.y_axis_label.setText("Count:")
+                self.tidy_tab.y_axis_combo.setVisible(False)
+            elif graph_type in ['stacked_bar', 'stacked_bar_100', 'mosaic']:
+                self.tidy_tab.x_axis_label.setText("X-Axis (Category):")
+                self.tidy_tab.y_axis_label.setText("Count:")
+                self.tidy_tab.y_axis_combo.setVisible(False)
+            elif graph_type == 'heatmap':
+                self.tidy_tab.x_axis_label.setText("X-Axis (Category):")
+                self.tidy_tab.y_axis_label.setText("Y-Axis (Category):")
+            elif graph_type == 'correlation_heatmap':
+                self.tidy_tab.x_axis_label.setText("Auto:")
+                self.tidy_tab.y_axis_label.setText("Auto:")
+                self.tidy_tab.x_axis_combo.setVisible(False)
+                self.tidy_tab.y_axis_combo.setVisible(False)
             else:
                 self.tidy_tab.y_axis_label.setText("Y-Axis (Value):")
-                self.tidy_tab.x_axis_label.setVisible(True)
-                self.tidy_tab.x_axis_combo.setVisible(True)
-        
+                self.tidy_tab.x_axis_label.setText("X-Axis (Category):")
+
         elif graph_type == 'paired_scatter':
             self.stacked_widget.setCurrentWidget(self.paired_tab)
 

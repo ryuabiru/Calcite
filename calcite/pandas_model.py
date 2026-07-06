@@ -8,11 +8,21 @@ class PandasModel(QAbstractTableModel):
     pandasのDataFrameをQTableViewで表示・編集するためのモデルクラス。
     QAbstractTableModelを継承し、必要なメソッドをオーバーライドしている。
     """
-    def __init__(self, data):
+    def __init__(self, data, on_before_change=None, on_after_change=None):
         super().__init__()
         self._data = data
         self._sort_column = -1
         self._sort_order = Qt.SortOrder.AscendingOrder
+        self._on_before_change = on_before_change
+        self._on_after_change = on_after_change
+
+    def _before_change(self):
+        if self._on_before_change is not None:
+            self._on_before_change(self._data)
+
+    def _after_change(self):
+        if self._on_after_change is not None:
+            self._on_after_change(self._data)
 
     def rowCount(self, parent=None):
         """行数を返す"""
@@ -42,10 +52,12 @@ class PandasModel(QAbstractTableModel):
         ヘッダーのデータ（カラム名）が変更されたときに呼び出される。
         """
         if role == Qt.ItemDataRole.EditRole and orientation == Qt.Orientation.Horizontal:
+            self._before_change()
             new_columns = self._data.columns.tolist()
             new_columns[section] = value
             self._data.columns = new_columns
             self.headerDataChanged.emit(orientation, section, section)
+            self._after_change()
             return True
         return super().setHeaderData(section, orientation, value, role)
 
@@ -53,7 +65,7 @@ class PandasModel(QAbstractTableModel):
         """DataFrameをソートする"""
         try:
             col_name = self._data.columns[column]
-            
+            self._before_change()
             self.layoutAboutToBeChanged.emit()
             self._data = self._data.sort_values(
                 by=col_name,
@@ -61,15 +73,16 @@ class PandasModel(QAbstractTableModel):
                 kind='mergesort'
             ).reset_index(drop=True)
             self.layoutChanged.emit()
-            
+            self._after_change()
         except Exception as e:
-            print(f"Sort error: {e}")
+            return
 
     def setData(self, index, value, role):
         """
         ユーザーによってセルのデータが編集されたときに呼び出される。
         """
         if role == Qt.ItemDataRole.EditRole:
+            self._before_change()
             try:
                 original_value = self._data.iloc[index.row(), index.column()]
                 value = type(original_value)(value)
@@ -78,6 +91,7 @@ class PandasModel(QAbstractTableModel):
                 self._data.iloc[index.row(), index.column()] = value
             
             self.dataChanged.emit(index, index)
+            self._after_change()
             return True
         return False
 
@@ -94,6 +108,7 @@ class PandasModel(QAbstractTableModel):
 
     def insertRows(self, row, count, parent=QModelIndex()):
         """指定された位置に行を挿入する"""
+        self._before_change()
         self.beginInsertRows(parent, row, row + count - 1)
         
         df_top = self._data.iloc[:row]
@@ -103,20 +118,24 @@ class PandasModel(QAbstractTableModel):
         self._data = pd.concat([df_top, df_new, df_bottom]).reset_index(drop=True)
         
         self.endInsertRows()
+        self._after_change()
         return True
 
     def removeRows(self, row, count, parent=QModelIndex()):
         """指定された位置の行を削除する"""
+        self._before_change()
         self.beginRemoveRows(parent, row, row + count - 1)
         
         self._data.drop(self._data.index[row:row+count], inplace=True)
         self._data.reset_index(drop=True, inplace=True)
         
         self.endRemoveRows()
+        self._after_change()
         return True
 
     def insertColumns(self, col, count, parent=QModelIndex()):
         """指定された位置に列を挿入する"""
+        self._before_change()
         self.beginInsertColumns(parent, col, col + count - 1)
 
         for i in range(count):
@@ -124,14 +143,17 @@ class PandasModel(QAbstractTableModel):
             self._data.insert(col + i, new_col_name, '')
 
         self.endInsertColumns()
+        self._after_change()
         return True
 
     def removeColumns(self, col, count, parent=QModelIndex()):
         """指定された位置の列を削除する"""
+        self._before_change()
         self.beginRemoveColumns(parent, col, col + count - 1)
 
         cols_to_drop = self._data.columns[col:col+count]
         self._data.drop(columns=cols_to_drop, inplace=True)
 
         self.endRemoveColumns()
+        self._after_change()
         return True

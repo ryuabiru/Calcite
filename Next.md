@@ -2,94 +2,132 @@
 
 ## Current State
 
-- Statistical logic has been moved into `calcite/services/statistics_service.py`.
-- Plot data preparation and overlay construction have been moved into `calcite/services/plot_service.py`.
-- Project I/O has been moved into `calcite/services/project_service.py`.
-- Data reshape and filter logic have been moved into `calcite/services/data_service.py`.
-- `ActionHandler`, `GraphManager`, and `StatisticalHandler` are thinner than before, but they still coordinate UI state directly.
+- Core handlers were split into thinner facades and specialized modules.
+- An application/use-case layer now exists under `calcite/application/`.
+- Plot preparation logic lives in `calcite/services/plot_service.py`.
+- Statistical logic lives in `calcite/services/statistics_service.py` and `calcite/application/statistics_use_cases.py`.
+- Project persistence, data reshape/filter logic, and export/import flows are separated into service/use-case modules.
+- Snapshot-based undo/redo for DataFrame edits is implemented.
+- Analysis results can be exported from the UI.
 
-## Remaining Architecture Work
+## Graphs Implemented
 
-### 1. Introduce an application/use-case layer
+- `scatter`
+- `summary_scatter`
+- `bar`
+- `countplot`
+- `stacked_bar`
+- `stacked_bar_100`
+- `mosaic`
+- `heatmap`
+- `correlation_heatmap`
+- `boxplot`
+- `violin`
+- `lineplot`
+- `pointplot`
+- `paired_scatter`
+- `histogram`
 
-Current handlers still orchestrate multiple steps directly.
+## Statistical Features Implemented
 
-Candidates:
+- Independent t-test
+- Paired t-test
+- One-way ANOVA
+- Mann-Whitney U test
+- Wilcoxon signed-rank test
+- Kruskal-Wallis test
+- Shapiro-Wilk normality test
+- Spearman correlation
+- Pearson correlation
+- Chi-squared test
+- 2-proportion z-test
+- Linear regression
+- 4PL regression
 
-- `OpenCsvUseCase`
-- `OpenProjectUseCase`
-- `SaveProjectUseCase`
-- `RestructureDataUseCase`
-- `PivotDataUseCase`
-- `ApplyAdvancedFilterUseCase`
-- `RunStatisticalTestUseCase`
-- `RenderPlotUseCase`
+## Recent Changes
+
+### Architecture and maintainability
+
+- Refactored large handlers into smaller modules.
+- Reduced `MainWindow` responsibilities by moving orchestration into builders, persistence helpers, controllers, and use-cases.
+- Added broader service-layer and application-layer tests.
+
+### Visualization additions
+
+- Added `Count Plot`.
+- Added categorical `Heatmap`.
+- Added `Correlation Heatmap` with automatic numeric-column selection.
+- Added `Stacked Bar` and `100% Stacked Bar`.
+- Added `Mosaic Plot`.
+
+### Statistical additions
+
+- Expanded chi-squared output with:
+  - standardized residuals
+  - cell contributions
+  - Cramer's V
+- Added Pearson correlation analysis.
+- Added 2-proportion z-test.
+- Added 95% confidence intervals for each group's proportion and the difference in proportions.
+
+### Quality checks
+
+- `python -m compileall calcite tests` passes.
+- `uv run python -m unittest tests.test_services` passes.
+
+## Highest-Value Next Work
+
+### 1. Proportion plots with confidence intervals
 
 Goal:
 
-- UI gathers input
-- use-case executes workflow
-- service layer performs pure logic
+- add a dedicated proportion bar plot
+- show confidence intervals directly on chart
+- align visually with `2-proportion z-test`
 
-### 2. Reduce `MainWindow` responsibilities
+Why next:
 
-`MainWindow` still owns too much state and too many cross-component references.
+- strongest follow-up to stacked/mosaic work
+- improves interpretability for categorical comparisons
 
-Examples:
-
-- current graph type
-- regression/fit state
-- annotation state
-- widget-to-widget coordination
+### 2. Better heatmap controls
 
 Goal:
 
-- centralize mutable application state in a smaller state container or controller
-- make widgets depend on explicit inputs instead of `main_window`
+- configurable colormaps
+- optional cell labels on/off
+- normalization modes
+- clearer handling of sparse categorical tables
 
-### 3. Unify window creation flow
-
-New windows for filtered/restructured/pivoted/subset tables are still created ad hoc.
-
-Goal:
-
-- extract a shared helper or use-case for child window creation
-- standardize model setup, signal wiring, title updates, and app-level window retention
-
-### 4. Separate UI state from persisted state
-
-Project persistence works, but the saved structure is still implicit.
+### 3. Stronger graph-statistics linkage
 
 Goal:
 
-- define a stable persisted project schema
-- separate persisted settings from transient UI-only state
-- make serialization/deserialization explicit and versionable
+- let statistical outputs drive overlays or highlights where appropriate
+- e.g. emphasize residual-heavy chi-squared cells or notable proportion gaps
 
-### 5. Expand tests around use-cases and integration seams
+### 4. Visual polish for categorical charts
 
-Current tests mainly cover service-layer functions.
+Goal:
+
+- percentage tick formatting for `stacked_bar_100`
+- optional direct segment labels
+- ordering controls for categories/subgroups
+- cleaner legend placement defaults
+
+### 5. Broader automated coverage
 
 Next additions:
 
-- project open/save integration tests
-- reshape/filter workflow tests
-- regression result serialization tests
-- plot request to prepared-data integration tests
-
-### 6. Review remaining dead code and duplication
-
-Examples to inspect:
-
-- duplicate window setup patterns
-- handler methods that still mix UI and data mutations
-- methods in `MainWindow` that could move into a controller/use-case
+- renderer-level smoke tests for newly added graph types
+- use-case tests for 2-proportion edge cases
+- project round-trip coverage for newer state fields if more are added
 
 ## Practical Next Starting Point
 
 If work resumes, start here:
 
-1. Add a small application layer under `calcite/application/`.
-2. Move child-window creation into one shared helper/use-case.
-3. Move project open/save orchestration out of `ActionHandler`.
-4. Reduce `MainWindow` mutable state by introducing a focused state object.
+1. Add a dedicated proportion plot with CI overlays.
+2. Reuse the existing categorical aggregation path where possible.
+3. Expose proportion-specific formatting controls in the UI.
+4. Add tests for edge cases such as zero counts and asymmetric group sizes.

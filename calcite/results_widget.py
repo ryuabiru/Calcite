@@ -31,6 +31,9 @@ class ResultsWidget(QWidget):
         """
         self.results_text_edit.setText(text)
 
+    def get_results_text(self):
+        return self.results_text_edit.toPlainText()
+
     def clear_results(self):
         """
         パネルのテキストをクリアする。

@@ -95,7 +95,6 @@ class AxesTab(QWidget):
 
 
     def set_properties(self, props):
-        print("DEBUG: Setting properties for AxesTab...")
         self.xmin_edit.setText(props.get('xmin', ''))
         self.xmax_edit.setText(props.get('xmax', ''))
         self.ymin_edit.setText(props.get('ymin', ''))
@@ -112,4 +111,3 @@ class AxesTab(QWidget):
         index = self.tick_direction_combo.findData(tick_dir_data)
         if index != -1:
             self.tick_direction_combo.setCurrentIndex(index)
-        print("DEBUG: AxesTab properties set.")

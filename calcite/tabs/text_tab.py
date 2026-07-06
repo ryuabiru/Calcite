@@ -117,7 +117,6 @@ class TextTab(QWidget):
         }
 
     def set_properties(self, props):
-        print("DEBUG: Setting properties for TextTab...")
         self.title_edit.setText(props.get('title', ''))
         self.xaxis_edit.setText(props.get('xlabel', ''))
         self.yaxis_edit.setText(props.get('ylabel', ''))
@@ -137,9 +136,16 @@ class TextTab(QWidget):
             
         self.legend_title_edit.setText(props.get('legend_title', ''))
         self.legend_alpha_spin.setValue(props.get('legend_alpha', 1.0))
-        print("DEBUG: TextTab properties set.")
 
     def update_paired_labels_visibility(self, visible):
         """Show or hide the paired scatter labels"""
         for widget in self.paired_widgets:
             widget.setVisible(visible)
+
+    def get_legend_position(self):
+        return self.legend_pos_combo.currentData()
+
+    def set_legend_position(self, legend_position):
+        index = self.legend_pos_combo.findData(legend_position)
+        if index != -1:
+            self.legend_pos_combo.setCurrentIndex(index)

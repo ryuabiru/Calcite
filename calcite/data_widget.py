@@ -31,3 +31,6 @@ class DataWidget(QWidget):
 
     def set_columns(self, columns):
         self.data_tab.set_columns(columns)
+
+    def set_graph_type(self, graph_type):
+        self.data_tab.set_graph_type(graph_type)

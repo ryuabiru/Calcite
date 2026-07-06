@@ -32,7 +32,7 @@ def prepare_plot_dataframe(df: pd.DataFrame, request: PlotRequest) -> pd.DataFra
     if request.subgroup_col:
         df_processed[request.subgroup_col] = df_processed[request.subgroup_col].astype(str)
 
-    if request.graph_type not in ["scatter", "summary_scatter", "lineplot"] and request.x_col:
+    if request.graph_type not in ["scatter", "summary_scatter", "lineplot", "correlation_heatmap"] and request.x_col:
         df_processed[request.x_col] = df_processed[request.x_col].astype(str)
 
     return df_processed
@@ -68,7 +68,27 @@ class PairedPlotData:
     mean_y: pd.Series
 
 
-BASE_PLOT_KINDS = {"bar", "boxplot", "violin", "pointplot", "lineplot"}
+@dataclass(frozen=True)
+class HeatmapPlotData:
+    facet_value: object
+    matrix: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class StackedBarPlotData:
+    facet_value: object
+    matrix: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class MosaicPlotData:
+    facet_value: object
+    counts: dict[tuple[str, str], int]
+    categories: list[str]
+    subgroups: list[str]
+
+
+BASE_PLOT_KINDS = {"bar", "boxplot", "violin", "pointplot", "lineplot", "countplot"}
 
 
 def get_x_order(df: pd.DataFrame, request: PlotRequest):
@@ -106,6 +126,14 @@ def build_facet_plot_data(df: pd.DataFrame, request: PlotRequest) -> list[FacetP
 
 
 def build_plot_dataframe_for_graph_type(df: pd.DataFrame, request: PlotRequest) -> pd.DataFrame:
+    if request.graph_type == "countplot":
+        count_df = df.copy()
+        group_cols = [request.x_col]
+        if request.subgroup_col and request.subgroup_col != request.x_col:
+            group_cols.append(request.subgroup_col)
+        count_df = count_df.groupby(group_cols, as_index=False).size().rename(columns={"size": "__count__"})
+        return count_df
+
     if request.graph_type != "summary_scatter":
         return df
 
@@ -122,6 +150,118 @@ def build_plot_dataframe_for_graph_type(df: pd.DataFrame, request: PlotRequest) 
     return summary_stats
 
 
+def build_heatmap_matrix(df: pd.DataFrame, request: PlotRequest) -> pd.DataFrame:
+    if not request.x_col or not request.y_col:
+        return pd.DataFrame()
+
+    source_df = df[[request.x_col, request.y_col]].dropna().copy()
+    if source_df.empty:
+        return pd.DataFrame()
+
+    x_values = source_df[request.x_col].astype(str)
+    y_values = source_df[request.y_col].astype(str)
+    matrix = pd.crosstab(y_values, x_values)
+    row_order = pd.Index(y_values.drop_duplicates())
+    col_order = pd.Index(x_values.drop_duplicates())
+    return matrix.reindex(index=row_order, columns=col_order, fill_value=0)
+
+
+def build_heatmap_plot_data(df: pd.DataFrame, request: PlotRequest) -> list[HeatmapPlotData]:
+    heatmap_data: list[HeatmapPlotData] = []
+
+    for facet_value in get_facet_values(df, request):
+        if request.facet_col:
+            source_df = df[df[request.facet_col] == facet_value]
+        else:
+            source_df = df
+
+        heatmap_data.append(
+            HeatmapPlotData(
+                facet_value=facet_value,
+                matrix=build_heatmap_matrix(source_df, request),
+            )
+        )
+
+    return heatmap_data
+
+
+def build_stacked_bar_matrix(df: pd.DataFrame, request: PlotRequest, normalize: bool = False) -> pd.DataFrame:
+    if not request.x_col:
+        return pd.DataFrame()
+
+    source_cols = [request.x_col]
+    if request.subgroup_col and request.subgroup_col != request.x_col:
+        source_cols.append(request.subgroup_col)
+    source_df = df[source_cols].dropna().copy()
+    if source_df.empty:
+        return pd.DataFrame()
+
+    x_values = source_df[request.x_col].astype(str)
+    if len(source_cols) == 1:
+        matrix = pd.crosstab(index=x_values, columns=pd.Series(["Count"] * len(x_values), index=source_df.index))
+    else:
+        hue_values = source_df[request.subgroup_col].astype(str)
+        matrix = pd.crosstab(index=x_values, columns=hue_values)
+
+    row_order = pd.Index(x_values.drop_duplicates())
+    col_order = pd.Index(matrix.columns)
+    matrix = matrix.reindex(index=row_order, columns=col_order, fill_value=0)
+
+    if normalize:
+        totals = matrix.sum(axis=1).replace(0, np.nan)
+        matrix = matrix.div(totals, axis=0).fillna(0.0)
+
+    return matrix
+
+
+def build_stacked_bar_plot_data(df: pd.DataFrame, request: PlotRequest) -> list[StackedBarPlotData]:
+    stacked_data: list[StackedBarPlotData] = []
+    normalize = request.graph_type == "stacked_bar_100"
+
+    for facet_value in get_facet_values(df, request):
+        if request.facet_col:
+            source_df = df[df[request.facet_col] == facet_value]
+        else:
+            source_df = df
+
+        stacked_data.append(
+            StackedBarPlotData(
+                facet_value=facet_value,
+                matrix=build_stacked_bar_matrix(source_df, request, normalize=normalize),
+            )
+        )
+
+    return stacked_data
+
+
+def build_mosaic_plot_data(df: pd.DataFrame, request: PlotRequest) -> list[MosaicPlotData]:
+    mosaic_data: list[MosaicPlotData] = []
+
+    for facet_value in get_facet_values(df, request):
+        if request.facet_col:
+            source_df = df[df[request.facet_col] == facet_value]
+        else:
+            source_df = df
+
+        matrix = build_stacked_bar_matrix(source_df, request, normalize=False)
+        counts: dict[tuple[str, str], int] = {}
+        if not matrix.empty:
+            for category in matrix.index:
+                for subgroup in matrix.columns:
+                    counts[(str(category), str(subgroup))] = int(matrix.loc[category, subgroup])
+
+        mosaic_data.append(
+            MosaicPlotData(
+                facet_value=facet_value,
+                counts=counts,
+                categories=[str(value) for value in matrix.index],
+                subgroups=[str(value) for value in matrix.columns],
+            )
+        )
+
+    return mosaic_data
+
+
 def build_base_plot_kwargs(
     request: PlotRequest,
     plot_df: pd.DataFrame,
@@ -131,9 +271,13 @@ def build_base_plot_kwargs(
     kwargs = {
         "data": plot_df,
         "x": request.x_col,
-        "y": request.y_col,
         "order": x_order,
     }
+
+    if request.graph_type == "countplot":
+        kwargs["y"] = "__count__"
+    else:
+        kwargs["y"] = request.y_col
 
     if request.graph_type == "lineplot":
         kwargs.pop("order", None)
@@ -146,7 +290,7 @@ def build_base_plot_kwargs(
         if single_color:
             kwargs["color"] = single_color
 
-    if request.graph_type == "bar":
+    if request.graph_type in {"bar", "countplot"}:
         kwargs.update(
             {
                 "edgecolor": properties.get("bar_edgecolor", "black"),

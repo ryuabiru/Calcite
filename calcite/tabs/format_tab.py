@@ -233,7 +233,6 @@ class FormatTab(QWidget):
         }
 
     def set_properties(self, props):
-        print("DEBUG: Setting properties for FormatTab...")
         self.spines_check.setChecked(props.get('hide_top_right_spines', True))
         self.scatter_overlay_check.setChecked(props.get('scatter_overlay', False))
 
@@ -270,7 +269,6 @@ class FormatTab(QWidget):
 
         # サブグループの色は update_subgroup_color_ui 経由で復元される想定
         self.subgroup_colors = props.get('subgroup_colors', {})
-        print("DEBUG: FormatTab properties set.")
 
     def open_regression_color_dialog(self):
         color = QColorDialog.getColor()

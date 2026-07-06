@@ -6,10 +6,18 @@ import os
 import tempfile
 import zipfile
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_object_dtype, is_string_dtype
+
+
+PROJECT_SCHEMA_VERSION = 2
+MANIFEST_FILENAME = "manifest.json"
+DATAFRAME_FILENAME = "tables/main.csv"
+SETTINGS_FILENAME = "state/settings.json"
+ANALYSIS_FILENAME = "state/analysis.json"
 
 
 class NumpyArrayEncoder(json.JSONEncoder):
@@ -68,11 +76,19 @@ def dataframe_from_clipboard_text(text: str) -> pd.DataFrame:
 
 def write_project_archive(file_path: str, state: ProjectState) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
-        if state.dataframe is not None:
-            state.dataframe.to_csv(os.path.join(temp_dir, "data.csv"), index=False)
+        manifest = {
+            "schema_version": PROJECT_SCHEMA_VERSION,
+            "files": {
+                "dataframe": DATAFRAME_FILENAME if state.dataframe is not None else None,
+                "settings": SETTINGS_FILENAME,
+                "analysis": ANALYSIS_FILENAME,
+            },
+        }
 
-        with open(os.path.join(temp_dir, "settings.json"), "w", encoding="utf-8") as f:
-            json.dump(state.settings, f, indent=4)
+        if state.dataframe is not None:
+            _write_csv(os.path.join(temp_dir, DATAFRAME_FILENAME), state.dataframe)
+
+        _write_json(os.path.join(temp_dir, SETTINGS_FILENAME), state.settings)
 
         analysis_data = {
             "statistical_annotations": state.statistical_annotations,
@@ -80,8 +96,8 @@ def write_project_archive(file_path: str, state: ProjectState) -> None:
             "regression_line_params": state.regression_line_params,
             "fit_params": state.fit_params,
         }
-        with open(os.path.join(temp_dir, "analysis.json"), "w", encoding="utf-8") as f:
-            json.dump(analysis_data, f, indent=4, cls=NumpyArrayEncoder)
+        _write_json(os.path.join(temp_dir, ANALYSIS_FILENAME), analysis_data, cls=NumpyArrayEncoder)
+        _write_json(os.path.join(temp_dir, MANIFEST_FILENAME), manifest)
 
         with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for root, _, files in os.walk(temp_dir):
@@ -96,22 +112,12 @@ def read_project_archive(file_path: str) -> ProjectState:
         with zipfile.ZipFile(file_path, "r") as zf:
             zf.extractall(temp_dir)
 
-        dataframe = None
-        csv_path = os.path.join(temp_dir, "data.csv")
-        if os.path.exists(csv_path):
-            dataframe = pd.read_csv(csv_path)
+        manifest = _read_manifest(temp_dir)
+        file_map = _resolve_project_files(manifest)
 
-        settings = {}
-        settings_path = os.path.join(temp_dir, "settings.json")
-        if os.path.exists(settings_path):
-            with open(settings_path, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-
-        analysis_data = {}
-        analysis_path = os.path.join(temp_dir, "analysis.json")
-        if os.path.exists(analysis_path):
-            with open(analysis_path, "r", encoding="utf-8") as f:
-                analysis_data = json.load(f)
+        dataframe = _read_csv_if_exists(os.path.join(temp_dir, file_map["dataframe"]))
+        settings = _read_json_if_exists(os.path.join(temp_dir, file_map["settings"]))
+        analysis_data = _read_json_if_exists(os.path.join(temp_dir, file_map["analysis"]))
 
     return ProjectState(
         dataframe=dataframe,
@@ -121,6 +127,58 @@ def read_project_archive(file_path: str) -> ProjectState:
         regression_line_params=_restore_regression_line_params(analysis_data.get("regression_line_params")),
         fit_params=_restore_fit_params(analysis_data.get("fit_params")),
     )
+
+
+def _write_csv(file_path: str, dataframe: pd.DataFrame) -> None:
+    _ensure_parent_dir(file_path)
+    dataframe.to_csv(file_path, index=False)
+
+
+def _write_json(file_path: str, payload: dict, cls: type[json.JSONEncoder] | None = None) -> None:
+    _ensure_parent_dir(file_path)
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=4, cls=cls)
+
+
+def _ensure_parent_dir(file_path: str) -> None:
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+
+
+def _read_manifest(temp_dir: str) -> dict:
+    manifest_path = os.path.join(temp_dir, MANIFEST_FILENAME)
+    if not os.path.exists(manifest_path):
+        return {"schema_version": 1}
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _resolve_project_files(manifest: dict) -> dict:
+    if manifest.get("schema_version", 1) < 2:
+        return {
+            "dataframe": "data.csv",
+            "settings": "settings.json",
+            "analysis": "analysis.json",
+        }
+
+    files = manifest.get("files", {})
+    return {
+        "dataframe": files.get("dataframe") or "",
+        "settings": files.get("settings") or SETTINGS_FILENAME,
+        "analysis": files.get("analysis") or ANALYSIS_FILENAME,
+    }
+
+
+def _read_csv_if_exists(file_path: str) -> pd.DataFrame | None:
+    if not file_path or not os.path.exists(file_path):
+        return None
+    return pd.read_csv(file_path)
+
+
+def _read_json_if_exists(file_path: str) -> dict:
+    if not file_path or not os.path.exists(file_path):
+        return {}
+    with open(file_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def _restore_regression_line_params(reg_params):

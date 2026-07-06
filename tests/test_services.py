@@ -5,6 +5,8 @@ from matplotlib.figure import Figure
 from pathlib import Path
 import tempfile
 import numpy as np
+import json
+import zipfile
 
 from calcite.models import AnalysisRequest, PlotRequest
 from calcite.services.plot_service import (
@@ -12,12 +14,15 @@ from calcite.services.plot_service import (
     build_base_plot_kwargs,
     build_facet_plot_data,
     build_four_pl_overlay_lines,
+    build_heatmap_matrix,
     build_legend_handles_labels,
+    build_mosaic_plot_data,
     build_paired_annotation_spec,
     build_paired_plot_data,
     build_plot_dataframe_for_graph_type,
     build_regression_overlay_lines,
     build_scatter_plot_kwargs,
+    build_stacked_bar_matrix,
     build_stripplot_kwargs,
     build_summary_errorbar_specs,
     normalize_plot_request,
@@ -32,7 +37,45 @@ from calcite.services.statistics_service import (
     run_anova,
     run_kruskal,
 )
+from calcite.application.project_use_cases import OpenProjectUseCase, SaveProjectUseCase
+from calcite.application.state import AppState
+from calcite.application.ui_controller import resolve_legend_position_for_graph_type
+from calcite.application.window_use_cases import build_child_window_title
+from calcite.application.data_use_cases import (
+    ApplyAdvancedFilterUseCase,
+    CreateSubsetUseCase,
+    PivotDataUseCase,
+    RestructureDataUseCase,
+)
+from calcite.application.import_use_cases import OpenCsvUseCase, PasteClipboardUseCase
+from calcite.application.export_use_cases import SaveTextUseCase
+from calcite.application.statistics_formatters import (
+    format_binary_test_result,
+    format_chi_squared_result,
+    format_pearson_correlation_result,
+    format_paired_test_result,
+    format_regression_summary,
+    format_shapiro_result,
+    format_spearman_correlation_result,
+    format_two_proportion_result,
+)
+from calcite.application.statistics_use_cases import (
+    RunChiSquaredAnalysisUseCase,
+    RunPearsonCorrelationUseCase,
+    RunRegressionAnalysisUseCase,
+    RunShapiroAnalysisUseCase,
+    RunSpearmanCorrelationUseCase,
+    RunTwoProportionAnalysisUseCase,
+)
+from calcite.application.table_controller import build_clipboard_text, parse_clipboard_text
+from calcite.handlers import ActionHandler, GraphManager, StatisticalHandler
+from calcite.main_window_history import DataframeHistoryManager
 from calcite.services.project_service import (
+    ANALYSIS_FILENAME,
+    DATAFRAME_FILENAME,
+    MANIFEST_FILENAME,
+    PROJECT_SCHEMA_VERSION,
+    SETTINGS_FILENAME,
     ProjectState,
     dataframe_from_clipboard_text,
     optimize_imported_dataframe,
@@ -203,6 +246,98 @@ class PlotServiceTests(unittest.TestCase):
         self.assertEqual(kwargs["hue"], "group")
         self.assertEqual(kwargs["linewidth"], 2.0)
 
+    def test_build_plot_dataframe_for_countplot_aggregates_counts(self):
+        df = pd.DataFrame({"x": ["A", "A", "B"], "group": ["g1", "g1", "g2"]})
+
+        counted = build_plot_dataframe_for_graph_type(
+            df,
+            PlotRequest(graph_type="countplot", x_col="x", subgroup_col="group"),
+        )
+
+        self.assertEqual(counted["__count__"].tolist(), [2, 1])
+
+    def test_build_base_plot_kwargs_for_countplot_uses_internal_count_column(self):
+        kwargs = build_base_plot_kwargs(
+            PlotRequest(graph_type="countplot", x_col="x", subgroup_col="group"),
+            pd.DataFrame({"x": ["A"], "group": ["g1"], "__count__": [2]}),
+            ["A"],
+            {"subgroup_colors": {"g1": "red"}},
+        )
+
+        self.assertEqual(kwargs["y"], "__count__")
+        self.assertEqual(kwargs["hue"], "group")
+
+    def test_build_heatmap_matrix_counts_categorical_pairs(self):
+        matrix = build_heatmap_matrix(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "B", "B"],
+                    "y": ["top", "top", "top", "bottom"],
+                }
+            ),
+            PlotRequest(graph_type="heatmap", x_col="x", y_col="y"),
+        )
+
+        self.assertEqual(matrix.loc["top", "A"], 2)
+        self.assertEqual(matrix.loc["bottom", "B"], 1)
+        self.assertEqual(list(matrix.columns), ["A", "B"])
+        self.assertEqual(list(matrix.index), ["top", "bottom"])
+
+    def test_build_stacked_bar_matrix_counts_categories(self):
+        matrix = build_stacked_bar_matrix(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "B", "B"],
+                    "group": ["g1", "g2", "g1", "g1"],
+                }
+            ),
+            PlotRequest(graph_type="stacked_bar", x_col="x", subgroup_col="group"),
+        )
+
+        self.assertEqual(matrix.loc["A", "g1"], 1)
+        self.assertEqual(matrix.loc["A", "g2"], 1)
+        self.assertEqual(matrix.loc["B", "g1"], 2)
+
+    def test_build_stacked_bar_matrix_normalizes_for_100_percent(self):
+        matrix = build_stacked_bar_matrix(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "B", "B"],
+                    "group": ["g1", "g2", "g1", "g1"],
+                }
+            ),
+            PlotRequest(graph_type="stacked_bar_100", x_col="x", subgroup_col="group"),
+            normalize=True,
+        )
+
+        self.assertAlmostEqual(matrix.loc["A"].sum(), 1.0)
+        self.assertAlmostEqual(matrix.loc["B"].sum(), 1.0)
+
+    def test_build_mosaic_plot_data_flattens_counts(self):
+        plot_data = build_mosaic_plot_data(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "B", "B"],
+                    "group": ["g1", "g2", "g1", "g1"],
+                }
+            ),
+            PlotRequest(graph_type="mosaic", x_col="x", subgroup_col="group"),
+        )
+
+        self.assertEqual(len(plot_data), 1)
+        self.assertEqual(plot_data[0].counts[("A", "g1")], 1)
+        self.assertEqual(plot_data[0].counts[("B", "g1")], 2)
+
+    def test_prepare_plot_dataframe_keeps_numeric_x_for_correlation_heatmap(self):
+        df = pd.DataFrame({"x": [1, 2], "y": [3, 4]})
+
+        prepared = prepare_plot_dataframe(
+            df,
+            PlotRequest(graph_type="correlation_heatmap", x_col="x", y_col="y"),
+        )
+
+        self.assertEqual(prepared["x"].tolist(), [1, 2])
+
     def test_build_scatter_plot_kwargs_uses_single_color_without_hue(self):
         kwargs = build_scatter_plot_kwargs(
             PlotRequest(graph_type="scatter", x_col="x", y_col="y"),
@@ -257,6 +392,369 @@ class PlotServiceTests(unittest.TestCase):
 
         self.assertEqual(len(specs), 2)
         self.assertEqual(specs[0]["capsize"], 4)
+
+
+class ApplicationUseCaseTests(unittest.TestCase):
+    def test_app_state_resets_analysis_results(self):
+        state = AppState(
+            statistical_annotations=[{"p_value": 0.01}],
+            paired_annotations=[{"box_pair": ("A", "B")}],
+            regression_line_params={"x_line": np.array([1, 2])},
+            fit_params={"params": np.array([1, 2, 3, 4])},
+        )
+
+        state.reset_analysis_results()
+
+        self.assertEqual(state.statistical_annotations, [])
+        self.assertEqual(state.paired_annotations, [])
+        self.assertIsNone(state.regression_line_params)
+        self.assertIsNone(state.fit_params)
+
+    def test_app_state_deduplicates_annotations(self):
+        state = AppState()
+        annotation = {"p_value": 0.01}
+        paired_annotation = {"box_pair": ("A", "B")}
+
+        state.add_statistical_annotation(annotation)
+        state.add_statistical_annotation(annotation)
+        state.add_paired_annotation(paired_annotation)
+        state.add_paired_annotation(paired_annotation)
+
+        self.assertEqual(state.statistical_annotations, [annotation])
+        self.assertEqual(state.paired_annotations, [paired_annotation])
+
+    def test_resolve_legend_position_hides_summary_scatter_legend(self):
+        resolved = resolve_legend_position_for_graph_type(
+            previous_graph_type="scatter",
+            next_graph_type="summary_scatter",
+            current_legend_position="best",
+        )
+
+        self.assertEqual(resolved, "hide")
+
+    def test_resolve_legend_position_restores_default_after_summary_scatter(self):
+        resolved = resolve_legend_position_for_graph_type(
+            previous_graph_type="summary_scatter",
+            next_graph_type="scatter",
+            current_legend_position="hide",
+        )
+
+        self.assertEqual(resolved, "best")
+
+    def test_resolve_legend_position_hides_heatmap_legend(self):
+        resolved = resolve_legend_position_for_graph_type(
+            previous_graph_type="scatter",
+            next_graph_type="heatmap",
+            current_legend_position="best",
+        )
+
+        self.assertEqual(resolved, "hide")
+
+    def test_resolve_legend_position_hides_correlation_heatmap_legend(self):
+        resolved = resolve_legend_position_for_graph_type(
+            previous_graph_type="scatter",
+            next_graph_type="correlation_heatmap",
+            current_legend_position="best",
+        )
+
+        self.assertEqual(resolved, "hide")
+
+    def test_project_use_cases_round_trip_project_archive(self):
+        df = pd.DataFrame({"group": ["A", "B"], "value": [1.0, 2.0]})
+        state = ProjectState(
+            dataframe=df,
+            settings={"title": "Example"},
+            statistical_annotations=[{"value_col": "value"}],
+            paired_annotations=[],
+            regression_line_params={"x_line": np.array([1, 2]), "y_line": np.array([3, 4]), "r_squared": 0.9},
+            fit_params=None,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = str(Path(tmp_dir) / "sample.calcite")
+
+            SaveProjectUseCase().execute(file_path, state)
+            restored = OpenProjectUseCase().execute(file_path)
+
+        self.assertEqual(restored.dataframe.to_dict(orient="list"), df.to_dict(orient="list"))
+        self.assertEqual(restored.settings, {"title": "Example"})
+        self.assertEqual(restored.statistical_annotations, [{"value_col": "value"}])
+        self.assertTrue(np.array_equal(restored.regression_line_params["x_line"], np.array([1, 2])))
+
+    def test_write_project_archive_uses_versioned_manifest_schema(self):
+        df = pd.DataFrame({"group": ["A"], "value": [1.0]})
+        state = ProjectState(
+            dataframe=df,
+            settings={"title": "Example"},
+            statistical_annotations=[],
+            paired_annotations=[],
+            regression_line_params=None,
+            fit_params=None,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = str(Path(tmp_dir) / "sample.calcite")
+            write_project_archive(file_path, state)
+
+            with zipfile.ZipFile(file_path, "r") as archive:
+                members = set(archive.namelist())
+                manifest = json.loads(archive.read(MANIFEST_FILENAME).decode("utf-8"))
+
+        self.assertIn(DATAFRAME_FILENAME, members)
+        self.assertIn(SETTINGS_FILENAME, members)
+        self.assertIn(ANALYSIS_FILENAME, members)
+        self.assertEqual(manifest["schema_version"], PROJECT_SCHEMA_VERSION)
+        self.assertEqual(manifest["files"]["dataframe"], DATAFRAME_FILENAME)
+
+    def test_read_project_archive_supports_legacy_layout(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "legacy.calcite"
+            with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("data.csv", "group,value\nA,1.0\nB,2.0\n")
+                archive.writestr("settings.json", json.dumps({"title": "Legacy"}))
+                archive.writestr(
+                    "analysis.json",
+                    json.dumps({"statistical_annotations": [{"value_col": "value"}]}),
+                )
+
+            restored = read_project_archive(str(file_path))
+
+        self.assertEqual(restored.dataframe.to_dict(orient="list"), {"group": ["A", "B"], "value": [1.0, 2.0]})
+        self.assertEqual(restored.settings, {"title": "Legacy"})
+        self.assertEqual(restored.statistical_annotations, [{"value_col": "value"}])
+
+    def test_build_child_window_title_appends_suffix(self):
+        self.assertEqual(build_child_window_title("Calcite", "Filtered"), "Calcite [Filtered]")
+
+    def test_data_use_cases_wrap_service_workflows(self):
+        df = pd.DataFrame(
+            {
+                "id": [1, 1, 2, 2],
+                "condition": ["A", "B", "A", "B"],
+                "value": [10, 20, 30, 40],
+                "group": ["x", "x", "y", "y"],
+            }
+        )
+
+        restructured = RestructureDataUseCase().execute(
+            df[["id", "condition", "value"]],
+            {"id_vars": ["id"], "value_vars": ["condition", "value"], "var_name": "metric", "value_name": "result"},
+        )
+        pivoted = PivotDataUseCase().execute(
+            df[["id", "condition", "value"]],
+            {"id_vars": ["id"], "var_name": "condition", "value_name": "value"},
+        )
+        filtered = ApplyAdvancedFilterUseCase().execute(
+            df,
+            [{"column": "group", "operator": "==", "value": "x"}],
+        )
+        subset = CreateSubsetUseCase().execute(df, [0, 3])
+
+        self.assertEqual(list(restructured.columns), ["id", "metric", "result"])
+        self.assertEqual(pivoted.to_dict(orient="list"), {"id": [1, 2], "A": [10.0, 30.0], "B": [20.0, 40.0]})
+        self.assertEqual(filtered.dataframe["group"].tolist(), ["x", "x"])
+        self.assertIn("`group` == \"x\"", filtered.query)
+        self.assertEqual(subset["value"].tolist(), [10, 40])
+
+    def test_table_controller_clipboard_helpers_round_trip_grid(self):
+        text = build_clipboard_text(
+            [
+                (2, 1, "b"),
+                (1, 0, "a"),
+                (2, 0, "c"),
+            ]
+        )
+
+        self.assertEqual(text, "a\t\nc\tb")
+        self.assertEqual(parse_clipboard_text(text), [["a", ""], ["c", "b"]])
+
+    def test_import_use_cases_open_csv_and_clipboard(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "sample.csv"
+            file_path.write_text("group,value\nA,1\nB,2\n", encoding="utf-8")
+
+            csv_df = OpenCsvUseCase().execute(str(file_path))
+            clipboard_df = PasteClipboardUseCase().execute("group\tvalue\nA\t1\nB\t2\n")
+
+        self.assertEqual(csv_df.to_dict(orient="list"), {"group": ["A", "B"], "value": [1, 2]})
+        self.assertEqual(clipboard_df.to_dict(orient="list"), {"group": ["A", "B"], "value": [1, 2]})
+
+    def test_save_text_use_case_writes_export_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "results.txt"
+            SaveTextUseCase().execute(str(file_path), "analysis output")
+
+            self.assertEqual(file_path.read_text(encoding="utf-8"), "analysis output")
+
+    def test_statistics_formatters_build_readable_summaries(self):
+        binary_text = format_binary_test_result(
+            title="Independent t-test results (on current graph):",
+            value_col="value",
+            group_1_label="group=A",
+            group_1_n=3,
+            group_2_label="group=B",
+            group_2_n=3,
+            statistic_label="t-statistic",
+            statistic_value=2.5,
+            p_value=0.02,
+            group_1_mean=1.0,
+            group_2_mean=2.0,
+        )
+        paired_text = format_paired_test_result(
+            title="Paired t-test results:",
+            col1="before",
+            col2="after",
+            statistic_label="t-statistic",
+            statistic_value=3.0,
+            p_value=0.07,
+            col1_mean=1.2,
+            col2_mean=1.5,
+        )
+        regression_text = format_regression_summary("linear", ["Y = 1.0000 * X + 0.0000"])
+        chi_text = format_chi_squared_result(
+            RunChiSquaredAnalysisUseCase().execute(
+                pd.DataFrame({"rows": ["A", "A", "B", "B"], "cols": ["X", "Y", "X", "Y"]}),
+                "rows",
+                "cols",
+            ),
+            "rows",
+            "cols",
+        )
+        spearman_text = format_spearman_correlation_result(
+            RunSpearmanCorrelationUseCase().execute(
+                pd.DataFrame({"x": [1, 2, 3], "y": [1, 2, 4]}),
+                "x",
+                "y",
+            ),
+            "x",
+            "y",
+        )
+        pearson_text = format_pearson_correlation_result(
+            RunPearsonCorrelationUseCase().execute(
+                pd.DataFrame({"x": [1, 2, 3], "y": [2, 4, 6]}),
+                "x",
+                "y",
+            ),
+            "x",
+            "y",
+        )
+        proportion_text = format_two_proportion_result(
+            RunTwoProportionAnalysisUseCase().execute(
+                pd.DataFrame(
+                    {
+                        "group": ["A"] * 10 + ["B"] * 10,
+                        "outcome": ["Yes"] * 8 + ["No"] * 2 + ["Yes"] * 3 + ["No"] * 7,
+                    }
+                ),
+                "group",
+                "outcome",
+            ),
+            "group",
+            "outcome",
+        )
+        shapiro_text = format_shapiro_result(
+            RunShapiroAnalysisUseCase().execute(
+                pd.DataFrame({"value": [1, 2, 3, 4, 5, 6]}),
+                "value",
+                pd.Series(["A", "A", "A", "B", "B", "B"]),
+                "group",
+            )
+        )
+
+        self.assertIn("Conclusion: The difference is statistically significant", binary_text)
+        self.assertIn("Conclusion: The difference is not statistically significant", paired_text)
+        self.assertIn("Linear Regression Results", regression_text)
+        self.assertIn("Chi-squared statistic", chi_text)
+        self.assertIn("Pearson's r", pearson_text)
+        self.assertIn("Spearman's rho", spearman_text)
+        self.assertIn("2-Proportion z-test Results", proportion_text)
+        self.assertIn("95% CI for difference", proportion_text)
+        self.assertIn("Shapiro-Wilk Normality Test Results", shapiro_text)
+
+    def test_run_regression_analysis_use_case_returns_overlay_params_and_summary(self):
+        df = pd.DataFrame({"x": [1, 2, 3, 4], "y": [2, 4, 6, 8]})
+
+        result = RunRegressionAnalysisUseCase().execute(
+            dataframe=df,
+            x_col="x",
+            y_col="y",
+            model="linear",
+        )
+
+        self.assertIsNone(result.fit_params)
+        self.assertIsNotNone(result.regression_line_params)
+        self.assertIn("r_squared", result.regression_line_params)
+        self.assertTrue(result.summary_lines)
+
+    def test_statistical_use_cases_return_structured_results(self):
+        chi_result = RunChiSquaredAnalysisUseCase().execute(
+            pd.DataFrame({"rows": ["A", "A", "B", "B"], "cols": ["X", "Y", "X", "Y"]}),
+            "rows",
+            "cols",
+        )
+        pearson_result = RunPearsonCorrelationUseCase().execute(
+            pd.DataFrame({"x": [1, 2, 3, 4], "y": [2, 4, 6, 8]}),
+            "x",
+            "y",
+        )
+        proportion_result = RunTwoProportionAnalysisUseCase().execute(
+            pd.DataFrame(
+                {
+                    "group": ["A"] * 10 + ["B"] * 10,
+                    "outcome": ["Yes"] * 8 + ["No"] * 2 + ["Yes"] * 3 + ["No"] * 7,
+                }
+            ),
+            "group",
+            "outcome",
+        )
+        spearman_result = RunSpearmanCorrelationUseCase().execute(
+            pd.DataFrame({"x": [1, 2, 3, 4], "y": [2, 4, 6, 8]}),
+            "x",
+            "y",
+        )
+        shapiro_result = RunShapiroAnalysisUseCase().execute(
+            pd.DataFrame({"value": [1, 2, 3, 4, 5, 6]}),
+            "value",
+            pd.Series(["A", "A", "A", "B", "B", "B"]),
+            "group",
+        )
+
+        self.assertEqual(list(chi_result.contingency_table.columns), ["X", "Y"])
+        self.assertEqual(chi_result.standardized_residuals.shape, (2, 2))
+        self.assertEqual(chi_result.contribution_table.shape, (2, 2))
+        self.assertEqual(chi_result.cramers_v, 0.0)
+        self.assertEqual(pearson_result.sample_size, 4)
+        self.assertAlmostEqual(pearson_result.r, 1.0)
+        self.assertEqual(proportion_result.group1_label, "A")
+        self.assertLess(proportion_result.ci_low_group1, proportion_result.proportion_group1)
+        self.assertGreater(proportion_result.ci_high_group1, proportion_result.proportion_group1)
+        self.assertLess(proportion_result.ci_low_difference, proportion_result.difference_in_proportions)
+        self.assertGreater(proportion_result.ci_high_difference, proportion_result.difference_in_proportions)
+        self.assertLess(proportion_result.p_value, 0.05)
+        self.assertEqual(spearman_result.sample_size, 4)
+        self.assertEqual(len(shapiro_result.groups), 2)
+
+    def test_handler_package_exports_public_entrypoints(self):
+        self.assertEqual(ActionHandler.__name__, "ActionHandler")
+        self.assertEqual(GraphManager.__name__, "GraphManager")
+        self.assertEqual(StatisticalHandler.__name__, "StatisticalHandler")
+
+    def test_dataframe_history_manager_undo_redo_round_trip(self):
+        original = pd.DataFrame({"value": [1, 2]})
+        changed = pd.DataFrame({"value": [1, 3]})
+        transitions = []
+        manager = DataframeHistoryManager(on_change=lambda can_undo, can_redo: transitions.append((can_undo, can_redo)))
+        manager.reset(original)
+        manager.record_change(original, changed)
+
+        undone = manager.undo(changed)
+        redone = manager.redo(undone)
+
+        self.assertEqual(undone.to_dict(orient="list"), {"value": [1, 2]})
+        self.assertEqual(redone.to_dict(orient="list"), {"value": [1, 3]})
+        self.assertIn((False, False), transitions)
+        self.assertIn((True, False), transitions)
+        self.assertIn((False, True), transitions)
 
     def test_build_regression_overlay_lines_for_single_fit(self):
         lines = build_regression_overlay_lines(
