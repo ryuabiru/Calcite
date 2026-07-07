@@ -434,8 +434,57 @@ Exit Criteria:
 
 ## Immediate Next Steps
 
-1. frontend を React ベースへ置き換える最小 scaffold を作る
-2. command / query と DTO の境界を Rust 側で明文化する
-3. 最初の縦スライスを `CSV 読み込み -> table 表示` に固定する
-4. reshape / pivot / export / project 操作を GUI 上の導線として整理する
-5. graph の残り種別を優先度順に Rust 側へ移す
+1. command / query と DTO の境界を Rust 側で明文化する
+2. 最初の縦スライスを `CSV 読み込み -> table 表示` に固定する
+3. reshape / pivot / export / project 操作を GUI 上の導線として整理する
+4. graph の残り種別を優先度順に Rust 側へ移す
+
+## Next Slice
+
+次回の作業は以下の 1 スライスに固定する。
+
+### Slice Goal
+
+- `CSV 読み込み -> table 表示` を React UI 上で最後まで通す
+
+### Done Criteria
+
+- React の DataFrame ペインで CSV path を指定して読み込める
+- Rust backend から table headers と row data を query として取得できる
+- frontend 側で table preview が描画される
+- 読み込み後に row count / column count / loaded file name が UI に反映される
+- 読み込み失敗時にエラーが Results または Status に表示される
+
+### Files Expected To Change
+
+- `rust/src/backend.rs`
+- `rust/src/state.rs`
+- `tauri/src-tauri/src/main.rs`
+- `tauri/frontend/src/api.js`
+- `tauri/frontend/src/App.jsx`
+
+### Verification
+
+- `cd rust && cargo test`
+- `cd tauri && npm run build`
+- `cd tauri && npm run tauri:dev`
+- 実機確認: CSV 読み込み後に table preview が表示される
+
+## After Next Slice
+
+次の優先順位は以下。
+
+1. `sort / filter -> table 再描画`
+2. `列選択 -> graph settings 反映`
+3. `reshape / pivot -> table 更新`
+4. `save / load project -> state 復元`
+
+## Working Rule
+
+毎回の作業開始時は以下だけ見ればよい。
+
+1. `Immediate Next Steps`
+2. `Next Slice`
+3. `After Next Slice`
+
+その日の作業が終わったら、完了した slice をこのファイルへ反映し、次の slice を 1 つだけ明示する。
