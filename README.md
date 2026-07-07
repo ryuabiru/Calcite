@@ -9,7 +9,6 @@
 ### **Intuitive Data Handling**
 
 - **Versatile Import**: Import data from CSV files or paste directly from spreadsheets (e.g., Excel) via the clipboard.
-- **Python Integration**: Launch the application seamlessly from existing analysis environments by passing a `pandas.DataFrame` as a direct argument.
 - **Interactive Table**:
   - Sort data in ascending/descending order with a single click or edit column names with a double click.
   - Export the current state of the data (after filtering or sorting) to a new CSV file.
@@ -43,11 +42,11 @@ e.g.
 
 ## 🛠️ Installation
 
-This project is currently under development. The installation method is as follows.
-Python 3.10 or higher is required.
+This project is currently under development. The active desktop implementation lives in `rust/` and `tauri/`.
 
 ```bash
-pip install calcite
+cd rust
+cargo run
 ```
 
 ## 🧪 Rust Bootstrap
@@ -72,33 +71,13 @@ npm install
 npm run tauri:dev
 ```
 
-At this stage, the Rust app is not feature-complete and coexists with the Python application while migration planning and UI scaffolding continue.
+The repository is now Rust-first. The legacy Python runtime and test harness have been retired.
 
 ## 🚀 Quick Start
 
-1. Launch Calcite from your terminal:
+1. Launch the Rust/Tauri app from the `tauri/` workspace.
 
-    ```bash
-    calcite
-    ```
-
-    or
-
-    ``` python
-    import pandas as pd
-    from calcite.main import plot
-
-    data = {
-        'Category': ['A', 'A', 'B', 'B'],
-        'Value': [10, 12, 15, 17]
-    }
-    df = pd.DataFrame(data)
-    # -----------------------------
-    
-    plot(data=df)
-    ```
-
-2. Import data using **File \> Open CSV...** or paste from your clipboard using **Edit \> Paste**.
+2. Import data using the Rust table workflow.
 
    - **💡 Tidy Data format (=Long-form) is recommended**
    - Calcite is designed around the principles of **Tidy Data**. This is a data structure where:
@@ -111,13 +90,13 @@ At this stage, the Rust app is not feature-complete and coexists with the Python
     (<https://seaborn.pydata.org/tutorial/data_structure.html>)
     ![Tidy data](./images/Tidy%20data.png)
 
-3. Select a graph type from the toolbar (e.g., Scatter Plot, Bar Chart).
+3. Select a graph type from the toolbar.
 
-4. In the **"Data"** tab at the bottom right, select the columns for the X and Y axes.
+4. Select the columns for the X and Y axes in the data controls.
 
-5. Customize the graph's appearance using the **"Format," "Text & Legend,"** and **"Axis"** tabs.
+5. Customize the graph's appearance using the Rust UI controls.
 
-6. Perform statistical analysis from the **"Analysis"** menu.
+6. Perform statistical analysis from the Rust analysis controls.
 
 7. Save your graph using **File \> Save Graph As...**.
 

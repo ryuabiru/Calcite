@@ -2,21 +2,9 @@
 
 ## Current State
 
-- Core handlers were split into thinner facades and specialized modules.
-- An application/use-case layer now exists under `calcite/application/`.
-- Plot preparation logic lives in `calcite/services/plot_service.py`.
-- Statistical logic lives in `calcite/services/statistics_service.py` and `calcite/application/statistics_use_cases.py`.
-- Project persistence, data reshape/filter logic, and export/import flows are separated into service/use-case modules.
-- Snapshot-based undo/redo for DataFrame edits is implemented.
-- Analysis results can be exported from the UI.
-- Dedicated proportion plots with 95% Wilson confidence intervals are implemented.
-- Categorical heatmaps now support configurable colormaps, cell-label toggles, and normalization modes.
-- Chi-squared and 2-proportion analysis results now drive lightweight plot highlights.
-- Categorical charts now support ordering controls, stacked labels, percentage ticks, and cleaner legend defaults.
-- The desktop UI now uses a unified warm-toned application theme with styled panels and controls.
-- Renderer smoke tests now cover `proportion_plot` and normalized heatmap output.
-- Renderer smoke tests now also cover `stacked_bar`, `stacked_bar_100`, `mosaic`, and `correlation_heatmap`.
-- Legend alpha handling now uses a matplotlib-compatible frame update path.
+- The runtime Python implementation under `calcite/` has been removed.
+- The remaining Python test harness has been removed as well; the repo is now Rust-only at runtime and in tests.
+- Rust/Tauri is now the only runtime path in the repo.
 - The Rust bootstrap now supports CSV loading, table sorting, row selection, and case-insensitive row filtering in the preview.
 - Rust now renders a first native bar chart from the loaded table in the `egui` graph area.
 - Rust now also renders a native stacked bar chart from the loaded table and subgroup column.
@@ -24,7 +12,7 @@
 - Rust now renders a native categorical heatmap from the loaded table's X/Y columns.
 - Rust heatmap rendering now supports count, row, column, and total normalization modes.
 - Rust now also renders native proportion, mosaic, and histogram variants from the loaded table.
-- The legacy Python graph toolbar and paired-scatter renderer have been removed from the Python path.
+- The Python runtime was retired in stages, ending with the removal of the remaining `calcite/` modules, console entrypoint, and test harness.
 - The Tauri React DataFrame pane now renders a CSV table preview from the Rust snapshot query.
 - The Tauri React DataFrame pane now mirrors visible-row filtering and sort order in the preview.
 - The Tauri React column chips can push column names into graph settings fields.
@@ -89,7 +77,7 @@
 ### Architecture and maintainability
 
 - Refactored large handlers into smaller modules.
-- Reduced `MainWindow` responsibilities by moving orchestration into builders, persistence helpers, controllers, and use-cases.
+- Removed the legacy Python GUI shell and its orchestration modules.
 - Added broader service-layer and application-layer tests.
 
 ### Visualization additions
@@ -107,7 +95,6 @@
 - Added category/subgroup order controls for categorical plots.
 - Added direct labels for stacked bars and percentage tick formatting for `stacked_bar_100` and `proportion_plot`.
 - Improved default legend placement for categorical plots.
-- Added an application-wide UI theme for the main window, panels, tabs, toolbar, and controls.
 - Added sortable table preview headers and filtered-row rendering in the Tauri React shell.
 - Added DataFrame column chip actions for updating graph settings from the preview.
 - Added Rust-native proportion plot, mosaic plot, and histogram renderers.
@@ -142,8 +129,6 @@
 
 ### Quality checks
 
-- `python -m compileall calcite tests` passes.
-- `uv run python -m unittest tests.test_services` passes.
 - `cargo test` passes for the Rust migration backend.
 - `cd tauri && npm run build` passes for the Tauri frontend.
 - Rust test suite now includes chi-squared analysis coverage.
