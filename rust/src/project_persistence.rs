@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -52,6 +55,7 @@ pub struct PersistedTableView {
     pub sort_column: Option<usize>,
     pub sort_ascending: bool,
     pub selected_rows: Vec<usize>,
+    pub row_filter_query: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -116,6 +120,7 @@ impl From<&ProjectState> for PersistedProjectState {
                 sort_column: state.table_view.sort_column,
                 sort_ascending: state.table_view.sort_ascending,
                 selected_rows: state.table_view.selected_rows.iter().copied().collect(),
+                row_filter_query: state.table_view.row_filter_query.clone(),
             },
             analysis: PersistedAnalysisState {
                 statistical_annotations: Vec::new(),
@@ -133,7 +138,103 @@ impl From<&TableViewState> for PersistedTableView {
             sort_column: state.sort_column,
             sort_ascending: state.sort_ascending,
             selected_rows: state.selected_rows.iter().copied().collect(),
+            row_filter_query: state.row_filter_query.clone(),
         }
+    }
+}
+
+pub fn save_project_directory(
+    directory: impl AsRef<Path>,
+    state: &ProjectState,
+) -> Result<(), String> {
+    let directory = directory.as_ref();
+    let manifest = ProjectArchiveManifest::new(!state.data_table.is_empty());
+    let snapshot = PersistedProjectState::from(state);
+
+    if manifest.files.dataframe.is_some() {
+        let csv_path = directory.join(DATAFRAME_FILENAME);
+        write_csv(&csv_path, &state.data_table.headers, &state.data_table.rows)?;
+    }
+
+    let settings_path = directory.join(SETTINGS_FILENAME);
+    write_json(&settings_path, &snapshot)?;
+
+    let analysis_path = directory.join(ANALYSIS_FILENAME);
+    write_json(&analysis_path, &snapshot.analysis)?;
+
+    let manifest_path = directory.join(MANIFEST_FILENAME);
+    write_json(&manifest_path, &manifest)?;
+
+    Ok(())
+}
+
+pub fn load_project_directory(
+    directory: impl AsRef<Path>,
+) -> Result<PersistedProjectState, String> {
+    let directory = directory.as_ref();
+    let manifest_path = directory.join(MANIFEST_FILENAME);
+    let manifest = read_manifest(&manifest_path)?;
+    if manifest.schema_version != PROJECT_SCHEMA_VERSION {
+        return Err(format!(
+            "Unsupported project schema version {}",
+            manifest.schema_version
+        ));
+    }
+
+    read_json::<PersistedProjectState>(&directory.join(SETTINGS_FILENAME))
+}
+
+fn write_csv(path: &Path, headers: &[String], rows: &[Vec<String>]) -> Result<(), String> {
+    ensure_parent_dir(path)?;
+    let mut writer = csv::Writer::from_path(path)
+        .map_err(|error| format!("Failed to write CSV '{}': {error}", path.display()))?;
+    writer
+        .write_record(headers)
+        .map_err(|error| format!("Failed to write CSV headers '{}': {error}", path.display()))?;
+    for row in rows {
+        writer
+            .write_record(row)
+            .map_err(|error| format!("Failed to write CSV row '{}': {error}", path.display()))?;
+    }
+    writer
+        .flush()
+        .map_err(|error| format!("Failed to flush CSV '{}': {error}", path.display()))?;
+    Ok(())
+}
+
+fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+    ensure_parent_dir(path)?;
+    let json = serde_json::to_string_pretty(value)
+        .map_err(|error| format!("Failed to serialize JSON '{}': {error}", path.display()))?;
+    fs::write(path, json)
+        .map_err(|error| format!("Failed to write JSON '{}': {error}", path.display()))
+}
+
+fn read_manifest(path: &Path) -> Result<ProjectArchiveManifest, String> {
+    read_json(path)
+}
+
+fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
+    let text = fs::read_to_string(path)
+        .map_err(|error| format!("Failed to read '{}': {error}", path.display()))?;
+    serde_json::from_str(&text)
+        .map_err(|error| format!("Failed to parse JSON '{}': {error}", path.display()))
+}
+
+fn ensure_parent_dir(path: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!("Failed to create directory '{}': {error}", parent.display())
+        })?;
+    }
+    Ok(())
+}
+
+impl From<PersistedProjectState> for ProjectState {
+    fn from(snapshot: PersistedProjectState) -> Self {
+        let mut state = ProjectState::from_persisted_snapshot(snapshot);
+        state.status_message = "Project loaded".to_owned();
+        state
     }
 }
 
@@ -195,6 +296,8 @@ mod tests {
             sort_column: Some(1),
             sort_ascending: false,
             selected_rows,
+            row_filter_query: "beta".to_owned(),
+            visible_row_indices: vec![0, 2],
         };
 
         let snapshot = PersistedProjectState::from(&project);
@@ -208,6 +311,7 @@ mod tests {
         assert_eq!(snapshot.table.column_metadata[1].kind, ColumnKind::Numeric);
         assert_eq!(snapshot.table_view.sort_column, Some(1));
         assert_eq!(snapshot.table_view.selected_rows, vec![0, 2]);
+        assert_eq!(snapshot.table_view.row_filter_query, "beta");
     }
 
     #[test]

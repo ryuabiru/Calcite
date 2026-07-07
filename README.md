@@ -52,13 +52,24 @@ pip install calcite
 
 ## 🧪 Rust Bootstrap
 
-The repository now includes an early Rust migration bootstrap under [`rust/`](./rust). The current Rust app is a native shell built with `eframe/egui` and is intentionally limited to layout and state bootstrapping.
+The repository now includes an early Rust migration bootstrap under [`rust/`](./rust) plus a Tauri GUI scaffold under [`tauri/`](./tauri).
 
-Run it with:
+- [`rust/`](./rust) contains the Rust core, data model, persistence, and the temporary `eframe/egui` shell used for migration validation.
+- [`tauri/`](./tauri) contains the new Web UI direction for the Rust desktop shell.
+
+Run the current Rust shell with:
 
 ```bash
 cd rust
 cargo run
+```
+
+Run the Tauri desktop scaffold with:
+
+```bash
+cd tauri
+npm install
+npm run tauri:dev
 ```
 
 At this stage, the Rust app is not feature-complete and coexists with the Python application while migration planning and UI scaffolding continue.

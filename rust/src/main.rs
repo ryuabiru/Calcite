@@ -1,10 +1,9 @@
-mod backend;
-mod core;
-mod project_persistence;
-mod state;
-
-use backend::AppBackend;
-use core::AppCommand;
+use calcite_rust::graph_data::{
+    BarChartData, CorrelationHeatmapData, HeatmapChartData, StackedBarChartData,
+    build_bar_chart_data, build_correlation_heatmap_data, build_heatmap_chart_data,
+    build_stacked_bar_chart_data,
+};
+use calcite_rust::{backend::AppBackend, core::AppCommand};
 use eframe::egui;
 use rfd::FileDialog;
 
@@ -34,6 +33,7 @@ struct CalciteRustApp {
     left_tab: LeftTab,
     backend: AppBackend,
     csv_path_input: String,
+    row_filter_input: String,
     x_column_input: String,
     y_column_input: String,
     subgroup_column_input: String,
@@ -45,6 +45,7 @@ impl Default for CalciteRustApp {
             left_tab: LeftTab::DataFrame,
             backend: AppBackend::new(),
             csv_path_input: String::new(),
+            row_filter_input: String::new(),
             x_column_input: String::new(),
             y_column_input: String::new(),
             subgroup_column_input: String::new(),
@@ -69,6 +70,9 @@ impl eframe::App for CalciteRustApp {
                     for label in [
                         "Scatter Plot",
                         "Bar Chart",
+                        "Count Plot",
+                        "Stacked Bar",
+                        "Correlation Heatmap",
                         "Heatmap",
                         "Proportion Plot",
                         "Histogram",
@@ -116,21 +120,41 @@ impl eframe::App for CalciteRustApp {
                     ));
                 });
                 ui.add_space(8.0);
-                self.placeholder_surface(
-                    ui,
-                    "Rust graph renderer bootstrap",
-                    "This region will host the new Rust-native plotting pipeline.",
-                    [ui.available_width(), ui.available_height() - 8.0],
-                );
+                self.show_graph_panel(ui);
             });
 
         egui::CentralPanel::default()
             .frame(self.panel_frame())
             .show(ctx, |ui| {
-                ui.columns(2, |columns| {
-                    self.show_data_controls(&mut columns[0]);
-                    self.show_results_panel(&mut columns[1]);
-                });
+                let total_width = ui.available_width().max(1.0);
+                let gap = 16.0;
+                if total_width < 700.0 {
+                    self.show_data_controls(ui);
+                    ui.add_space(gap);
+                    self.show_results_panel(ui);
+                } else {
+                    let usable_width = (total_width - gap).max(1.0);
+                    let left_width = (usable_width * 0.62).clamp(220.0, usable_width - 220.0);
+                    let right_width = (usable_width - left_width).max(1.0);
+
+                    ui.horizontal(|ui| {
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(left_width, ui.available_height()),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                self.show_data_controls(ui);
+                            },
+                        );
+                        ui.add_space(gap);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(right_width, ui.available_height()),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                self.show_results_panel(ui);
+                            },
+                        );
+                    });
+                }
             });
     }
 }
@@ -181,6 +205,635 @@ impl CalciteRustApp {
             });
     }
 
+    fn show_graph_panel(&self, ui: &mut egui::Ui) {
+        let project = self.backend.project();
+        let current_graph_type = project.current_graph_type.as_str();
+        if current_graph_type != "Bar Chart"
+            && current_graph_type != "Count Plot"
+            && current_graph_type != "Stacked Bar"
+            && current_graph_type != "Correlation Heatmap"
+            && current_graph_type != "Heatmap"
+        {
+            self.placeholder_surface(
+                ui,
+                "Rust graph renderer bootstrap",
+                "This region will host the new Rust-native plotting pipeline.",
+                [
+                    ui.available_width().max(1.0),
+                    (ui.available_height() - 8.0).max(1.0),
+                ],
+            );
+            return;
+        }
+
+        match current_graph_type {
+            "Correlation Heatmap" => {
+                let Some(heatmap_data) = build_correlation_heatmap_data(&project.data_table) else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph data",
+                        "Load a CSV with at least two numeric columns to render the correlation heatmap.",
+                        [ui.available_width().max(1.0), (ui.available_height() - 8.0).max(1.0)],
+                    );
+                    return;
+                };
+
+                self.draw_correlation_heatmap(ui, &heatmap_data);
+            }
+            "Heatmap" => {
+                let Some(row_name) =
+                    (!project.y_column.trim().is_empty()).then(|| project.y_column.as_str())
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph yet",
+                        "Set X and Y columns to render the heatmap.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                let Some(column_name) =
+                    (!project.x_column.trim().is_empty()).then(|| project.x_column.as_str())
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph yet",
+                        "Set X and Y columns to render the heatmap.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                let Some(chart_data) = build_heatmap_chart_data(
+                    &project.data_table,
+                    &project.table_view,
+                    row_name,
+                    column_name,
+                ) else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph data",
+                        "Load a CSV and choose X and Y columns to render the heatmap.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                self.draw_heatmap_chart(ui, &chart_data);
+            }
+            "Stacked Bar" => {
+                let Some(category_name) =
+                    (!project.x_column.trim().is_empty()).then(|| project.x_column.as_str())
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph yet",
+                        "Set an X column and subgroup column to render the stacked bar chart.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                let Some(subgroup_name) = (!project.subgroup_column.trim().is_empty())
+                    .then(|| project.subgroup_column.as_str())
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph yet",
+                        "Set an X column and subgroup column to render the stacked bar chart.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                let Some(chart_data) = build_stacked_bar_chart_data(
+                    &project.data_table,
+                    &project.table_view,
+                    category_name,
+                    subgroup_name,
+                ) else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph data",
+                        "Load a CSV and choose X and subgroup columns to render the stacked bar chart.",
+                        [ui.available_width().max(1.0), (ui.available_height() - 8.0).max(1.0)],
+                    );
+                    return;
+                };
+
+                self.draw_stacked_bar_chart(ui, &chart_data);
+            }
+            _ => {
+                let Some(column_name) =
+                    (!project.x_column.trim().is_empty()).then(|| project.x_column.as_str())
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph yet",
+                        "Set an X column to render the bar chart.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                let Some(chart_data) =
+                    build_bar_chart_data(&project.data_table, &project.table_view, column_name)
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph data",
+                        "Load a CSV and choose an X column to render the bar chart.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                self.draw_bar_chart(ui, &chart_data);
+            }
+        }
+    }
+
+    fn draw_bar_chart(&self, ui: &mut egui::Ui, chart_data: &BarChartData) {
+        let desired_size = egui::vec2(
+            ui.available_width().max(1.0),
+            ui.available_height().max(260.0),
+        );
+        let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        let bg = egui::Color32::from_rgb(255, 250, 243);
+        let border = egui::Color32::from_rgb(224, 210, 192);
+        painter.rect_filled(rect, 12.0, bg);
+        painter.rect_stroke(
+            rect,
+            12.0,
+            egui::Stroke::new(1.0, border),
+            egui::StrokeKind::Outside,
+        );
+
+        let inner = rect.shrink2(egui::vec2(18.0, 18.0));
+        let max_count = chart_data
+            .segments
+            .iter()
+            .map(|segment| segment.count)
+            .max()
+            .unwrap_or(1) as f32;
+        let bar_count = chart_data.segments.len().max(1) as f32;
+        let bar_gap = 10.0;
+        let bar_width = ((inner.width() - ((bar_count - 1.0) * bar_gap)) / bar_count).max(24.0);
+        let plot_bottom = inner.bottom() - 28.0;
+        let plot_top = inner.top() + 26.0;
+        let plot_height = (plot_bottom - plot_top).max(1.0);
+        let axis_color = egui::Color32::from_rgb(116, 95, 73);
+
+        painter.line_segment(
+            [
+                egui::pos2(inner.left(), plot_bottom),
+                egui::pos2(inner.right(), plot_bottom),
+            ],
+            egui::Stroke::new(1.5, axis_color),
+        );
+        painter.line_segment(
+            [
+                egui::pos2(inner.left(), plot_top),
+                egui::pos2(inner.left(), plot_bottom),
+            ],
+            egui::Stroke::new(1.5, axis_color),
+        );
+
+        painter.text(
+            egui::pos2(inner.left(), inner.top()),
+            egui::Align2::LEFT_TOP,
+            format!(
+                "{}  |  {} visible rows",
+                chart_data.column_name, chart_data.visible_row_count
+            ),
+            egui::FontId::proportional(16.0),
+            egui::Color32::from_rgb(58, 45, 32),
+        );
+
+        for (index, segment) in chart_data.segments.iter().enumerate() {
+            let x = inner.left() + (index as f32 * (bar_width + bar_gap));
+            let height_ratio = if max_count <= 0.0 {
+                0.0
+            } else {
+                segment.count as f32 / max_count
+            };
+            let bar_height = plot_height * height_ratio;
+            let bar_rect = egui::Rect::from_min_size(
+                egui::pos2(x, plot_bottom - bar_height),
+                egui::vec2(bar_width, bar_height),
+            );
+            painter.rect_filled(bar_rect, 8.0, egui::Color32::from_rgb(217, 143, 61));
+            painter.rect_stroke(
+                bar_rect,
+                8.0,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(140, 63, 22)),
+                egui::StrokeKind::Outside,
+            );
+            painter.text(
+                egui::pos2(bar_rect.center().x, bar_rect.top() - 4.0),
+                egui::Align2::CENTER_BOTTOM,
+                segment.count.to_string(),
+                egui::FontId::proportional(14.0),
+                egui::Color32::from_rgb(58, 45, 32),
+            );
+            painter.text(
+                egui::pos2(bar_rect.center().x, plot_bottom + 6.0),
+                egui::Align2::CENTER_TOP,
+                &segment.label,
+                egui::FontId::proportional(13.0),
+                egui::Color32::from_rgb(58, 45, 32),
+            );
+        }
+    }
+
+    fn draw_stacked_bar_chart(&self, ui: &mut egui::Ui, chart_data: &StackedBarChartData) {
+        let desired_size = egui::vec2(
+            ui.available_width().max(1.0),
+            ui.available_height().max(260.0),
+        );
+        let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        let bg = egui::Color32::from_rgb(255, 250, 243);
+        let border = egui::Color32::from_rgb(224, 210, 192);
+        painter.rect_filled(rect, 12.0, bg);
+        painter.rect_stroke(
+            rect,
+            12.0,
+            egui::Stroke::new(1.0, border),
+            egui::StrokeKind::Outside,
+        );
+
+        let palette = [
+            egui::Color32::from_rgb(217, 143, 61),
+            egui::Color32::from_rgb(196, 108, 41),
+            egui::Color32::from_rgb(160, 88, 35),
+            egui::Color32::from_rgb(130, 67, 28),
+        ];
+        let inner = rect.shrink2(egui::vec2(18.0, 18.0));
+        let max_total = chart_data
+            .categories
+            .iter()
+            .map(|category| category.total_count)
+            .max()
+            .unwrap_or(1) as f32;
+        let category_count = chart_data.categories.len().max(1) as f32;
+        let bar_gap = 12.0;
+        let bar_width =
+            ((inner.width() - ((category_count - 1.0) * bar_gap)) / category_count).max(24.0);
+        let plot_bottom = inner.bottom() - 28.0;
+        let plot_top = inner.top() + 26.0;
+        let plot_height = (plot_bottom - plot_top).max(1.0);
+        let axis_color = egui::Color32::from_rgb(116, 95, 73);
+
+        painter.line_segment(
+            [
+                egui::pos2(inner.left(), plot_bottom),
+                egui::pos2(inner.right(), plot_bottom),
+            ],
+            egui::Stroke::new(1.5, axis_color),
+        );
+        painter.line_segment(
+            [
+                egui::pos2(inner.left(), plot_top),
+                egui::pos2(inner.left(), plot_bottom),
+            ],
+            egui::Stroke::new(1.5, axis_color),
+        );
+
+        painter.text(
+            egui::pos2(inner.left(), inner.top()),
+            egui::Align2::LEFT_TOP,
+            format!(
+                "{} by {}  |  {} visible rows",
+                chart_data.category_column_name,
+                chart_data.subgroup_column_name,
+                chart_data.visible_row_count
+            ),
+            egui::FontId::proportional(16.0),
+            egui::Color32::from_rgb(58, 45, 32),
+        );
+
+        for (index, category) in chart_data.categories.iter().enumerate() {
+            let x = inner.left() + (index as f32 * (bar_width + bar_gap));
+            let total_ratio = if max_total <= 0.0 {
+                0.0
+            } else {
+                category.total_count as f32 / max_total
+            };
+            let bar_height = plot_height * total_ratio;
+            let bar_top = plot_bottom - bar_height;
+            let bar_rect = egui::Rect::from_min_size(
+                egui::pos2(x, bar_top),
+                egui::vec2(bar_width, bar_height),
+            );
+
+            painter.rect_stroke(
+                bar_rect,
+                8.0,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(140, 63, 22)),
+                egui::StrokeKind::Outside,
+            );
+
+            let mut segment_bottom = plot_bottom;
+            for (segment_index, segment) in category.segments.iter().enumerate() {
+                if segment.count == 0 {
+                    continue;
+                }
+                let segment_ratio = if category.total_count == 0 {
+                    0.0
+                } else {
+                    segment.count as f32 / category.total_count as f32
+                };
+                let segment_height = bar_height * segment_ratio;
+                let segment_top = segment_bottom - segment_height;
+                let segment_rect = egui::Rect::from_min_max(
+                    egui::pos2(x, segment_top),
+                    egui::pos2(x + bar_width, segment_bottom),
+                );
+                let color = palette[segment_index % palette.len()];
+                painter.rect_filled(segment_rect, 8.0, color);
+                painter.rect_stroke(
+                    segment_rect,
+                    8.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(140, 63, 22)),
+                    egui::StrokeKind::Outside,
+                );
+                segment_bottom = segment_top;
+            }
+
+            painter.text(
+                egui::pos2(bar_rect.center().x, bar_rect.top() - 4.0),
+                egui::Align2::CENTER_BOTTOM,
+                category.total_count.to_string(),
+                egui::FontId::proportional(14.0),
+                egui::Color32::from_rgb(58, 45, 32),
+            );
+            painter.text(
+                egui::pos2(bar_rect.center().x, plot_bottom + 6.0),
+                egui::Align2::CENTER_TOP,
+                &category.label,
+                egui::FontId::proportional(13.0),
+                egui::Color32::from_rgb(58, 45, 32),
+            );
+        }
+    }
+
+    fn draw_correlation_heatmap(&self, ui: &mut egui::Ui, heatmap_data: &CorrelationHeatmapData) {
+        let desired_size = egui::vec2(
+            ui.available_width().max(1.0),
+            ui.available_height().max(280.0),
+        );
+        let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        let bg = egui::Color32::from_rgb(255, 250, 243);
+        let border = egui::Color32::from_rgb(224, 210, 192);
+        painter.rect_filled(rect, 12.0, bg);
+        painter.rect_stroke(
+            rect,
+            12.0,
+            egui::Stroke::new(1.0, border),
+            egui::StrokeKind::Outside,
+        );
+
+        let inner = rect.shrink2(egui::vec2(18.0, 18.0));
+        let n = heatmap_data.column_names.len().max(1) as f32;
+        let cell_size = ((inner.width().min(inner.height()) - 42.0) / n).max(28.0);
+        let grid_width = cell_size * n;
+        let grid_left = inner.left() + 110.0;
+        let grid_top = inner.top() + 34.0;
+        let axis_color = egui::Color32::from_rgb(116, 95, 73);
+
+        painter.text(
+            egui::pos2(inner.left(), inner.top()),
+            egui::Align2::LEFT_TOP,
+            "Correlation Heatmap",
+            egui::FontId::proportional(16.0),
+            egui::Color32::from_rgb(58, 45, 32),
+        );
+
+        for (index, name) in heatmap_data.column_names.iter().enumerate() {
+            let x = grid_left + (index as f32 * cell_size) + (cell_size / 2.0);
+            painter.text(
+                egui::pos2(x, grid_top - 6.0),
+                egui::Align2::CENTER_BOTTOM,
+                name,
+                egui::FontId::proportional(12.0),
+                axis_color,
+            );
+            let y = grid_top + (index as f32 * cell_size) + (cell_size / 2.0);
+            painter.text(
+                egui::pos2(grid_left - 6.0, y),
+                egui::Align2::RIGHT_CENTER,
+                name,
+                egui::FontId::proportional(12.0),
+                axis_color,
+            );
+        }
+
+        for row_index in 0..heatmap_data.column_names.len() {
+            for col_index in 0..heatmap_data.column_names.len() {
+                let correlation = heatmap_data.values[row_index][col_index].unwrap_or(0.0);
+                let heat = ((((correlation as f32) + 1.0) / 2.0).clamp(0.0, 1.0)) as f32;
+                let red = (248.0 - (90.0 * heat)) as u8;
+                let green = (238.0 - (120.0 * heat)) as u8;
+                let blue = (231.0 + (14.0 * heat)) as u8;
+                let cell_rect = egui::Rect::from_min_size(
+                    egui::pos2(
+                        grid_left + (col_index as f32 * cell_size),
+                        grid_top + (row_index as f32 * cell_size),
+                    ),
+                    egui::vec2(cell_size, cell_size),
+                );
+                painter.rect_filled(cell_rect, 4.0, egui::Color32::from_rgb(red, green, blue));
+                painter.rect_stroke(
+                    cell_rect,
+                    4.0,
+                    egui::Stroke::new(1.0, border),
+                    egui::StrokeKind::Outside,
+                );
+                painter.text(
+                    cell_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    format!("{correlation:.2}"),
+                    egui::FontId::proportional(12.0),
+                    egui::Color32::from_rgb(58, 45, 32),
+                );
+            }
+        }
+
+        let legend_x = grid_left + grid_width + 18.0;
+        for (offset, label, correlation) in
+            [(-1.0, "-1.0", -1.0), (0.0, "0.0", 0.0), (1.0, "1.0", 1.0)]
+        {
+            let y = grid_top + ((offset + 1.0) * 22.0);
+            let heat = ((((correlation as f32) + 1.0) / 2.0).clamp(0.0, 1.0)) as f32;
+            let red = (248.0 - (90.0 * heat)) as u8;
+            let green = (238.0 - (120.0 * heat)) as u8;
+            let blue = (231.0 + (14.0 * heat)) as u8;
+            let swatch = egui::Rect::from_min_size(egui::pos2(legend_x, y), egui::vec2(14.0, 14.0));
+            painter.rect_filled(swatch, 3.0, egui::Color32::from_rgb(red, green, blue));
+            painter.rect_stroke(
+                swatch,
+                3.0,
+                egui::Stroke::new(1.0, border),
+                egui::StrokeKind::Outside,
+            );
+            painter.text(
+                egui::pos2(legend_x + 20.0, y + 7.0),
+                egui::Align2::LEFT_CENTER,
+                label,
+                egui::FontId::proportional(12.0),
+                axis_color,
+            );
+        }
+    }
+
+    fn draw_heatmap_chart(&self, ui: &mut egui::Ui, heatmap_data: &HeatmapChartData) {
+        let desired_size = egui::vec2(
+            ui.available_width().max(1.0),
+            ui.available_height().max(280.0),
+        );
+        let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        let bg = egui::Color32::from_rgb(255, 250, 243);
+        let border = egui::Color32::from_rgb(224, 210, 192);
+        painter.rect_filled(rect, 12.0, bg);
+        painter.rect_stroke(
+            rect,
+            12.0,
+            egui::Stroke::new(1.0, border),
+            egui::StrokeKind::Outside,
+        );
+
+        let inner = rect.shrink2(egui::vec2(18.0, 18.0));
+        let row_count = heatmap_data.row_labels.len().max(1) as f32;
+        let column_count = heatmap_data.column_labels.len().max(1) as f32;
+        let cell_size =
+            ((inner.width().min(inner.height()) - 56.0) / row_count.max(column_count)).max(28.0);
+        let grid_width = cell_size * column_count;
+        let grid_left = inner.left() + 110.0;
+        let grid_top = inner.top() + 34.0;
+        let axis_color = egui::Color32::from_rgb(116, 95, 73);
+
+        painter.text(
+            egui::pos2(inner.left(), inner.top()),
+            egui::Align2::LEFT_TOP,
+            format!(
+                "Heatmap: {} vs {}",
+                heatmap_data.row_column_name, heatmap_data.column_column_name
+            ),
+            egui::FontId::proportional(16.0),
+            egui::Color32::from_rgb(58, 45, 32),
+        );
+
+        for (index, label) in heatmap_data.column_labels.iter().enumerate() {
+            let x = grid_left + (index as f32 * cell_size) + (cell_size / 2.0);
+            painter.text(
+                egui::pos2(x, grid_top - 6.0),
+                egui::Align2::CENTER_BOTTOM,
+                label,
+                egui::FontId::proportional(12.0),
+                axis_color,
+            );
+        }
+
+        for (index, label) in heatmap_data.row_labels.iter().enumerate() {
+            let y = grid_top + (index as f32 * cell_size) + (cell_size / 2.0);
+            painter.text(
+                egui::pos2(grid_left - 6.0, y),
+                egui::Align2::RIGHT_CENTER,
+                label,
+                egui::FontId::proportional(12.0),
+                axis_color,
+            );
+        }
+
+        let max_count = heatmap_data
+            .counts
+            .iter()
+            .flat_map(|row| row.iter())
+            .copied()
+            .max()
+            .unwrap_or(1) as f32;
+
+        for (row_index, row) in heatmap_data.counts.iter().enumerate() {
+            for (col_index, count) in row.iter().enumerate() {
+                let intensity = (*count as f32 / max_count).clamp(0.0, 1.0);
+                let red = (248.0 - (80.0 * intensity)) as u8;
+                let green = (238.0 - (90.0 * intensity)) as u8;
+                let blue = (231.0 + (18.0 * intensity)) as u8;
+                let cell_rect = egui::Rect::from_min_size(
+                    egui::pos2(
+                        grid_left + (col_index as f32 * cell_size),
+                        grid_top + (row_index as f32 * cell_size),
+                    ),
+                    egui::vec2(cell_size, cell_size),
+                );
+                painter.rect_filled(cell_rect, 4.0, egui::Color32::from_rgb(red, green, blue));
+                painter.rect_stroke(
+                    cell_rect,
+                    4.0,
+                    egui::Stroke::new(1.0, border),
+                    egui::StrokeKind::Outside,
+                );
+                painter.text(
+                    cell_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    count.to_string(),
+                    egui::FontId::proportional(12.0),
+                    egui::Color32::from_rgb(58, 45, 32),
+                );
+            }
+        }
+
+        let legend_x = grid_left + grid_width + 18.0;
+        for (offset, label, intensity) in [(0.0, "low", 0.0), (1.0, "mid", 0.5), (2.0, "high", 1.0)]
+        {
+            let y = grid_top + (offset * 22.0);
+            let red = (248.0 - (80.0 * intensity)) as u8;
+            let green = (238.0 - (90.0 * intensity)) as u8;
+            let blue = (231.0 + (18.0 * intensity)) as u8;
+            let swatch = egui::Rect::from_min_size(egui::pos2(legend_x, y), egui::vec2(14.0, 14.0));
+            painter.rect_filled(swatch, 3.0, egui::Color32::from_rgb(red, green, blue));
+            painter.rect_stroke(
+                swatch,
+                3.0,
+                egui::Stroke::new(1.0, border),
+                egui::StrokeKind::Outside,
+            );
+            painter.text(
+                egui::pos2(legend_x + 20.0, y + 7.0),
+                egui::Align2::LEFT_CENTER,
+                label,
+                egui::FontId::proportional(12.0),
+                axis_color,
+            );
+        }
+    }
+
     fn show_dataframe_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("DataFrame");
         ui.label(
@@ -194,8 +847,8 @@ impl CalciteRustApp {
         self.placeholder_surface(
             ui,
             "Table view bootstrap",
-            "CSV loading, table rendering, sorting, and selection state will move here first.",
-            [ui.available_width(), 120.0],
+            "CSV loading, table rendering, sorting, filtering, and selection state will move here first.",
+            [ui.available_width().max(1.0), 120.0],
         );
         ui.add_space(10.0);
         self.show_csv_loader(ui);
@@ -244,7 +897,7 @@ impl CalciteRustApp {
         ui.horizontal(|ui| {
             let select_clicked = ui
                 .add_sized(
-                    [ui.available_width() * 0.48, 36.0],
+                    [(ui.available_width() * 0.48).max(1.0), 36.0],
                     egui::Button::new("Select CSV...")
                         .fill(egui::Color32::from_rgb(164, 74, 27))
                         .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(140, 63, 22))),
@@ -253,7 +906,7 @@ impl CalciteRustApp {
 
             let load_clicked = ui
                 .add_sized(
-                    [ui.available_width(), 36.0],
+                    [ui.available_width().max(1.0), 36.0],
                     egui::Button::new("Load CSV")
                         .fill(egui::Color32::from_rgb(164, 74, 27))
                         .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(140, 63, 22))),
@@ -287,6 +940,8 @@ impl CalciteRustApp {
         {
             self.backend.project_mut().status_message = error.clone();
             self.backend.project_mut().results_preview = error;
+        } else {
+            self.row_filter_input.clear();
         }
     }
 
@@ -300,14 +955,32 @@ impl CalciteRustApp {
         }
 
         let headers = table.headers.clone();
-        let preview_rows: Vec<Vec<String>> =
-            table.preview_rows(20).map(|row| row.to_owned()).collect();
         let table_view = self.backend.project().table_view.clone();
+        let preview_row_indices: Vec<usize> = table_view
+            .visible_row_indices
+            .iter()
+            .copied()
+            .take(20)
+            .collect();
+        let preview_rows: Vec<Vec<String>> = preview_row_indices
+            .iter()
+            .filter_map(|row_index| table.rows.get(*row_index).cloned())
+            .collect();
         ui.label(format!(
             "{} rows, {} columns",
             table.row_count(),
             table.column_count()
         ));
+        ui.label(format!(
+            "Visible rows: {}",
+            table_view.visible_row_indices.len()
+        ));
+        if !table_view.row_filter_query.is_empty() && table_view.visible_row_indices.is_empty() {
+            ui.label(format!(
+                "No rows matched filter '{}'.",
+                table_view.row_filter_query
+            ));
+        }
         ui.label(format!(
             "Sort: {} | Selected rows: {}",
             table_view
@@ -348,7 +1021,8 @@ impl CalciteRustApp {
                     }
                     ui.end_row();
 
-                    for (row_index, row) in preview_rows.iter().enumerate() {
+                    for (preview_index, row) in preview_rows.iter().enumerate() {
+                        let row_index = preview_row_indices[preview_index];
                         let selected = table_view.selected_rows.contains(&row_index);
                         if ui
                             .selectable_label(selected, (row_index + 1).to_string())
@@ -389,10 +1063,10 @@ impl CalciteRustApp {
                     for meta in table.column_metadata() {
                         ui.label(format!("{} ({})", meta.name, meta.index + 1));
                         ui.label(match meta.kind {
-                            crate::state::ColumnKind::Empty => "empty",
-                            crate::state::ColumnKind::Numeric => "numeric",
-                            crate::state::ColumnKind::Text => "text",
-                            crate::state::ColumnKind::Mixed => "mixed",
+                            calcite_rust::state::ColumnKind::Empty => "empty",
+                            calcite_rust::state::ColumnKind::Numeric => "numeric",
+                            calcite_rust::state::ColumnKind::Text => "text",
+                            calcite_rust::state::ColumnKind::Mixed => "mixed",
                         });
                         ui.label(meta.non_empty_count.to_string());
                         ui.label(meta.distinct_count.to_string());
@@ -413,6 +1087,12 @@ impl CalciteRustApp {
                 ui.label(&self.backend.project().current_graph_type);
                 ui.end_row();
 
+                ui.label("Filter");
+                let filter_changed = ui
+                    .text_edit_singleline(&mut self.row_filter_input)
+                    .changed();
+                ui.end_row();
+
                 ui.label("X Column");
                 let x_changed = ui.text_edit_singleline(&mut self.x_column_input).changed();
                 ui.end_row();
@@ -427,6 +1107,12 @@ impl CalciteRustApp {
                     .changed();
                 ui.end_row();
 
+                if filter_changed {
+                    let _ = self.backend.dispatch(AppCommand::SetRowFilter {
+                        query: self.row_filter_input.clone(),
+                    });
+                }
+
                 if x_changed || y_changed || subgroup_changed {
                     let _ = self.backend.dispatch(AppCommand::SetColumns {
                         x_column: self.x_column_input.clone(),
@@ -440,7 +1126,7 @@ impl CalciteRustApp {
         let button = egui::Button::new("Update Graph")
             .fill(egui::Color32::from_rgb(164, 74, 27))
             .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(140, 63, 22)));
-        ui.add_sized([ui.available_width(), 40.0], button);
+        ui.add_sized([ui.available_width().max(1.0), 40.0], button);
     }
 
     fn show_results_panel(&mut self, ui: &mut egui::Ui) {

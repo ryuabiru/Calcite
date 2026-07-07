@@ -1,0 +1,25 @@
+{
+  "productName": "Calcite",
+  "version": "0.1.0",
+  "identifier": "com.calcite.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "../frontend/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Calcite",
+        "width": 1440,
+        "height": 920,
+        "minWidth": 1180,
+        "minHeight": 760,
+        "resizable": true,
+        "visible": true
+      }
+    ]
+  }
+}

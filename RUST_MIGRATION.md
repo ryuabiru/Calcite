@@ -39,20 +39,20 @@ Rust 側の実装が進んでも、Python 側はしばらく削除しない。Ru
 
 ## Selected GUI Stack
 
-初期 bootstrap では `eframe/egui` を採用する。
+GUI の本線は `Tauri` を採用する。
 
 理由:
 
-- Node.js や web bundler への依存が不要
-- 同一リポジトリで最小 app shell を素早く立ち上げられる
-- Rust 単体で window / panel / state bootstrap を進めやすい
-- Tauri よりも「まず Rust 化を始める」目的に対して初動が軽い
+- 既存 Calcite の GUI 要件は Web ベースのレイアウトで再現しやすい
+- 表、ダイアログ、タブ、複数ビューの構造を柔軟に組める
+- Rust 側の state / data / analysis を command bridge で分離しやすい
+- 最終配布形態を見据えたときに、UI の本線として整合しやすい
 
-見直し条件:
+補助的な位置づけ:
 
-- 配布戦略上 web UI の方が明確に有利になった場合
-- 複雑なデザイン要件が `egui` で厳しくなった場合
-- app shell の段階を抜けた後に Tauri へ再評価する必要が出た場合
+- いまある `eframe/egui` の Rust 画面は、Rust コアと state model を検証するためのプロトタイプとして扱う
+- 本番 GUI は Tauri 側へ段階的に移す
+- 移行完了後は `egui` shell を退役候補にする
 
 ## Target Architecture
 
@@ -79,6 +79,70 @@ Rust 側の実装が進んでも、Python 側はしばらく削除しない。Ru
   - file/project lifecycle
 - Python:
   - graph/statistics/data engine
+
+## Boundary Design
+
+Rust / React / Tauri の責務を明確に分離する。
+
+### Rust Responsibilities
+
+- domain model
+- data transformation
+- project persistence
+- validation
+- statistics and graph orchestration
+- command / query execution
+
+Rust は UI コンポーネントや画面レイアウトの知識を持たない。
+
+### React Responsibilities
+
+- panel layout
+- temporary input state
+- async request lifecycle
+- user interaction
+- presentation-specific formatting
+
+React は CSV 実装詳細や project format の内部仕様を直接持たない。
+
+### Tauri Responsibilities
+
+- command bridge
+- query bridge
+- desktop shell lifecycle
+
+Tauri 側には業務ロジックを置かず、Rust core と React UI の橋渡しだけに留める。
+
+### Coupling Rules
+
+1. React は Rust の内部 state 構造を前提にしない
+2. Rust は React の画面都合の flag を持ち込まない
+3. 読み取りは `query`、変更は `command` に分離する
+4. frontend は Tauri invoke を薄い API wrapper 経由で呼ぶ
+5. frontend に返すデータは内部 state の直露出ではなく DTO とする
+
+## Frontend / Backend Contract
+
+当面の API 境界は command / query 分離で整理する。
+
+### Query Examples
+
+- `get_app_snapshot`
+- `get_table_view`
+- `get_graph_config`
+- `get_results_view`
+
+### Command Examples
+
+- `load_csv`
+- `set_columns`
+- `set_graph_type`
+- `edit_cell`
+- `restructure_data`
+- `pivot_data`
+- `save_project`
+
+この contract を先に固定してから、React 側の画面実装を広げる。
 
 ## Migration Phases
 
@@ -131,6 +195,38 @@ Current Status:
 - CSV import now reports concise status text and detailed error summaries
 - Rust project persistence schema now mirrors manifest, settings, table, and analysis buckets
 
+### Phase 1.5: Tauri GUI Bootstrap
+
+Goal:
+
+- Rust コアを再利用しつつ、Tauri ベースの本番 GUI を立ち上げる
+
+Tasks:
+
+- Tauri app shell
+- frontend 画面の skeleton
+- Rust command bridge
+- state と UI の接続
+- table / graph / results の主要レイアウト
+
+Exit Criteria:
+
+- Tauri で Calcite の主要レイアウトが起動する
+- Rust backend と frontend の境界が確立する
+
+Current Status:
+
+- Tauri scaffold is added under `tauri/`
+- Rust backend commands are exposed through a Tauri command bridge
+- A minimal web frontend shell has been created for the desktop UI direction
+- Tauri frontend build and desktop launch are verified locally
+- Tauri development startup is now standardized around the official `tauri dev` flow
+- The temporary `cargo run` / manual window bootstrap workaround has been removed
+- `npm run tauri:dev` now reaches the desktop shell and launches `target/debug/calcite-tauri`
+- Frontend is being reshaped into the Calcite 4-pane workspace
+- Load CSV / Save Project / Export CSV controls are wired into the Tauri frontend
+- Table editing commands are wired into the Tauri frontend and backend
+
 ### Phase 2: Data Loading and Table UX
 
 Goal:
@@ -148,6 +244,13 @@ Tasks:
 Exit Criteria:
 
 - CSV を読み込み、表で閲覧・選択・並べ替えできる
+
+Current Status:
+
+- Rust 側で CSV 読み込みと table preview は動作している
+- Sorting と row selection は Rust 側で連動している
+- Column metadata は Rust 側で表示している
+- Case-insensitive row filtering が Rust preview に追加された
 
 ### Phase 3: Graph Pipeline Migration
 
@@ -169,6 +272,15 @@ Exit Criteria:
 - 現在のカテゴリ系可視化が Rust で再現できる
 - Python 側描画に依存しなくても主要な探索が可能
 
+Current Status:
+
+- Rust graph area now renders a native categorical bar chart from the loaded table
+- Rust graph area now also renders a native stacked bar chart from the loaded table and subgroup column
+- Rust graph area now also renders a native correlation heatmap from numeric columns
+- Rust graph area now also renders a native categorical heatmap from the loaded table's X/Y columns
+- The first graph pipeline slice is in place and can be extended toward countplot and other categorical views
+- Remaining graph types will be prioritized after the Tauri shell is in place
+
 ### Phase 4: Data Transformation Migration
 
 Goal:
@@ -186,6 +298,15 @@ Tasks:
 Exit Criteria:
 
 - Python GUI が担っていた日常データ操作を Rust 単体で実行できる
+
+Current Status:
+
+- Rust backend now exposes pure DataTable reshape and pivot helpers
+- Backend commands can restructure long-form tables and pivot them back into wide form
+- CSV-backed table state is rebuilt after transformations so metadata stays in sync
+- Rust backend can persist and restore project snapshots from a project directory
+- Project save/load round-trips keep table, filters, and graph settings in sync
+- Rust backend can import clipboard-style delimited text and export the current table as CSV
 
 ### Phase 5: Basic Analysis Migration
 
@@ -206,6 +327,10 @@ Exit Criteria:
 
 - 現在のカテゴリ解析フローを Rust 単体で完結できる
 
+Current Status:
+
+- 未着手
+
 ### Phase 6: Advanced Statistics Migration
 
 Goal:
@@ -223,6 +348,10 @@ Tasks:
 Exit Criteria:
 
 - Python 参照なしでも必要機能が満たせる
+
+Current Status:
+
+- 未着手
 
 ### Phase 7: Python Retirement
 
@@ -245,13 +374,43 @@ Exit Criteria:
 
 毎日少しずつ進める前提では、以下の順序を崩さない。
 
-1. Rust app shell を起動できるようにする
-2. 画面構造を既存 Calcite に寄せる
-3. CSV と table を実装する
-4. simple graph を 1 つずつ置き換える
-5. data transforms を移す
-6. simple statistics を移す
-7. advanced statistics を最後に扱う
+1. Rust / React / Tauri の責務境界を先に固定する
+2. Rust コアの state / persistence / transform を固める
+3. Tauri shell と frontend contract を安定させる
+4. 画面構造を既存 Calcite に寄せる
+5. CSV と table を接続する
+6. graph を 1 つずつ置き換える
+7. data transforms を UI に接続する
+8. simple statistics を移す
+9. advanced statistics を最後に扱う
+
+## Long-Term Execution Strategy
+
+長期移行は「1 回の大移植」ではなく、「1 画面操作が最後まで通る小さな縦スライス」の積み上げで進める。
+
+### Recommended Slice Order
+
+1. CSV 読み込み -> table 表示
+2. 列選択 -> graph settings 反映
+3. filter / sort -> table 再描画
+4. reshape / pivot -> table 更新
+5. save / load project -> state 復元
+6. graph type ごとの parity 取得
+7. analysis ごとの parity 取得
+
+### Daily Rule
+
+1. 1 日 1 スライスだけ進める
+2. 各スライスで Rust テストを通す
+3. 各スライスで frontend の操作確認を行う
+4. 各スライスで Python 実装との parity を 1 点確認する
+
+### Verification Policy
+
+- Rust: domain / application をユニットテスト中心に固める
+- Tauri: command / query contract の結合確認を行う
+- frontend: 表示ロジックと API 呼び出しの整合を確認する
+- Python parity: fixture ベースで結果比較を継続する
 
 ## Branch Strategy
 
@@ -275,6 +434,8 @@ Exit Criteria:
 
 ## Immediate Next Steps
 
-1. project persistence の read/write 実装を追加する
-2. Graph type との接続を state model 経由に寄せる
-3. table filtering の最小機能を Rust 側に入れる
+1. frontend を React ベースへ置き換える最小 scaffold を作る
+2. command / query と DTO の境界を Rust 側で明文化する
+3. 最初の縦スライスを `CSV 読み込み -> table 表示` に固定する
+4. reshape / pivot / export / project 操作を GUI 上の導線として整理する
+5. graph の残り種別を優先度順に Rust 側へ移す

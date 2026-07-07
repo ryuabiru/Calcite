@@ -50,6 +50,28 @@ Python 3.10以上が必要です。
 pip install calcite
 ```
 
+## 🧪 Rust Bootstrap
+
+リポジトリには、Rust 移行のための雛形として [`rust/`](./rust) と [`tauri/`](./tauri) が追加されています。
+
+- [`rust/`](./rust) は Rust のコア、データモデル、永続化、および移行検証用の `eframe/egui` シェルです。
+- [`tauri/`](./tauri) は本線となる Web ベースの GUI 雛形です。
+
+Rust シェルを起動するには以下を実行します。
+
+```bash
+cd rust
+cargo run
+```
+
+Tauri ベースの GUI 雛形を起動するには以下を実行します。
+
+```bash
+cd tauri
+npm install
+npm run tauri:dev
+```
+
 ## 🚀 クイックスタート
 
 1. ターミナルからCalciteを起動します:
