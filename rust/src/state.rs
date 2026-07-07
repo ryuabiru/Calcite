@@ -13,6 +13,37 @@ pub enum ColumnKind {
     Mixed,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HeatmapNormalizationMode {
+    #[default]
+    Count,
+    Row,
+    Column,
+    Total,
+}
+
+impl HeatmapNormalizationMode {
+    pub const ALL: [Self; 4] = [Self::Count, Self::Row, Self::Column, Self::Total];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Count => "Counts",
+            Self::Row => "Row proportion",
+            Self::Column => "Column proportion",
+            Self::Total => "Overall proportion",
+        }
+    }
+
+    pub fn normalized_suffix(self) -> &'static str {
+        match self {
+            Self::Count => "count",
+            Self::Row => "row",
+            Self::Column => "column",
+            Self::Total => "total",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ColumnMetadata {
     pub index: usize,
@@ -177,6 +208,7 @@ pub struct ProjectState {
     pub x_column: String,
     pub y_column: String,
     pub subgroup_column: String,
+    pub heatmap_normalization_mode: HeatmapNormalizationMode,
     pub data_table: DataTable,
     pub table_view: TableViewState,
     pub results_preview: String,
@@ -209,6 +241,7 @@ impl ProjectState {
             x_column: snapshot.settings.x_column,
             y_column: snapshot.settings.y_column,
             subgroup_column: snapshot.settings.subgroup_column,
+            heatmap_normalization_mode: snapshot.settings.heatmap_normalization,
             data_table: table,
             table_view: TableViewState {
                 sort_column: snapshot.table_view.sort_column,

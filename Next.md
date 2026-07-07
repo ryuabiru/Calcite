@@ -22,6 +22,8 @@
 - Rust now also renders a native stacked bar chart from the loaded table and subgroup column.
 - Rust now renders a native correlation heatmap from numeric columns.
 - Rust now renders a native categorical heatmap from the loaded table's X/Y columns.
+- Rust heatmap rendering now supports count, row, column, and total normalization modes.
+- The Tauri React DataFrame pane now renders a CSV table preview from the Rust snapshot query.
 
 ## Rust Migration Direction
 

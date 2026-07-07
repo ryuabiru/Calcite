@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::state::{DataTable, TableViewState};
+use crate::state::{DataTable, HeatmapNormalizationMode, TableViewState};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BarSegment {
@@ -42,13 +42,15 @@ pub struct CorrelationHeatmapData {
     pub values: Vec<Vec<Option<f64>>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HeatmapChartData {
     pub row_column_name: String,
     pub column_column_name: String,
     pub row_labels: Vec<String>,
     pub column_labels: Vec<String>,
     pub counts: Vec<Vec<usize>>,
+    pub values: Vec<Vec<f64>>,
+    pub normalization_mode: HeatmapNormalizationMode,
     pub visible_row_count: usize,
 }
 
@@ -244,6 +246,7 @@ pub fn build_heatmap_chart_data(
     table_view: &TableViewState,
     row_column_name: &str,
     column_column_name: &str,
+    normalization_mode: HeatmapNormalizationMode,
 ) -> Option<HeatmapChartData> {
     let row_index = table
         .headers
@@ -303,14 +306,88 @@ pub fn build_heatmap_chart_data(
         })
         .collect::<Vec<_>>();
 
+    let values = normalize_heatmap_counts(&matrix, normalization_mode);
+
     Some(HeatmapChartData {
         row_column_name: row_column_name.to_owned(),
         column_column_name: column_column_name.to_owned(),
         row_labels,
         column_labels,
         counts: matrix,
+        values,
+        normalization_mode,
         visible_row_count: row_indices.len(),
     })
+}
+
+fn normalize_heatmap_counts(
+    counts: &[Vec<usize>],
+    normalization_mode: HeatmapNormalizationMode,
+) -> Vec<Vec<f64>> {
+    let rows = counts.len();
+    let cols = counts.first().map(|row| row.len()).unwrap_or(0);
+
+    match normalization_mode {
+        HeatmapNormalizationMode::Count => counts
+            .iter()
+            .map(|row| row.iter().map(|count| *count as f64).collect())
+            .collect(),
+        HeatmapNormalizationMode::Row => counts
+            .iter()
+            .map(|row| {
+                let total: usize = row.iter().sum();
+                if total == 0 {
+                    vec![0.0; row.len()]
+                } else {
+                    row.iter()
+                        .map(|count| *count as f64 / total as f64)
+                        .collect()
+                }
+            })
+            .collect(),
+        HeatmapNormalizationMode::Column => {
+            let column_totals: Vec<usize> = (0..cols)
+                .map(|column_index| {
+                    counts
+                        .iter()
+                        .map(|row| row.get(column_index).copied().unwrap_or(0))
+                        .sum()
+                })
+                .collect();
+
+            counts
+                .iter()
+                .map(|row| {
+                    row.iter()
+                        .enumerate()
+                        .map(|(column_index, count)| {
+                            let total = column_totals.get(column_index).copied().unwrap_or(0);
+                            if total == 0 {
+                                0.0
+                            } else {
+                                *count as f64 / total as f64
+                            }
+                        })
+                        .collect()
+                })
+                .collect()
+        }
+        HeatmapNormalizationMode::Total => {
+            let total: usize = counts.iter().flatten().copied().sum();
+            if total == 0 {
+                vec![vec![0.0; cols]; rows]
+            } else {
+                counts
+                    .iter()
+                    .map(|row| {
+                        row.iter()
+                            .map(|count| *count as f64 / total as f64)
+                            .collect()
+                    })
+                    .collect()
+            }
+        }
+    }
 }
 
 fn pearson_correlation(table: &DataTable, left_index: usize, right_index: usize) -> Option<f64> {
@@ -364,7 +441,7 @@ fn pearson_correlation(table: &DataTable, left_index: usize, right_index: usize)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{DataTable, TableViewState};
+    use crate::state::{DataTable, HeatmapNormalizationMode, TableViewState};
     use std::collections::BTreeSet;
 
     #[test]
@@ -545,12 +622,77 @@ mod tests {
             visible_row_indices: vec![0, 1, 2, 3],
         };
 
-        let heatmap =
-            build_heatmap_chart_data(&table, &table_view, "row", "column").expect("heatmap data");
+        let heatmap = build_heatmap_chart_data(
+            &table,
+            &table_view,
+            "row",
+            "column",
+            HeatmapNormalizationMode::Count,
+        )
+        .expect("heatmap data");
 
         assert_eq!(heatmap.row_labels, vec!["A", "B"]);
         assert_eq!(heatmap.column_labels, vec!["X", "Y"]);
         assert_eq!(heatmap.counts, vec![vec![2, 1], vec![1, 0]]);
+        assert_eq!(heatmap.values, vec![vec![2.0, 1.0], vec![1.0, 0.0]]);
+        assert_eq!(heatmap.normalization_mode, HeatmapNormalizationMode::Count);
         assert_eq!(heatmap.visible_row_count, 4);
+    }
+
+    #[test]
+    fn build_heatmap_chart_data_normalizes_rows_columns_and_total() {
+        let table = DataTable {
+            headers: vec!["row".to_owned(), "column".to_owned()],
+            rows: vec![
+                vec!["A".to_owned(), "X".to_owned()],
+                vec!["A".to_owned(), "X".to_owned()],
+                vec!["A".to_owned(), "Y".to_owned()],
+                vec!["B".to_owned(), "X".to_owned()],
+            ],
+            column_metadata: vec![],
+        };
+        let table_view = TableViewState {
+            sort_column: None,
+            sort_ascending: true,
+            selected_rows: BTreeSet::new(),
+            row_filter_query: String::new(),
+            visible_row_indices: vec![0, 1, 2, 3],
+        };
+
+        let row_heatmap = build_heatmap_chart_data(
+            &table,
+            &table_view,
+            "row",
+            "column",
+            HeatmapNormalizationMode::Row,
+        )
+        .expect("row-normalized heatmap");
+        assert_eq!(
+            row_heatmap.values,
+            vec![vec![2.0 / 3.0, 1.0 / 3.0], vec![1.0, 0.0]]
+        );
+
+        let column_heatmap = build_heatmap_chart_data(
+            &table,
+            &table_view,
+            "row",
+            "column",
+            HeatmapNormalizationMode::Column,
+        )
+        .expect("column-normalized heatmap");
+        assert_eq!(
+            column_heatmap.values,
+            vec![vec![2.0 / 3.0, 1.0], vec![1.0 / 3.0, 0.0]]
+        );
+
+        let total_heatmap = build_heatmap_chart_data(
+            &table,
+            &table_view,
+            "row",
+            "column",
+            HeatmapNormalizationMode::Total,
+        )
+        .expect("total-normalized heatmap");
+        assert_eq!(total_heatmap.values, vec![vec![0.5, 0.25], vec![0.25, 0.0]]);
     }
 }

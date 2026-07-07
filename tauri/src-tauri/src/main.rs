@@ -22,6 +22,7 @@ struct BackendSnapshot {
     visible_row_count: usize,
     selected_row_count: usize,
     headers: Vec<String>,
+    rows: Vec<Vec<String>>,
 }
 
 impl BackendSnapshot {
@@ -41,6 +42,7 @@ impl BackendSnapshot {
             visible_row_count: project.table_view.visible_row_indices.len(),
             selected_row_count: project.table_view.selected_rows.len(),
             headers: project.data_table.headers.clone(),
+            rows: project.data_table.rows.clone(),
         }
     }
 }

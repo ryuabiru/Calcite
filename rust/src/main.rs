@@ -3,7 +3,7 @@ use calcite_rust::graph_data::{
     build_bar_chart_data, build_correlation_heatmap_data, build_heatmap_chart_data,
     build_stacked_bar_chart_data,
 };
-use calcite_rust::{backend::AppBackend, core::AppCommand};
+use calcite_rust::{backend::AppBackend, core::AppCommand, state::HeatmapNormalizationMode};
 use eframe::egui;
 use rfd::FileDialog;
 
@@ -276,6 +276,7 @@ impl CalciteRustApp {
                     &project.table_view,
                     row_name,
                     column_name,
+                    project.heatmap_normalization_mode,
                 ) else {
                     self.placeholder_surface(
                         ui,
@@ -772,16 +773,16 @@ impl CalciteRustApp {
         }
 
         let max_count = heatmap_data
-            .counts
+            .values
             .iter()
             .flat_map(|row| row.iter())
             .copied()
-            .max()
-            .unwrap_or(1) as f32;
+            .fold(0.0_f64, f64::max)
+            .max(1.0) as f32;
 
-        for (row_index, row) in heatmap_data.counts.iter().enumerate() {
-            for (col_index, count) in row.iter().enumerate() {
-                let intensity = (*count as f32 / max_count).clamp(0.0, 1.0);
+        for (row_index, row) in heatmap_data.values.iter().enumerate() {
+            for (col_index, value) in row.iter().enumerate() {
+                let intensity = (*value as f32 / max_count).clamp(0.0, 1.0);
                 let red = (248.0 - (80.0 * intensity)) as u8;
                 let green = (238.0 - (90.0 * intensity)) as u8;
                 let blue = (231.0 + (18.0 * intensity)) as u8;
@@ -802,7 +803,11 @@ impl CalciteRustApp {
                 painter.text(
                     cell_rect.center(),
                     egui::Align2::CENTER_CENTER,
-                    count.to_string(),
+                    if heatmap_data.normalization_mode == HeatmapNormalizationMode::Count {
+                        heatmap_data.counts[row_index][col_index].to_string()
+                    } else {
+                        format!("{value:.2}")
+                    },
                     egui::FontId::proportional(12.0),
                     egui::Color32::from_rgb(58, 45, 32),
                 );
@@ -876,6 +881,21 @@ impl CalciteRustApp {
 
                 ui.label("Axes");
                 ui.label("Planned");
+                ui.end_row();
+
+                ui.label("Heatmap");
+                egui::ComboBox::from_id_salt("heatmap_normalization_mode")
+                    .selected_text(self.backend.project().heatmap_normalization_mode.label())
+                    .show_ui(ui, |ui| {
+                        let project = self.backend.project_mut();
+                        for mode in HeatmapNormalizationMode::ALL {
+                            ui.selectable_value(
+                                &mut project.heatmap_normalization_mode,
+                                mode,
+                                mode.label(),
+                            );
+                        }
+                    });
                 ui.end_row();
             });
     }

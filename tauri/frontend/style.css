@@ -150,9 +150,21 @@ textarea {
   gap: 10px;
 }
 
+.subpanel-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
 .subpanel h3 {
   margin: 0;
   font-size: 1rem;
+}
+
+.subpanel-heading span {
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .chip-list {
@@ -198,6 +210,61 @@ textarea {
   color: var(--muted);
   padding: 18px;
   text-align: center;
+}
+
+.table-preview-scroll {
+  max-height: 320px;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fffdf9;
+}
+
+.table-preview {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.92rem;
+}
+
+.table-preview thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f3e5d2;
+  color: var(--text);
+  text-align: left;
+}
+
+.table-preview th,
+.table-preview td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(223, 205, 183, 0.7);
+  border-right: 1px solid rgba(223, 205, 183, 0.45);
+  white-space: nowrap;
+}
+
+.table-preview th:last-child,
+.table-preview td:last-child {
+  border-right: none;
+}
+
+.table-preview tbody tr:nth-child(even) td,
+.table-preview tbody tr:nth-child(even) th {
+  background: rgba(245, 238, 227, 0.7);
+}
+
+.row-index-cell {
+  width: 60px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-empty,
+.table-preview-note {
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .actions {

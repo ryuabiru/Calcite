@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::state::{ColumnKind, ProjectState, TableViewState};
+use crate::state::{ColumnKind, HeatmapNormalizationMode, ProjectState, TableViewState};
 
 pub const PROJECT_SCHEMA_VERSION: u32 = 2;
 pub const MANIFEST_FILENAME: &str = "manifest.json";
@@ -32,6 +32,8 @@ pub struct ProjectSettingsSnapshot {
     pub x_column: String,
     pub y_column: String,
     pub subgroup_column: String,
+    #[serde(default)]
+    pub heatmap_normalization: HeatmapNormalizationMode,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +101,7 @@ impl From<&ProjectState> for PersistedProjectState {
                 x_column: state.x_column.clone(),
                 y_column: state.y_column.clone(),
                 subgroup_column: state.subgroup_column.clone(),
+                heatmap_normalization: state.heatmap_normalization_mode,
             },
             table: PersistedTable {
                 headers: state.data_table.headers.clone(),
@@ -241,7 +244,9 @@ impl From<PersistedProjectState> for ProjectState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{ColumnKind, DataTable, ProjectState, TableViewState};
+    use crate::state::{
+        ColumnKind, DataTable, HeatmapNormalizationMode, ProjectState, TableViewState,
+    };
     use std::collections::BTreeSet;
     use std::path::PathBuf;
 
@@ -271,6 +276,7 @@ mod tests {
         project.x_column = "x".to_owned();
         project.y_column = "y".to_owned();
         project.subgroup_column = "group".to_owned();
+        project.heatmap_normalization_mode = HeatmapNormalizationMode::Total;
         project.data_table = DataTable {
             headers: vec!["x".to_owned(), "y".to_owned()],
             rows: vec![vec!["A".to_owned(), "1".to_owned()]],
@@ -307,6 +313,10 @@ mod tests {
             Some("/tmp/example.csv")
         );
         assert_eq!(snapshot.settings.current_graph_type, "Heatmap");
+        assert_eq!(
+            snapshot.settings.heatmap_normalization,
+            HeatmapNormalizationMode::Total
+        );
         assert_eq!(snapshot.table.headers, vec!["x", "y"]);
         assert_eq!(snapshot.table.column_metadata[1].kind, ColumnKind::Numeric);
         assert_eq!(snapshot.table_view.sort_column, Some(1));

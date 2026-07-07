@@ -226,6 +226,7 @@ Current Status:
 - Frontend is being reshaped into the Calcite 4-pane workspace
 - Load CSV / Save Project / Export CSV controls are wired into the Tauri frontend
 - Table editing commands are wired into the Tauri frontend and backend
+- React DataFrame pane now renders a CSV table preview from the Rust snapshot query
 
 ### Phase 2: Data Loading and Table UX
 
@@ -251,6 +252,7 @@ Current Status:
 - Sorting と row selection は Rust 側で連動している
 - Column metadata は Rust 側で表示している
 - Case-insensitive row filtering が Rust preview に追加された
+- Tauri React DataFrame pane now renders loaded row data from the Rust snapshot query
 
 ### Phase 3: Graph Pipeline Migration
 
@@ -445,30 +447,27 @@ Exit Criteria:
 
 ### Slice Goal
 
-- `CSV 読み込み -> table 表示` を React UI 上で最後まで通す
+- `sort / filter -> table 再描画` を React UI 上で通す
 
 ### Done Criteria
 
-- React の DataFrame ペインで CSV path を指定して読み込める
-- Rust backend から table headers と row data を query として取得できる
-- frontend 側で table preview が描画される
-- 読み込み後に row count / column count / loaded file name が UI に反映される
-- 読み込み失敗時にエラーが Results または Status に表示される
+- React の Properties か DataFrame から row filter を更新できる
+- Rust backend で visible row set が更新される
+- frontend 側の table preview が filter 後の状態に追従する
+- sort 更新後に table preview の行順が変わる
+- 読み込み後の row count / column count / loaded file name 表示が維持される
 
 ### Files Expected To Change
 
-- `rust/src/backend.rs`
-- `rust/src/state.rs`
 - `tauri/src-tauri/src/main.rs`
-- `tauri/frontend/src/api.js`
 - `tauri/frontend/src/App.jsx`
+- `tauri/frontend/style.css`
 
 ### Verification
 
-- `cd rust && cargo test`
 - `cd tauri && npm run build`
 - `cd tauri && npm run tauri:dev`
-- 実機確認: CSV 読み込み後に table preview が表示される
+- 実機確認: filter / sort 後に table preview が再描画される
 
 ## After Next Slice
 

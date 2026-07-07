@@ -29,6 +29,7 @@ const EMPTY_SNAPSHOT = {
   visible_row_count: 0,
   selected_row_count: 0,
   headers: [],
+  rows: [],
 };
 
 function parsePositiveIndex(value) {
@@ -105,6 +106,8 @@ export default function App() {
 
   const displayedStatus = errorMessage ? "Error" : snapshot.status_message;
   const displayedResults = errorMessage || snapshot.results_preview;
+  const previewRows = snapshot.rows.slice(0, 25);
+  const previewRowOffset = previewRows.length > 0 ? 1 : 0;
 
   return (
     <main className="app-shell">
@@ -250,6 +253,45 @@ export default function App() {
                   <li className="chip" key={header}>{header}</li>
                 ))}
               </ul>
+            </div>
+            <div className="subpanel">
+              <div className="subpanel-heading">
+                <h3>Table Preview</h3>
+                <span>{snapshot.row_count} rows total</span>
+              </div>
+              {snapshot.headers.length === 0 ? (
+                <div className="table-empty">Load a CSV to render the table preview.</div>
+              ) : (
+                <div className="table-preview-scroll">
+                  <table className="table-preview">
+                    <thead>
+                      <tr>
+                        <th className="row-index-cell">#</th>
+                        {snapshot.headers.map((header, columnIndex) => (
+                          <th key={`${header}-${columnIndex}`}>{header}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewRows.map((row, rowIndex) => (
+                        <tr key={`preview-row-${rowIndex}`}>
+                          <th className="row-index-cell">{rowIndex + previewRowOffset}</th>
+                          {snapshot.headers.map((_, columnIndex) => (
+                            <td key={`${rowIndex}-${columnIndex}`}>
+                              {row[columnIndex] ?? ""}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {snapshot.rows.length > previewRows.length ? (
+                <p className="table-preview-note">
+                  Showing first {previewRows.length} of {snapshot.rows.length} rows.
+                </p>
+              ) : null}
             </div>
           </div>
         </article>
