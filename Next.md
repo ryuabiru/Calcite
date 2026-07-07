@@ -14,6 +14,14 @@
 - Chi-squared and 2-proportion analysis results now drive lightweight plot highlights.
 - Categorical charts now support ordering controls, stacked labels, percentage ticks, and cleaner legend defaults.
 - The desktop UI now uses a unified warm-toned application theme with styled panels and controls.
+- Renderer smoke tests now cover `proportion_plot` and normalized heatmap output.
+- Renderer smoke tests now also cover `stacked_bar`, `stacked_bar_100`, `mosaic`, and `correlation_heatmap`.
+- Legend alpha handling now uses a matplotlib-compatible frame update path.
+- The Rust bootstrap now supports CSV loading, table sorting, row selection, and case-insensitive row filtering in the preview.
+- Rust now renders a first native bar chart from the loaded table in the `egui` graph area.
+- Rust now also renders a native stacked bar chart from the loaded table and subgroup column.
+- Rust now renders a native correlation heatmap from numeric columns.
+- Rust now renders a native categorical heatmap from the loaded table's X/Y columns.
 
 ## Rust Migration Direction
 

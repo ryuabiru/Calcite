@@ -1,12 +1,18 @@
+import matplotlib
+
+matplotlib.use("Agg")
+
 import unittest
 
 import pandas as pd
+from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from pathlib import Path
 import tempfile
 import numpy as np
 import json
 import zipfile
+from types import SimpleNamespace
 
 from calcite.models import AnalysisRequest, PlotRequest
 from calcite.services.plot_service import (
@@ -73,6 +79,7 @@ from calcite.application.statistics_use_cases import (
 )
 from calcite.application.table_controller import build_clipboard_text, parse_clipboard_text
 from calcite.handlers import ActionHandler, GraphManager, StatisticalHandler
+from calcite.handlers.graph_renderer import GraphRenderer
 from calcite.main_window_history import DataframeHistoryManager
 from calcite.services.project_service import (
     ANALYSIS_FILENAME,
@@ -969,6 +976,160 @@ class ApplicationUseCaseTests(unittest.TestCase):
         self.assertIsNotNone(spec)
         self.assertEqual(spec.annotator_kwargs["x"], "Condition")
         self.assertEqual(spec.p_values, [0.02])
+
+
+class GraphRendererSmokeTests(unittest.TestCase):
+    def setUp(self):
+        self.renderer = GraphRenderer(SimpleNamespace(app_state=AppState()))
+
+    def test_render_proportion_plot_smoke(self):
+        fig = self.renderer.render_proportion_plot(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "A", "B", "B", "B", "B"],
+                    "outcome": ["yes", "yes", "no", "yes", "no", "no", "no"],
+                }
+            ),
+            PlotRequest(
+                graph_type="proportion_plot",
+                x_col="x",
+                subgroup_col="outcome",
+                properties={"proportion_success_label": "yes", "proportion_label_mode": "count"},
+            ),
+        )
+
+        self.assertIsNotNone(fig)
+        ax = fig.axes[0]
+        self.assertEqual(ax.get_ylabel(), "Proportion (yes)")
+        self.assertEqual(len(ax.patches), 2)
+        self.assertEqual([text.get_text() for text in ax.texts], ["2/3", "1/4"])
+        plt.close(fig)
+
+    def test_render_total_normalized_heatmap_smoke(self):
+        fig = self.renderer.render_heatmap(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "B", "B"],
+                    "y": ["top", "top", "top", "bottom"],
+                }
+            ),
+            PlotRequest(
+                graph_type="heatmap",
+                x_col="x",
+                y_col="y",
+                properties={"heatmap_normalization": "total", "heatmap_show_annotations": True},
+            ),
+        )
+
+        self.assertIsNotNone(fig)
+        ax = fig.axes[0]
+        self.assertEqual(ax.get_ylabel(), "y (total-normalized)")
+        self.assertIn("0.50", {text.get_text() for text in ax.texts})
+        self.assertIn("0.25", {text.get_text() for text in ax.texts})
+        plt.close(fig)
+
+    def test_render_sparse_heatmap_smoke(self):
+        fig = self.renderer.render_heatmap(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "C"],
+                    "y": ["top", "bottom", "bottom"],
+                }
+            ),
+            PlotRequest(
+                graph_type="heatmap",
+                x_col="x",
+                y_col="y",
+                properties={"heatmap_show_annotations": True},
+            ),
+        )
+
+        self.assertIsNotNone(fig)
+        ax = fig.axes[0]
+        self.assertEqual(ax.get_ylabel(), "y")
+        self.assertIn("0", {text.get_text() for text in ax.texts})
+        plt.close(fig)
+
+    def test_render_correlation_heatmap_smoke(self):
+        fig = self.renderer.render_correlation_heatmap(
+            pd.DataFrame({"x": [1, 2, 3], "y": [2, 4, 6]}),
+            properties={},
+        )
+
+        self.assertIsNotNone(fig)
+        ax = fig.axes[0]
+        self.assertEqual(ax.get_xlabel(), "")
+        self.assertEqual(ax.get_ylabel(), "")
+        plt.close(fig)
+
+    def test_render_stacked_bar_smoke(self):
+        fig = self.renderer.render_stacked_bar(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "B", "B", "B"],
+                    "group": ["g1", "g2", "g1", "g1", "g2"],
+                }
+            ),
+            PlotRequest(
+                graph_type="stacked_bar",
+                x_col="x",
+                subgroup_col="group",
+                properties={"stacked_bar_label_mode": "hide"},
+            ),
+        )
+
+        self.assertIsNotNone(fig)
+        ax = fig.axes[0]
+        self.assertEqual(ax.get_ylabel(), "Count")
+        self.assertEqual(ax.get_xlabel(), "x")
+        self.assertEqual(len(ax.patches), 4)
+        plt.close(fig)
+
+    def test_render_stacked_bar_100_smoke(self):
+        fig = self.renderer.render_stacked_bar(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "B", "B", "B"],
+                    "group": ["g1", "g2", "g1", "g1", "g2"],
+                }
+            ),
+            PlotRequest(
+                graph_type="stacked_bar_100",
+                x_col="x",
+                subgroup_col="group",
+                properties={"stacked_bar_label_mode": "percent"},
+            ),
+        )
+
+        self.assertIsNotNone(fig)
+        ax = fig.axes[0]
+        self.assertEqual(ax.get_ylabel(), "Proportion")
+        self.assertEqual(ax.get_ylim()[1], 1.0)
+        self.assertTrue(any(text.get_text().endswith("%") for text in ax.texts))
+        plt.close(fig)
+
+    def test_render_mosaic_smoke(self):
+        fig = self.renderer.render_mosaic(
+            pd.DataFrame(
+                {
+                    "x": ["A", "A", "B", "B"],
+                    "group": ["g1", "g2", "g1", "g1"],
+                }
+            ),
+            PlotRequest(
+                graph_type="mosaic",
+                x_col="x",
+                subgroup_col="group",
+                properties={"legend_position": "best"},
+            ),
+        )
+
+        self.assertIsNotNone(fig)
+        ax = fig.axes[0]
+        self.assertEqual(ax.get_xlabel(), "x")
+        self.assertEqual(ax.get_ylabel(), "group")
+        self.assertGreater(len(ax.patches), 0)
+        plt.close(fig)
 
 
 class ProjectServiceTests(unittest.TestCase):

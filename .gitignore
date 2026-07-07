@@ -17,3 +17,7 @@ calcite_env/
 # Rust
 target/
 rust/target/
+
+# Tauri / frontend generated files
+tauri/node_modules/
+tauri/src-tauri/gen/

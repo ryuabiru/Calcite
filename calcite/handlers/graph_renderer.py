@@ -269,8 +269,7 @@ class GraphRenderer:
                         title=request.properties.get("legend_title") or request.subgroup_col,
                         **self._get_legend_kwargs(request.properties, categorical_default=True),
                     )
-                    if legend is not None:
-                        legend.set_frame_alpha(request.properties.get("legend_alpha", 1.0))
+                    self._set_legend_frame_alpha(legend, request.properties.get("legend_alpha", 1.0))
             return fig
         except Exception as e:
             QMessageBox.critical(self.main, "Graph Error", f"An unexpected error occurred: {e}")
@@ -387,8 +386,7 @@ class GraphRenderer:
                     title=request.properties.get("legend_title") or request.subgroup_col,
                     **self._get_legend_kwargs(request.properties, categorical_default=True),
                 )
-                if legend is not None:
-                    legend.set_frame_alpha(request.properties.get("legend_alpha", 1.0))
+                self._set_legend_frame_alpha(legend, request.properties.get("legend_alpha", 1.0))
             return fig
         except Exception as e:
             QMessageBox.critical(self.main, "Graph Error", f"An unexpected error occurred: {e}")
@@ -569,8 +567,7 @@ class GraphRenderer:
                     categorical_default=request.graph_type in {"bar", "countplot", "boxplot", "violin", "pointplot", "lineplot"},
                 ),
             )
-            if legend is not None:
-                legend.set_frame_alpha(properties.get("legend_alpha", 1.0))
+            self._set_legend_frame_alpha(legend, properties.get("legend_alpha", 1.0))
 
     def _apply_shared_xlabel(self, fig, axes, is_faceted, current_x, properties):
         if not is_faceted:
@@ -597,8 +594,7 @@ class GraphRenderer:
             )
         if overlay_lines:
             legend = ax.legend()
-            if legend is not None:
-                legend.set_frame_alpha(properties.get("legend_alpha", 1.0))
+            self._set_legend_frame_alpha(legend, properties.get("legend_alpha", 1.0))
 
     def _draw_paired_plot(self, ax, paired_plot_data, properties):
         plot_df_long = paired_plot_data.plot_df_long
@@ -645,8 +641,7 @@ class GraphRenderer:
                 legend = ax.legend(handles=handles, labels=labels, loc="upper left", bbox_to_anchor=(1.02, 1))
             else:
                 legend = ax.legend(handles=handles, labels=labels, loc=legend_pos)
-            if legend is not None:
-                legend.set_frame_alpha(properties.get("legend_alpha", 1.0))
+            self._set_legend_frame_alpha(legend, properties.get("legend_alpha", 1.0))
         return plot_df_long
 
     def _apply_stacked_bar_labels(self, ax, bars, values, bottom, request):
@@ -684,3 +679,10 @@ class GraphRenderer:
         if categorical_default and legend_position == "best":
             return {"loc": "upper left", "bbox_to_anchor": (1.02, 1)}
         return {"loc": legend_position}
+
+    def _set_legend_frame_alpha(self, legend, alpha: float) -> None:
+        if legend is None:
+            return
+        frame = legend.get_frame()
+        if frame is not None:
+            frame.set_alpha(alpha)
