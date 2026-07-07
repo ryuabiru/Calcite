@@ -1,4 +1,5 @@
 # tabs/format_tab.py
+import warnings
 
 from PySide6.QtWidgets import (
     QWidget, QFormLayout, QLabel, QComboBox, QPushButton, QColorDialog,
@@ -7,6 +8,12 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal
 from functools import partial
 import seaborn as sns
+
+warnings.warn(
+    "calcite.tabs.format_tab is part of the legacy Python UI and will be retired after the Rust migration.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 class NoScrollComboBox(QComboBox):
     """

@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import warnings
+
 import pandas as pd
+
+warnings.warn(
+    "calcite.main_window_history is legacy Python UI scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class DataframeHistoryManager:

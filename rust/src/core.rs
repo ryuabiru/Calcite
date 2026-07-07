@@ -46,6 +46,58 @@ pub enum AppCommand {
         y_column: String,
         subgroup_column: String,
     },
+    RunPearsonCorrelationAnalysis {
+        col1: String,
+        col2: String,
+    },
+    RunSpearmanCorrelationAnalysis {
+        col1: String,
+        col2: String,
+    },
+    RunIndependentTTestAnalysis {
+        col1: String,
+        col2: String,
+    },
+    RunPairedTTestAnalysis {
+        col1: String,
+        col2: String,
+    },
+    RunOneWayAnovaAnalysis {
+        group_col: String,
+        value_col: String,
+    },
+    RunShapiroWilkAnalysis {
+        group_col: String,
+        value_col: String,
+    },
+    RunMannWhitneyUAnalysis {
+        col1: String,
+        col2: String,
+    },
+    RunWilcoxonSignedRankAnalysis {
+        col1: String,
+        col2: String,
+    },
+    RunKruskalWallisAnalysis {
+        group_col: String,
+        value_col: String,
+    },
+    RunLinearRegressionAnalysis {
+        col1: String,
+        col2: String,
+    },
+    RunFourPlRegressionAnalysis {
+        col1: String,
+        col2: String,
+    },
+    RunTwoProportionAnalysis {
+        rows_col: String,
+        cols_col: String,
+    },
+    RunChiSquaredAnalysis {
+        rows_col: String,
+        cols_col: String,
+    },
     EditCell {
         row_index: usize,
         column_index: usize,

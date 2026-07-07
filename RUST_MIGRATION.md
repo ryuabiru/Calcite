@@ -227,6 +227,7 @@ Current Status:
 - Load CSV / Save Project / Export CSV controls are wired into the Tauri frontend
 - Table editing commands are wired into the Tauri frontend and backend
 - React DataFrame pane now renders a CSV table preview from the Rust snapshot query
+- Rust bootstrap now can also run Spearman correlation analysis and render its summary
 
 ### Phase 2: Data Loading and Table UX
 
@@ -280,6 +281,7 @@ Current Status:
 - Rust graph area now also renders a native stacked bar chart from the loaded table and subgroup column
 - Rust graph area now also renders a native correlation heatmap from numeric columns
 - Rust graph area now also renders a native categorical heatmap from the loaded table's X/Y columns
+- Rust graph area now also renders native proportion, mosaic, and histogram variants for the loaded table
 - The first graph pipeline slice is in place and can be extended toward countplot and other categorical views
 - Remaining graph types will be prioritized after the Tauri shell is in place
 
@@ -331,7 +333,18 @@ Exit Criteria:
 
 Current Status:
 
-- 未着手
+- Rust bootstrap can run chi-squared association analysis on the loaded table
+- Rust bootstrap can also run Pearson correlation analysis on the loaded table
+- Rust bootstrap can now run 2-proportion z-tests on the loaded table
+- Rust bootstrap can now run simple linear regression on the loaded table
+- Rust bootstrap can now run independent and paired t-tests on the loaded table
+- Rust bootstrap can now run one-way ANOVA on the loaded table
+- Rust bootstrap can now run Mann-Whitney U and Wilcoxon signed-rank tests on the loaded table
+- Analysis results now render as detailed statistical summaries in the Rust results panel
+- Rust graph rendering now highlights chi-squared residuals in heatmap and mosaic views
+- Rust graph rendering now highlights 2-proportion comparison groups in the proportion plot
+- The chi-squared, 2-proportion, simple linear regression, graph-statistics linkage, t-test, ANOVA, and non-parametric slices are in place
+- Rust parity tests now cover CSV loading, reshape/pivot, Pearson, chi-squared, 2-proportion, linear regression, ANOVA, t-tests, Shapiro-Wilk, Mann-Whitney U, and Wilcoxon signed-rank against Python references
 
 ### Phase 6: Advanced Statistics Migration
 
@@ -353,7 +366,14 @@ Exit Criteria:
 
 Current Status:
 
-- 未着手
+- `non-parametric tests` slice is complete
+- `Shapiro-Wilk` slice is complete
+- `4PL` slice is complete
+- Rust bootstrap now runs Mann-Whitney U, Wilcoxon signed-rank, Kruskal-Wallis, Shapiro-Wilk, and 4PL analyses
+- Analysis results render in both the Rust `egui` shell and the Tauri command bridge
+- Phase 6 is complete
+- The advanced-statistics parity surface is now covered by `rust/tests/python_parity.rs`
+- The next work should focus on Phase 7 retirement groundwork and candidate selection
 
 ### Phase 7: Python Retirement
 
@@ -371,6 +391,32 @@ Tasks:
 Exit Criteria:
 
 - 配布物が Rust アプリに一本化される
+
+Current Status:
+
+- `PYTHON_RETIREMENT.md` now tracks the first retirement candidates and verification rules
+- Phase 7 work should proceed from the checklist rather than ad-hoc cleanup
+- The Python GUI now carries retirement warnings across its main entrypoint, window shell, dialogs, handlers, widgets, tabs, and rendering helpers
+- The current cleanup pass expanded retirement warnings across the remaining action, data, graph, statistical helper, tabs leaf, base handler, and dialog leaf modules
+- All currently listed Python retirement candidates now emit retirement warnings
+- Python retirement now has a clear verification backstop in `rust/tests/python_parity.rs`
+- Rust and Tauri test suites are green, so the remaining risk is limited to actual module removal and fixture/golden-output drift
+- The first low-risk Python retirement deletion has been completed by removing the licenses dialog and its Help menu bridge
+- The second low-risk Python retirement deletion has been completed by removing the unreferenced filter dialog leaf
+- The third low-risk Python retirement deletion has been completed by removing the advanced filter dialog and its Data menu bridge
+- The fourth low-risk Python retirement deletion has been completed by removing the Kruskal-Wallis dialog and its analysis menu bridge
+- The fifth low-risk Python retirement deletion has been completed by removing the legacy Python `run_kruskal` service function
+- The sixth low-risk Python retirement deletion has been completed by removing the advanced filter use case and helper functions
+- The seventh low-risk Python retirement deletion has been completed by removing the paired t-test and Wilcoxon dialogs and their handler bridge
+- The eighth low-risk Python retirement deletion has been completed by removing the Mann-Whitney dialog and its handler bridge
+- The ninth low-risk Python retirement deletion has been completed by removing the results export use case after inlining the write path
+- The tenth low-risk Python retirement deletion has been completed by removing the independent t-test dialog and its handler bridge
+- The eleventh low-risk Python retirement deletion has been completed by removing the Calculate New Column dialog and its handler bridge
+- The twelfth low-risk Python retirement deletion has been completed by removing the Regression dialog and its handler bridge
+- The thirteenth low-risk Python retirement deletion has been completed by removing the regression use case and 4PL export surface
+- The fourteenth low-risk Python retirement deletion has been completed by removing the correlation dialog and its handler bridge
+- The next Phase 7 slices should move from warning coverage to deleting the first low-risk Python retirement candidates while preserving parity checks
+- Fixture and golden-output review is now the main prerequisite for any actual module removal
 
 ## Recommended Weekly Order
 
@@ -443,40 +489,59 @@ Exit Criteria:
 
 ## Next Slice
 
+完了済み:
+
+- `sort / filter -> table 再描画`
+- `列選択 -> graph settings 反映`
+- `reshape / pivot -> table 更新`
+- `save / load project -> state 復元`
+- `graph type ごとの parity 取得`
+- `analysis ごとの parity 取得`
+- `graph-statistics linkage`
+- `non-parametric tests`
+- `Shapiro-Wilk`
+- `4PL`
+- `contingency / chi-squared / 2-proportion` の GUI 退役
+- `paired_scatter` の Python UI 退役
+- `paired_scatter` の Python 描画・設定・保存の残骸退役
+
 次回の作業は以下の 1 スライスに固定する。
 
 ### Slice Goal
 
-- `sort / filter -> table 再描画` を React UI 上で通す
+- `Python retirement groundwork` を継続し、GUI 退役済みの Python 面をさらに剥がす
 
 ### Done Criteria
 
-- React の Properties か DataFrame から row filter を更新できる
-- Rust backend で visible row set が更新される
-- frontend 側の table preview が filter 後の状態に追従する
-- sort 更新後に table preview の行順が変わる
-- 読み込み後の row count / column count / loaded file name 表示が維持される
+- 削除候補の優先順位が明確になる
+- Python GUI 側の legacy / retirement markers は主要導線をカバーしている
+- 既存の project save/load と graph state が壊れていない
+- Rust parity テストが引き続き green である
+- 少なくとも 1 つの低リスク Python retirement module が削除されている
+- 少なくとも 2 つの低リスク Python retirement module が削除されている
+- 少なくとも 3 つの低リスク Python retirement module が削除されている
+- 少なくとも 4 つの低リスク Python retirement module が削除されている
+- 少なくとも 5 つの低リスク Python retirement module が削除されている
+- 少なくとも 6 つの低リスク Python retirement module が削除されている
 
 ### Files Expected To Change
 
-- `tauri/src-tauri/src/main.rs`
-- `tauri/frontend/src/App.jsx`
-- `tauri/frontend/style.css`
+- `PYTHON_RETIREMENT.md`
+- `RUST_MIGRATION.md`
+- 必要なら `calcite/` の最小差分
 
 ### Verification
 
-- `cd tauri && npm run build`
-- `cd tauri && npm run tauri:dev`
-- 実機確認: filter / sort 後に table preview が再描画される
+- `git diff --check`
+- `python3 -m py_compile` の対象ファイル確認
+- fixture / golden-output の差分確認
 
 ## After Next Slice
 
 次の優先順位は以下。
 
-1. `sort / filter -> table 再描画`
-2. `列選択 -> graph settings 反映`
-3. `reshape / pivot -> table 更新`
-4. `save / load project -> state 復元`
+1. `Python retirement groundwork`
+2. first low-risk Python module removal
 
 ## Working Rule
 

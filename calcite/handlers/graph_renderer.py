@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import traceback
+import warnings
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
@@ -22,8 +23,6 @@ from calcite.services.plot_service import (
     build_stacked_bar_plot_data,
     build_four_pl_overlay_lines,
     build_legend_handles_labels,
-    build_paired_annotation_spec,
-    build_paired_plot_data,
     build_regression_overlay_lines,
     build_scatter_plot_kwargs,
     build_stripplot_kwargs,
@@ -31,6 +30,12 @@ from calcite.services.plot_service import (
     get_facet_values,
     get_x_order,
     prepare_plot_dataframe,
+)
+
+warnings.warn(
+    "calcite.handlers.graph_renderer is legacy Python rendering scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
 
@@ -89,33 +94,6 @@ class GraphRenderer:
         except Exception as e:
             QMessageBox.critical(self.main, "Graph Error", f"An unexpected error occurred: {e}")
             traceback.print_exc()
-            return None
-
-    def render_paired_scatter(self, df, request: PlotRequest):
-        properties = request.properties
-        paired_plot_data = build_paired_plot_data(df, request)
-        if paired_plot_data is None:
-            return None
-
-        col1 = request.col1
-        col2 = request.col2
-        fig, ax = plt.subplots(layout="constrained")
-        try:
-            plot_df_long = self._draw_paired_plot(ax, paired_plot_data, properties)
-            if plot_df_long is not None and self.main.app_state.paired_annotations:
-                annotations_to_plot = [
-                    ann for ann in self.main.app_state.paired_annotations if set(ann["box_pair"]) == {col1, col2}
-                ]
-                annotation_spec = build_paired_annotation_spec(plot_df_long, annotations_to_plot, ax)
-                if annotation_spec is not None:
-                    annotator = Annotator(**annotation_spec.annotator_kwargs)
-                    thresholds = [[1e-4, "****"], [1e-3, "***"], [1e-2, "**"], [0.05, "*"], [1.0, "n.s."]]
-                    annotator.configure(text_format="star", loc="outside", verbose=0, pvalue_thresholds=thresholds)
-                    annotator.set_pvalues(annotation_spec.p_values)
-                    annotator.annotate()
-            return fig
-        except Exception as e:
-            QMessageBox.critical(self.main, "Error", f"Failed to draw paired plot: {e}")
             return None
 
     def render_histogram(self, df, properties, data_settings):

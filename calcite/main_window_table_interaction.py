@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import warnings
+
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QApplication, QLineEdit
+
+warnings.warn(
+    "calcite.main_window_table_interaction is legacy Python UI scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class MainWindowTableInteraction:

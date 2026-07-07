@@ -53,7 +53,6 @@ class ProjectState:
     dataframe: pd.DataFrame | None
     settings: dict
     statistical_annotations: list
-    paired_annotations: list
     regression_line_params: dict | None
     fit_params: dict | None
 
@@ -92,7 +91,6 @@ def write_project_archive(file_path: str, state: ProjectState) -> None:
 
         analysis_data = {
             "statistical_annotations": state.statistical_annotations,
-            "paired_annotations": state.paired_annotations,
             "regression_line_params": state.regression_line_params,
             "fit_params": state.fit_params,
         }
@@ -123,7 +121,6 @@ def read_project_archive(file_path: str) -> ProjectState:
         dataframe=dataframe,
         settings=settings,
         statistical_annotations=analysis_data.get("statistical_annotations", []),
-        paired_annotations=analysis_data.get("paired_annotations", []),
         regression_line_params=_restore_regression_line_params(analysis_data.get("regression_line_params")),
         fit_params=_restore_fit_params(analysis_data.get("fit_params")),
     )

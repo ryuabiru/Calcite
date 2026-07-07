@@ -21,6 +21,9 @@ struct BackendSnapshot {
     row_filter_query: String,
     visible_row_count: usize,
     selected_row_count: usize,
+    sort_column: Option<usize>,
+    sort_ascending: bool,
+    visible_row_indices: Vec<usize>,
     headers: Vec<String>,
     rows: Vec<Vec<String>>,
 }
@@ -41,6 +44,9 @@ impl BackendSnapshot {
             row_filter_query: project.table_view.row_filter_query.clone(),
             visible_row_count: project.table_view.visible_row_indices.len(),
             selected_row_count: project.table_view.selected_rows.len(),
+            sort_column: project.table_view.sort_column,
+            sort_ascending: project.table_view.sort_ascending,
+            visible_row_indices: project.table_view.visible_row_indices.clone(),
             headers: project.data_table.headers.clone(),
             rows: project.data_table.rows.clone(),
         }
@@ -154,6 +160,11 @@ fn set_graph_type(state: State<'_, SharedBackend>, graph_type: String) -> Result
 }
 
 #[tauri::command]
+fn toggle_sort_by_column(state: State<'_, SharedBackend>, column_index: usize) -> Result<(), String> {
+    dispatch_command(state, AppCommand::ToggleSortByColumn { column_index })
+}
+
+#[tauri::command]
 fn set_row_filter(state: State<'_, SharedBackend>, query: String) -> Result<(), String> {
     dispatch_command(state, AppCommand::SetRowFilter { query })
 }
@@ -172,6 +183,150 @@ fn set_columns(
             y_column,
             subgroup_column,
         },
+    )
+}
+
+#[tauri::command]
+fn run_pearson_correlation_analysis(
+    state: State<'_, SharedBackend>,
+    col1: String,
+    col2: String,
+) -> Result<(), String> {
+    dispatch_command(
+        state,
+        AppCommand::RunPearsonCorrelationAnalysis { col1, col2 },
+    )
+}
+
+#[tauri::command]
+fn run_spearman_correlation_analysis(
+    state: State<'_, SharedBackend>,
+    col1: String,
+    col2: String,
+) -> Result<(), String> {
+    dispatch_command(
+        state,
+        AppCommand::RunSpearmanCorrelationAnalysis { col1, col2 },
+    )
+}
+
+#[tauri::command]
+fn run_independent_t_test_analysis(
+    state: State<'_, SharedBackend>,
+    col1: String,
+    col2: String,
+) -> Result<(), String> {
+    dispatch_command(
+        state,
+        AppCommand::RunIndependentTTestAnalysis { col1, col2 },
+    )
+}
+
+#[tauri::command]
+fn run_paired_t_test_analysis(
+    state: State<'_, SharedBackend>,
+    col1: String,
+    col2: String,
+) -> Result<(), String> {
+    dispatch_command(state, AppCommand::RunPairedTTestAnalysis { col1, col2 })
+}
+
+#[tauri::command]
+fn run_one_way_anova_analysis(
+    state: State<'_, SharedBackend>,
+    group_col: String,
+    value_col: String,
+) -> Result<(), String> {
+    dispatch_command(
+        state,
+        AppCommand::RunOneWayAnovaAnalysis {
+            group_col,
+            value_col,
+        },
+    )
+}
+
+#[tauri::command]
+fn run_shapiro_wilk_analysis(
+    state: State<'_, SharedBackend>,
+    group_col: String,
+    value_col: String,
+) -> Result<(), String> {
+    dispatch_command(
+        state,
+        AppCommand::RunShapiroWilkAnalysis {
+            group_col,
+            value_col,
+        },
+    )
+}
+
+#[tauri::command]
+fn run_mann_whitney_u_analysis(
+    state: State<'_, SharedBackend>,
+    col1: String,
+    col2: String,
+) -> Result<(), String> {
+    dispatch_command(state, AppCommand::RunMannWhitneyUAnalysis { col1, col2 })
+}
+
+#[tauri::command]
+fn run_wilcoxon_signed_rank_analysis(
+    state: State<'_, SharedBackend>,
+    col1: String,
+    col2: String,
+) -> Result<(), String> {
+    dispatch_command(state, AppCommand::RunWilcoxonSignedRankAnalysis { col1, col2 })
+}
+
+#[tauri::command]
+fn run_kruskal_wallis_analysis(
+    state: State<'_, SharedBackend>,
+    group_col: String,
+    value_col: String,
+) -> Result<(), String> {
+    dispatch_command(
+        state,
+        AppCommand::RunKruskalWallisAnalysis {
+            group_col,
+            value_col,
+        },
+    )
+}
+
+#[tauri::command]
+fn run_linear_regression_analysis(
+    state: State<'_, SharedBackend>,
+    col1: String,
+    col2: String,
+) -> Result<(), String> {
+    dispatch_command(
+        state,
+        AppCommand::RunLinearRegressionAnalysis { col1, col2 },
+    )
+}
+
+#[tauri::command]
+fn run_four_pl_regression_analysis(
+    state: State<'_, SharedBackend>,
+    col1: String,
+    col2: String,
+) -> Result<(), String> {
+    dispatch_command(
+        state,
+        AppCommand::RunFourPlRegressionAnalysis { col1, col2 },
+    )
+}
+
+#[tauri::command]
+fn run_two_proportion_analysis(
+    state: State<'_, SharedBackend>,
+    rows_col: String,
+    cols_col: String,
+) -> Result<(), String> {
+    dispatch_command(
+        state,
+        AppCommand::RunTwoProportionAnalysis { rows_col, cols_col },
     )
 }
 
@@ -227,8 +382,21 @@ fn main() {
             save_project,
             load_project,
             set_graph_type,
+            toggle_sort_by_column,
             set_row_filter,
             set_columns,
+            run_pearson_correlation_analysis,
+            run_spearman_correlation_analysis,
+            run_independent_t_test_analysis,
+            run_paired_t_test_analysis,
+            run_one_way_anova_analysis,
+            run_shapiro_wilk_analysis,
+            run_mann_whitney_u_analysis,
+            run_wilcoxon_signed_rank_analysis,
+            run_kruskal_wallis_analysis,
+            run_linear_regression_analysis,
+            run_four_pl_regression_analysis,
+            run_two_proportion_analysis,
             restructure_data,
             pivot_data,
         ])

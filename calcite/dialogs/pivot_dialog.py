@@ -1,7 +1,14 @@
 # pivot_dialog.py
+import warnings
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLabel, QComboBox, QDialogButtonBox
+)
+
+warnings.warn(
+    "calcite.dialogs.pivot_dialog is part of the legacy Python UI and will be retired after the Rust migration.",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
 class PivotDialog(QDialog):

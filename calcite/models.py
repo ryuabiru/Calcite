@@ -11,8 +11,6 @@ class PlotRequest:
     y_col: str = ""
     subgroup_col: str = ""
     facet_col: str = ""
-    col1: str = ""
-    col2: str = ""
     properties: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -28,8 +26,6 @@ class PlotRequest:
             y_col=data_settings.get("y_col", ""),
             subgroup_col=data_settings.get("subgroup_col", ""),
             facet_col=data_settings.get("facet_col", ""),
-            col1=data_settings.get("col1", ""),
-            col2=data_settings.get("col2", ""),
             properties={**properties, **data_settings},
         )
 

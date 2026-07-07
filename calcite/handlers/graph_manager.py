@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import warnings
+
 from calcite.models import PlotRequest
 from calcite.services.plot_service import normalize_plot_request
 
 from .graph_canvas_handler import GraphCanvasHandler
 from .graph_renderer import GraphRenderer
+
+warnings.warn(
+    "calcite.handlers.graph_manager is legacy Python rendering scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class GraphManager:
@@ -26,9 +34,7 @@ class GraphManager:
         )
         request = normalize_plot_request(request)
 
-        if request.graph_type == "paired_scatter":
-            fig = self.renderer.render_paired_scatter(df, request)
-        elif request.graph_type == "histogram":
+        if request.graph_type == "histogram":
             fig = self.renderer.render_histogram(df, request.properties, request.properties)
         elif request.graph_type in {"stacked_bar", "stacked_bar_100"}:
             fig = self.renderer.render_stacked_bar(df, request)

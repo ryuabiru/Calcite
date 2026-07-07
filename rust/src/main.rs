@@ -1,7 +1,19 @@
 use calcite_rust::graph_data::{
-    BarChartData, CorrelationHeatmapData, HeatmapChartData, StackedBarChartData,
-    build_bar_chart_data, build_correlation_heatmap_data, build_heatmap_chart_data,
-    build_stacked_bar_chart_data,
+    BarChartData, CorrelationHeatmapData, HeatmapChartData, HistogramChartData, MosaicChartData,
+    ProportionPlotData, StackedBarChartData, build_bar_chart_data, build_correlation_heatmap_data,
+    build_heatmap_chart_data, build_histogram_chart_data, build_mosaic_chart_data,
+    build_proportion_plot_data, build_stacked_bar_chart_data,
+};
+use calcite_rust::analysis::{
+    ChiSquaredAnalysisResult, format_independent_t_test_result, format_linear_regression_result,
+    format_four_pl_regression_result, format_kruskal_wallis_result, format_mann_whitney_u_result,
+    format_one_way_anova_result, format_paired_t_test_result, format_pearson_correlation_result,
+    format_shapiro_wilk_result, format_spearman_correlation_result, format_two_proportion_result,
+    format_wilcoxon_signed_rank_result,
+    run_independent_t_test_analysis, run_linear_regression_analysis, run_one_way_anova_analysis,
+    run_mann_whitney_u_analysis, run_paired_t_test_analysis, run_pearson_correlation_analysis,
+    run_four_pl_regression_analysis, run_kruskal_wallis_analysis, run_shapiro_wilk_analysis,
+    run_spearman_correlation_analysis, run_two_proportion_analysis, run_wilcoxon_signed_rank_analysis,
 };
 use calcite_rust::{backend::AppBackend, core::AppCommand, state::HeatmapNormalizationMode};
 use eframe::egui;
@@ -213,6 +225,9 @@ impl CalciteRustApp {
             && current_graph_type != "Stacked Bar"
             && current_graph_type != "Correlation Heatmap"
             && current_graph_type != "Heatmap"
+            && current_graph_type != "Proportion Plot"
+            && current_graph_type != "Mosaic Plot"
+            && current_graph_type != "Histogram"
         {
             self.placeholder_surface(
                 ui,
@@ -290,7 +305,7 @@ impl CalciteRustApp {
                     return;
                 };
 
-                self.draw_heatmap_chart(ui, &chart_data);
+                self.draw_heatmap_chart(ui, &chart_data, project.chi_squared_result.as_ref());
             }
             "Stacked Bar" => {
                 let Some(category_name) =
@@ -339,6 +354,120 @@ impl CalciteRustApp {
                 };
 
                 self.draw_stacked_bar_chart(ui, &chart_data);
+            }
+            "Proportion Plot" => {
+                let Some(column_name) =
+                    (!project.x_column.trim().is_empty()).then(|| project.x_column.as_str())
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph yet",
+                        "Set an X column to render the proportion plot.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                let Some(chart_data) =
+                    build_proportion_plot_data(&project.data_table, &project.table_view, column_name)
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph data",
+                        "Load a CSV and choose an X column to render the proportion plot.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                self.draw_proportion_plot(ui, &chart_data, project.two_proportion_result.as_ref());
+            }
+            "Mosaic Plot" => {
+                let Some(row_name) =
+                    (!project.y_column.trim().is_empty()).then(|| project.y_column.as_str())
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph yet",
+                        "Set X and Y columns to render the mosaic plot.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                let Some(column_name) =
+                    (!project.x_column.trim().is_empty()).then(|| project.x_column.as_str())
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph yet",
+                        "Set X and Y columns to render the mosaic plot.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                let Some(chart_data) =
+                    build_mosaic_chart_data(&project.data_table, &project.table_view, row_name, column_name)
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph data",
+                        "Load a CSV and choose X and Y columns to render the mosaic plot.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                self.draw_mosaic_chart(ui, &chart_data, project.chi_squared_result.as_ref());
+            }
+            "Histogram" => {
+                let Some(column_name) =
+                    (!project.x_column.trim().is_empty()).then(|| project.x_column.as_str())
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph yet",
+                        "Set an X column to render the histogram.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                let Some(chart_data) =
+                    build_histogram_chart_data(&project.data_table, &project.table_view, column_name)
+                else {
+                    self.placeholder_surface(
+                        ui,
+                        "No graph data",
+                        "Load a CSV with numeric values in the X column to render the histogram.",
+                        [
+                            ui.available_width().max(1.0),
+                            (ui.available_height() - 8.0).max(1.0),
+                        ],
+                    );
+                    return;
+                };
+
+                self.draw_histogram_chart(ui, &chart_data);
             }
             _ => {
                 let Some(column_name) =
@@ -602,6 +731,417 @@ impl CalciteRustApp {
         }
     }
 
+    fn draw_proportion_plot(
+        &self,
+        ui: &mut egui::Ui,
+        chart_data: &ProportionPlotData,
+        highlight: Option<&calcite_rust::analysis::TwoProportionAnalysisResult>,
+    ) {
+        let desired_size = egui::vec2(
+            ui.available_width().max(1.0),
+            ui.available_height().max(260.0),
+        );
+        let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        let bg = egui::Color32::from_rgb(255, 250, 243);
+        let border = egui::Color32::from_rgb(224, 210, 192);
+        painter.rect_filled(rect, 12.0, bg);
+        painter.rect_stroke(
+            rect,
+            12.0,
+            egui::Stroke::new(1.0, border),
+            egui::StrokeKind::Outside,
+        );
+
+        let inner = rect.shrink2(egui::vec2(18.0, 18.0));
+        let bar_count = chart_data.segments.len().max(1) as f32;
+        let bar_gap = 10.0;
+        let bar_width = ((inner.width() - ((bar_count - 1.0) * bar_gap)) / bar_count).max(24.0);
+        let plot_bottom = inner.bottom() - 28.0;
+        let plot_top = inner.top() + 26.0;
+        let plot_height = (plot_bottom - plot_top).max(1.0);
+        let axis_color = egui::Color32::from_rgb(116, 95, 73);
+
+        painter.line_segment(
+            [
+                egui::pos2(inner.left(), plot_bottom),
+                egui::pos2(inner.right(), plot_bottom),
+            ],
+            egui::Stroke::new(1.5, axis_color),
+        );
+        painter.line_segment(
+            [
+                egui::pos2(inner.left(), plot_top),
+                egui::pos2(inner.left(), plot_bottom),
+            ],
+            egui::Stroke::new(1.5, axis_color),
+        );
+
+        painter.text(
+            egui::pos2(inner.left(), inner.top()),
+            egui::Align2::LEFT_TOP,
+            format!(
+                "{}  |  {} visible rows",
+                chart_data.column_name, chart_data.visible_row_count
+            ),
+            egui::FontId::proportional(16.0),
+            egui::Color32::from_rgb(58, 45, 32),
+        );
+
+        if let Some(result) = highlight {
+            if result.rows_col == chart_data.column_name {
+                let callout_rect = egui::Rect::from_min_size(
+                    egui::pos2(inner.right() - 246.0, inner.top() + 4.0),
+                    egui::vec2(236.0, 72.0),
+                );
+                painter.rect_filled(callout_rect, 8.0, egui::Color32::from_rgb(248, 236, 224));
+                painter.rect_stroke(
+                    callout_rect,
+                    8.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(186, 120, 73)),
+                    egui::StrokeKind::Outside,
+                );
+                painter.text(
+                    callout_rect.left_top() + egui::vec2(10.0, 10.0),
+                    egui::Align2::LEFT_TOP,
+                    format!("2-Proportion: {}", result.success_label),
+                    egui::FontId::proportional(12.0),
+                    egui::Color32::from_rgb(92, 57, 34),
+                );
+                painter.text(
+                    callout_rect.left_top() + egui::vec2(10.0, 28.0),
+                    egui::Align2::LEFT_TOP,
+                    format!(
+                        "{}: {:.3}  |  {}: {:.3}",
+                        result.group1_label,
+                        result.proportion_group1,
+                        result.group2_label,
+                        result.proportion_group2
+                    ),
+                    egui::FontId::proportional(12.0),
+                    egui::Color32::from_rgb(92, 57, 34),
+                );
+                painter.text(
+                    callout_rect.left_top() + egui::vec2(10.0, 46.0),
+                    egui::Align2::LEFT_TOP,
+                    format!("Diff {:.3}  p={:.4}", result.difference_in_proportions, result.p_value),
+                    egui::FontId::proportional(12.0),
+                    egui::Color32::from_rgb(92, 57, 34),
+                );
+            }
+        }
+
+        for (index, segment) in chart_data.segments.iter().enumerate() {
+            let x = inner.left() + (index as f32 * (bar_width + bar_gap));
+            let bar_height = plot_height * (segment.proportion as f32).clamp(0.0, 1.0);
+            let bar_rect = egui::Rect::from_min_size(
+                egui::pos2(x, plot_bottom - bar_height),
+                egui::vec2(bar_width, bar_height),
+            );
+            let mut fill_color = egui::Color32::from_rgb(217, 143, 61);
+            let mut stroke_color = egui::Color32::from_rgb(140, 63, 22);
+            let mut stroke_width = 1.0;
+            if let Some(result) = highlight {
+                if result.rows_col == chart_data.column_name
+                    && (segment.label == result.group1_label || segment.label == result.group2_label)
+                {
+                    fill_color = egui::Color32::from_rgb(234, 173, 104);
+                    stroke_color = egui::Color32::from_rgb(170, 75, 35);
+                    stroke_width = 2.5;
+                }
+            }
+            painter.rect_filled(bar_rect, 8.0, fill_color);
+            painter.rect_stroke(
+                bar_rect,
+                8.0,
+                egui::Stroke::new(stroke_width, stroke_color),
+                egui::StrokeKind::Outside,
+            );
+            painter.text(
+                egui::pos2(bar_rect.center().x, bar_rect.top() - 4.0),
+                egui::Align2::CENTER_BOTTOM,
+                format!("{:.0}%", segment.proportion * 100.0),
+                egui::FontId::proportional(14.0),
+                egui::Color32::from_rgb(58, 45, 32),
+            );
+            painter.text(
+                egui::pos2(bar_rect.center().x, bar_rect.bottom() - 4.0),
+                egui::Align2::CENTER_BOTTOM,
+                segment.count.to_string(),
+                egui::FontId::proportional(12.0),
+                egui::Color32::from_rgb(58, 45, 32),
+            );
+            painter.text(
+                egui::pos2(bar_rect.center().x, plot_bottom + 6.0),
+                egui::Align2::CENTER_TOP,
+                &segment.label,
+                egui::FontId::proportional(13.0),
+                egui::Color32::from_rgb(58, 45, 32),
+            );
+        }
+    }
+
+    fn draw_mosaic_chart(
+        &self,
+        ui: &mut egui::Ui,
+        chart_data: &MosaicChartData,
+        highlight: Option<&ChiSquaredAnalysisResult>,
+    ) {
+        let desired_size = egui::vec2(
+            ui.available_width().max(1.0),
+            ui.available_height().max(280.0),
+        );
+        let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        let bg = egui::Color32::from_rgb(255, 250, 243);
+        let border = egui::Color32::from_rgb(224, 210, 192);
+        painter.rect_filled(rect, 12.0, bg);
+        painter.rect_stroke(
+            rect,
+            12.0,
+            egui::Stroke::new(1.0, border),
+            egui::StrokeKind::Outside,
+        );
+
+        let inner = rect.shrink2(egui::vec2(18.0, 18.0));
+        let row_count = chart_data.row_labels.len().max(1) as f32;
+        let column_count = chart_data.column_labels.len().max(1) as f32;
+        let cell_size = ((inner.width().min(inner.height()) - 56.0) / row_count.max(column_count))
+            .max(28.0);
+        let grid_width = cell_size * column_count;
+        let grid_left = inner.left() + 110.0;
+        let grid_top = inner.top() + 34.0;
+        let axis_color = egui::Color32::from_rgb(116, 95, 73);
+        let max_count = chart_data
+            .counts
+            .iter()
+            .flat_map(|row| row.iter())
+            .copied()
+            .max()
+            .unwrap_or(1) as f32;
+
+        painter.text(
+            egui::pos2(inner.left(), inner.top()),
+            egui::Align2::LEFT_TOP,
+            format!(
+                "Mosaic Plot: {} vs {}",
+                chart_data.row_column_name, chart_data.column_column_name
+            ),
+            egui::FontId::proportional(16.0),
+            egui::Color32::from_rgb(58, 45, 32),
+        );
+
+        for (index, label) in chart_data.column_labels.iter().enumerate() {
+            let x = grid_left + (index as f32 * cell_size) + (cell_size / 2.0);
+            painter.text(
+                egui::pos2(x, grid_top - 6.0),
+                egui::Align2::CENTER_BOTTOM,
+                label,
+                egui::FontId::proportional(12.0),
+                axis_color,
+            );
+        }
+
+        for (index, label) in chart_data.row_labels.iter().enumerate() {
+            let y = grid_top + (index as f32 * cell_size) + (cell_size / 2.0);
+            painter.text(
+                egui::pos2(grid_left - 6.0, y),
+                egui::Align2::RIGHT_CENTER,
+                label,
+                egui::FontId::proportional(12.0),
+                axis_color,
+            );
+        }
+
+        for (row_index, row) in chart_data.counts.iter().enumerate() {
+            for (col_index, count) in row.iter().enumerate() {
+                let intensity = (*count as f32 / max_count).clamp(0.0, 1.0);
+                let red = (248.0 - (80.0 * intensity)) as u8;
+                let green = (238.0 - (90.0 * intensity)) as u8;
+                let blue = (231.0 + (18.0 * intensity)) as u8;
+                let cell_rect = egui::Rect::from_min_size(
+                    egui::pos2(
+                        grid_left + (col_index as f32 * cell_size),
+                        grid_top + (row_index as f32 * cell_size),
+                    ),
+                    egui::vec2(cell_size, cell_size),
+                );
+                let mut fill_color = egui::Color32::from_rgb(red, green, blue);
+                let mut stroke_color = border;
+                let mut stroke_width = 1.0;
+                let residual = highlight.and_then(|result| {
+                    if result.rows_col == chart_data.row_column_name
+                        && result.cols_col == chart_data.column_column_name
+                    {
+                        Self::chi_squared_residual(
+                            result,
+                            &chart_data.row_labels[row_index],
+                            &chart_data.column_labels[col_index],
+                        )
+                    } else {
+                        None
+                    }
+                });
+                if let Some(residual) = residual {
+                    let strength = (residual.abs() / 3.0).clamp(0.0, 1.0);
+                    let tint = if residual >= 0.0 {
+                        egui::Color32::from_rgb(244, 188, 176)
+                    } else {
+                        egui::Color32::from_rgb(178, 206, 242)
+                    };
+                    fill_color = Self::blend_colors(fill_color, tint, (strength * 0.45) as f32);
+                    stroke_color = if residual >= 0.0 {
+                        egui::Color32::from_rgb(171, 78, 58)
+                    } else {
+                        egui::Color32::from_rgb(72, 104, 170)
+                    };
+                    stroke_width = if residual.abs() >= 2.0 { 2.5 } else { 1.5 };
+                }
+                painter.rect_filled(cell_rect, 4.0, fill_color);
+                painter.rect_stroke(
+                    cell_rect,
+                    4.0,
+                    egui::Stroke::new(stroke_width, stroke_color),
+                    egui::StrokeKind::Outside,
+                );
+                painter.text(
+                    cell_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    count.to_string(),
+                    egui::FontId::proportional(12.0),
+                    egui::Color32::from_rgb(58, 45, 32),
+                );
+                if let Some(residual) = residual {
+                    painter.text(
+                        cell_rect.right_top() - egui::vec2(4.0, 4.0),
+                        egui::Align2::RIGHT_TOP,
+                        format!("{residual:+.1}"),
+                        egui::FontId::proportional(10.0),
+                        stroke_color,
+                    );
+                }
+            }
+        }
+
+        let legend_x = grid_left + grid_width + 18.0;
+        for (offset, label, intensity) in [(0.0, "low", 0.0), (1.0, "mid", 0.5), (2.0, "high", 1.0)]
+        {
+            let y = grid_top + (offset * 22.0);
+            let red = (248.0 - (80.0 * intensity)) as u8;
+            let green = (238.0 - (90.0 * intensity)) as u8;
+            let blue = (231.0 + (18.0 * intensity)) as u8;
+            let swatch = egui::Rect::from_min_size(egui::pos2(legend_x, y), egui::vec2(14.0, 14.0));
+            painter.rect_filled(swatch, 3.0, egui::Color32::from_rgb(red, green, blue));
+            painter.rect_stroke(
+                swatch,
+                3.0,
+                egui::Stroke::new(1.0, border),
+                egui::StrokeKind::Outside,
+            );
+            painter.text(
+                egui::pos2(legend_x + 20.0, y + 7.0),
+                egui::Align2::LEFT_CENTER,
+                label,
+                egui::FontId::proportional(12.0),
+                axis_color,
+            );
+        }
+    }
+
+    fn draw_histogram_chart(&self, ui: &mut egui::Ui, chart_data: &HistogramChartData) {
+        let desired_size = egui::vec2(
+            ui.available_width().max(1.0),
+            ui.available_height().max(260.0),
+        );
+        let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+        let painter = ui.painter_at(rect);
+        let bg = egui::Color32::from_rgb(255, 250, 243);
+        let border = egui::Color32::from_rgb(224, 210, 192);
+        painter.rect_filled(rect, 12.0, bg);
+        painter.rect_stroke(
+            rect,
+            12.0,
+            egui::Stroke::new(1.0, border),
+            egui::StrokeKind::Outside,
+        );
+
+        let inner = rect.shrink2(egui::vec2(18.0, 18.0));
+        let bin_count = chart_data.bins.len().max(1) as f32;
+        let bar_gap = 10.0;
+        let bar_width = ((inner.width() - ((bin_count - 1.0) * bar_gap)) / bin_count).max(24.0);
+        let plot_bottom = inner.bottom() - 28.0;
+        let plot_top = inner.top() + 26.0;
+        let plot_height = (plot_bottom - plot_top).max(1.0);
+        let axis_color = egui::Color32::from_rgb(116, 95, 73);
+        let max_count = chart_data
+            .bins
+            .iter()
+            .map(|bin| bin.count)
+            .max()
+            .unwrap_or(1) as f32;
+
+        painter.line_segment(
+            [
+                egui::pos2(inner.left(), plot_bottom),
+                egui::pos2(inner.right(), plot_bottom),
+            ],
+            egui::Stroke::new(1.5, axis_color),
+        );
+        painter.line_segment(
+            [
+                egui::pos2(inner.left(), plot_top),
+                egui::pos2(inner.left(), plot_bottom),
+            ],
+            egui::Stroke::new(1.5, axis_color),
+        );
+
+        painter.text(
+            egui::pos2(inner.left(), inner.top()),
+            egui::Align2::LEFT_TOP,
+            format!(
+                "{}  |  {} visible rows",
+                chart_data.column_name, chart_data.visible_row_count
+            ),
+            egui::FontId::proportional(16.0),
+            egui::Color32::from_rgb(58, 45, 32),
+        );
+
+        for (index, bin) in chart_data.bins.iter().enumerate() {
+            let x = inner.left() + (index as f32 * (bar_width + bar_gap));
+            let height_ratio = if max_count <= 0.0 {
+                0.0
+            } else {
+                bin.count as f32 / max_count
+            };
+            let bar_height = plot_height * height_ratio;
+            let bar_rect = egui::Rect::from_min_size(
+                egui::pos2(x, plot_bottom - bar_height),
+                egui::vec2(bar_width, bar_height),
+            );
+            painter.rect_filled(bar_rect, 8.0, egui::Color32::from_rgb(217, 143, 61));
+            painter.rect_stroke(
+                bar_rect,
+                8.0,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(140, 63, 22)),
+                egui::StrokeKind::Outside,
+            );
+            painter.text(
+                egui::pos2(bar_rect.center().x, bar_rect.top() - 4.0),
+                egui::Align2::CENTER_BOTTOM,
+                bin.count.to_string(),
+                egui::FontId::proportional(14.0),
+                egui::Color32::from_rgb(58, 45, 32),
+            );
+            painter.text(
+                egui::pos2(bar_rect.center().x, plot_bottom + 6.0),
+                egui::Align2::CENTER_TOP,
+                &bin.label,
+                egui::FontId::proportional(13.0),
+                egui::Color32::from_rgb(58, 45, 32),
+            );
+        }
+    }
+
     fn draw_correlation_heatmap(&self, ui: &mut egui::Ui, heatmap_data: &CorrelationHeatmapData) {
         let desired_size = egui::vec2(
             ui.available_width().max(1.0),
@@ -712,7 +1252,12 @@ impl CalciteRustApp {
         }
     }
 
-    fn draw_heatmap_chart(&self, ui: &mut egui::Ui, heatmap_data: &HeatmapChartData) {
+    fn draw_heatmap_chart(
+        &self,
+        ui: &mut egui::Ui,
+        heatmap_data: &HeatmapChartData,
+        highlight: Option<&ChiSquaredAnalysisResult>,
+    ) {
         let desired_size = egui::vec2(
             ui.available_width().max(1.0),
             ui.available_height().max(280.0),
@@ -793,11 +1338,42 @@ impl CalciteRustApp {
                     ),
                     egui::vec2(cell_size, cell_size),
                 );
-                painter.rect_filled(cell_rect, 4.0, egui::Color32::from_rgb(red, green, blue));
+                let mut fill_color = egui::Color32::from_rgb(red, green, blue);
+                let mut stroke_color = border;
+                let mut stroke_width = 1.0;
+                let residual = highlight.and_then(|result| {
+                    if result.rows_col == heatmap_data.row_column_name
+                        && result.cols_col == heatmap_data.column_column_name
+                    {
+                        Self::chi_squared_residual(
+                            result,
+                            &heatmap_data.row_labels[row_index],
+                            &heatmap_data.column_labels[col_index],
+                        )
+                    } else {
+                        None
+                    }
+                });
+                if let Some(residual) = residual {
+                    let strength = (residual.abs() / 3.0).clamp(0.0, 1.0);
+                    let tint = if residual >= 0.0 {
+                        egui::Color32::from_rgb(244, 188, 176)
+                    } else {
+                        egui::Color32::from_rgb(178, 206, 242)
+                    };
+                    fill_color = Self::blend_colors(fill_color, tint, (strength * 0.45) as f32);
+                    stroke_color = if residual >= 0.0 {
+                        egui::Color32::from_rgb(171, 78, 58)
+                    } else {
+                        egui::Color32::from_rgb(72, 104, 170)
+                    };
+                    stroke_width = if residual.abs() >= 2.0 { 2.5 } else { 1.5 };
+                }
+                painter.rect_filled(cell_rect, 4.0, fill_color);
                 painter.rect_stroke(
                     cell_rect,
                     4.0,
-                    egui::Stroke::new(1.0, border),
+                    egui::Stroke::new(stroke_width, stroke_color),
                     egui::StrokeKind::Outside,
                 );
                 painter.text(
@@ -811,6 +1387,15 @@ impl CalciteRustApp {
                     egui::FontId::proportional(12.0),
                     egui::Color32::from_rgb(58, 45, 32),
                 );
+                if let Some(residual) = residual {
+                    painter.text(
+                        cell_rect.right_top() - egui::vec2(4.0, 4.0),
+                        egui::Align2::RIGHT_TOP,
+                        format!("{residual:+.1}"),
+                        egui::FontId::proportional(10.0),
+                        stroke_color,
+                    );
+                }
             }
         }
 
@@ -837,6 +1422,34 @@ impl CalciteRustApp {
                 axis_color,
             );
         }
+    }
+
+    fn chi_squared_residual(
+        result: &ChiSquaredAnalysisResult,
+        row_label: &str,
+        column_label: &str,
+    ) -> Option<f64> {
+        let row_index = result.row_labels.iter().position(|label| label == row_label)?;
+        let column_index = result
+            .column_labels
+            .iter()
+            .position(|label| label == column_label)?;
+        Some(result.standardized_residuals[row_index][column_index])
+    }
+
+    fn blend_colors(
+        base: egui::Color32,
+        overlay: egui::Color32,
+        amount: f32,
+    ) -> egui::Color32 {
+        let amount = amount.clamp(0.0, 1.0);
+        let inverse = 1.0 - amount;
+        egui::Color32::from_rgba_unmultiplied(
+            (base.r() as f32 * inverse + overlay.r() as f32 * amount) as u8,
+            (base.g() as f32 * inverse + overlay.g() as f32 * amount) as u8,
+            (base.b() as f32 * inverse + overlay.b() as f32 * amount) as u8,
+            255,
+        )
     }
 
     fn show_dataframe_panel(&mut self, ui: &mut egui::Ui) {
@@ -867,7 +1480,7 @@ impl CalciteRustApp {
         ui.heading("Properties");
         ui.label("The Rust version will reintroduce plot properties incrementally.");
         ui.add_space(8.0);
-        egui::Grid::new("properties_grid")
+            egui::Grid::new("properties_grid")
             .num_columns(2)
             .spacing([12.0, 10.0])
             .show(ui, |ui| {
@@ -896,6 +1509,348 @@ impl CalciteRustApp {
                             );
                         }
                     });
+                ui.end_row();
+
+                ui.label("Analysis");
+                ui.vertical(|ui| {
+                    if ui
+                        .button("Run One-way ANOVA")
+                        .on_hover_text("Uses X as group labels and Y as numeric values.")
+                        .clicked()
+                    {
+                        let group_col = self.backend.project().x_column.clone();
+                        let value_col = self.backend.project().y_column.clone();
+                        match run_one_way_anova_analysis(
+                            &self.backend.project().data_table,
+                            &self.backend.project().table_view,
+                            &group_col,
+                            &value_col,
+                        ) {
+                            Ok(result) => {
+                                self.backend.project_mut().status_message = format!(
+                                    "One-way ANOVA completed for {} vs {}",
+                                    group_col, value_col
+                                );
+                                self.backend.project_mut().results_preview =
+                                    format_one_way_anova_result(&result);
+                            }
+                            Err(error) => {
+                                self.backend.project_mut().status_message = error.clone();
+                                self.backend.project_mut().results_preview = error;
+                            }
+                        }
+                    }
+                    if ui
+                        .button("Run Shapiro-Wilk")
+                        .on_hover_text("Uses X as group labels and Y as numeric values.")
+                        .clicked()
+                    {
+                        let group_col = self.backend.project().x_column.clone();
+                        let value_col = self.backend.project().y_column.clone();
+                        match run_shapiro_wilk_analysis(
+                            &self.backend.project().data_table,
+                            &self.backend.project().table_view,
+                            &group_col,
+                            &value_col,
+                        ) {
+                            Ok(result) => {
+                                self.backend.project_mut().status_message = format!(
+                                    "Shapiro-Wilk test completed for {} vs {}",
+                                    group_col, value_col
+                                );
+                                self.backend.project_mut().results_preview =
+                                    format_shapiro_wilk_result(&result);
+                            }
+                            Err(error) => {
+                                self.backend.project_mut().status_message = error.clone();
+                                self.backend.project_mut().results_preview = error;
+                            }
+                        }
+                    }
+                    if ui
+                        .button("Run Mann-Whitney U")
+                        .on_hover_text("Compares X and Y as independent numeric samples.")
+                        .clicked()
+                    {
+                        let col1 = self.backend.project().x_column.clone();
+                        let col2 = self.backend.project().y_column.clone();
+                        match run_mann_whitney_u_analysis(
+                            &self.backend.project().data_table,
+                            &self.backend.project().table_view,
+                            &col1,
+                            &col2,
+                        ) {
+                            Ok(result) => {
+                                self.backend.project_mut().status_message = format!(
+                                    "Mann-Whitney U test completed for {} vs {}",
+                                    col1, col2
+                                );
+                                self.backend.project_mut().results_preview =
+                                    format_mann_whitney_u_result(&result);
+                            }
+                            Err(error) => {
+                                self.backend.project_mut().status_message = error.clone();
+                                self.backend.project_mut().results_preview = error;
+                            }
+                        }
+                    }
+                    if ui
+                        .button("Run Independent t-test")
+                        .on_hover_text("Compares X and Y as independent numeric samples.")
+                        .clicked()
+                    {
+                        let col1 = self.backend.project().x_column.clone();
+                        let col2 = self.backend.project().y_column.clone();
+                        match run_independent_t_test_analysis(
+                            &self.backend.project().data_table,
+                            &self.backend.project().table_view,
+                            &col1,
+                            &col2,
+                        ) {
+                            Ok(result) => {
+                                self.backend.project_mut().status_message = format!(
+                                    "Independent t-test completed for {} vs {}",
+                                    col1, col2
+                                );
+                                self.backend.project_mut().results_preview =
+                                    format_independent_t_test_result(&result);
+                            }
+                            Err(error) => {
+                                self.backend.project_mut().status_message = error.clone();
+                                self.backend.project_mut().results_preview = error;
+                            }
+                        }
+                    }
+                    if ui
+                        .button("Run Wilcoxon signed-rank")
+                        .on_hover_text("Compares X and Y as paired numeric samples.")
+                        .clicked()
+                    {
+                        let col1 = self.backend.project().x_column.clone();
+                        let col2 = self.backend.project().y_column.clone();
+                        match run_wilcoxon_signed_rank_analysis(
+                            &self.backend.project().data_table,
+                            &self.backend.project().table_view,
+                            &col1,
+                            &col2,
+                        ) {
+                            Ok(result) => {
+                                self.backend.project_mut().status_message = format!(
+                                    "Wilcoxon signed-rank test completed for {} vs {}",
+                                    col1, col2
+                                );
+                                self.backend.project_mut().results_preview =
+                                    format_wilcoxon_signed_rank_result(&result);
+                            }
+                            Err(error) => {
+                                self.backend.project_mut().status_message = error.clone();
+                                self.backend.project_mut().results_preview = error;
+                            }
+                        }
+                    }
+                    if ui
+                        .button("Run Paired t-test")
+                        .on_hover_text("Compares X and Y as paired numeric samples.")
+                        .clicked()
+                    {
+                        let col1 = self.backend.project().x_column.clone();
+                        let col2 = self.backend.project().y_column.clone();
+                        match run_paired_t_test_analysis(
+                            &self.backend.project().data_table,
+                            &self.backend.project().table_view,
+                            &col1,
+                            &col2,
+                        ) {
+                            Ok(result) => {
+                                self.backend.project_mut().status_message = format!(
+                                    "Paired t-test completed for {} vs {}",
+                                    col1, col2
+                                );
+                                self.backend.project_mut().results_preview =
+                                    format_paired_t_test_result(&result);
+                            }
+                            Err(error) => {
+                                self.backend.project_mut().status_message = error.clone();
+                                self.backend.project_mut().results_preview = error;
+                            }
+                        }
+                    }
+                    if ui
+                        .button("Run Kruskal-Wallis")
+                        .on_hover_text("Uses X as group labels and Y as numeric values.")
+                        .clicked()
+                    {
+                        let group_col = self.backend.project().x_column.clone();
+                        let value_col = self.backend.project().y_column.clone();
+                        match run_kruskal_wallis_analysis(
+                            &self.backend.project().data_table,
+                            &self.backend.project().table_view,
+                            &group_col,
+                            &value_col,
+                        ) {
+                            Ok(result) => {
+                                self.backend.project_mut().status_message = format!(
+                                    "Kruskal-Wallis test completed for {} vs {}",
+                                    group_col, value_col
+                                );
+                                self.backend.project_mut().results_preview =
+                                    format_kruskal_wallis_result(&result);
+                            }
+                            Err(error) => {
+                                self.backend.project_mut().status_message = error.clone();
+                                self.backend.project_mut().results_preview = error;
+                            }
+                        }
+                    }
+                    if ui
+                        .button("Run Linear Regression")
+                        .on_hover_text("Fits Y as a linear function of X.")
+                        .clicked()
+                    {
+                        let col1 = self.backend.project().x_column.clone();
+                        let col2 = self.backend.project().y_column.clone();
+                        match run_linear_regression_analysis(
+                            &self.backend.project().data_table,
+                            &self.backend.project().table_view,
+                            &col1,
+                            &col2,
+                        ) {
+                            Ok(result) => {
+                                self.backend.project_mut().status_message = format!(
+                                    "Linear regression completed for {} vs {}",
+                                    col1, col2
+                                );
+                                self.backend.project_mut().results_preview =
+                                    format_linear_regression_result(&result);
+                            }
+                            Err(error) => {
+                                self.backend.project_mut().status_message = error.clone();
+                                self.backend.project_mut().results_preview = error;
+                            }
+                        }
+                    }
+                    if ui
+                        .button("Run 4PL Regression")
+                        .on_hover_text("Fits Y with a sigmoidal 4-parameter logistic model.")
+                        .clicked()
+                    {
+                        let col1 = self.backend.project().x_column.clone();
+                        let col2 = self.backend.project().y_column.clone();
+                        match run_four_pl_regression_analysis(
+                            &self.backend.project().data_table,
+                            &self.backend.project().table_view,
+                            &col1,
+                            &col2,
+                        ) {
+                            Ok(result) => {
+                                self.backend.project_mut().status_message = format!(
+                                    "4PL regression completed for {} vs {}",
+                                    col1, col2
+                                );
+                                self.backend.project_mut().results_preview =
+                                    format_four_pl_regression_result(&result);
+                            }
+                            Err(error) => {
+                                self.backend.project_mut().status_message = error.clone();
+                                self.backend.project_mut().results_preview = error;
+                            }
+                        }
+                    }
+                    if ui
+                        .button("Run Pearson Correlation")
+                        .on_hover_text("Uses X and Y as paired numeric columns.")
+                        .clicked()
+                    {
+                        let col1 = self.backend.project().x_column.clone();
+                        let col2 = self.backend.project().y_column.clone();
+                        match run_pearson_correlation_analysis(
+                            &self.backend.project().data_table,
+                            &self.backend.project().table_view,
+                            &col1,
+                            &col2,
+                        ) {
+                            Ok(result) => {
+                                self.backend.project_mut().status_message = format!(
+                                    "Pearson correlation completed for {} vs {}",
+                                    col1, col2
+                                );
+                                self.backend.project_mut().results_preview =
+                                    format_pearson_correlation_result(&result);
+                            }
+                            Err(error) => {
+                                self.backend.project_mut().status_message = error.clone();
+                                self.backend.project_mut().results_preview = error;
+                            }
+                        }
+                    }
+                    if ui
+                        .button("Run Spearman Correlation")
+                        .on_hover_text("Uses X and Y as paired numeric columns.")
+                        .clicked()
+                    {
+                        let col1 = self.backend.project().x_column.clone();
+                        let col2 = self.backend.project().y_column.clone();
+                        match run_spearman_correlation_analysis(
+                            &self.backend.project().data_table,
+                            &self.backend.project().table_view,
+                            &col1,
+                            &col2,
+                        ) {
+                            Ok(result) => {
+                                self.backend.project_mut().status_message = format!(
+                                    "Spearman correlation completed for {} vs {}",
+                                    col1, col2
+                                );
+                                self.backend.project_mut().results_preview =
+                                    format_spearman_correlation_result(&result);
+                            }
+                            Err(error) => {
+                                self.backend.project_mut().status_message = error.clone();
+                                self.backend.project_mut().results_preview = error;
+                            }
+                        }
+                    }
+                    if ui
+                        .button("Run 2-Proportion")
+                        .on_hover_text("Uses X as row groups and Y as outcome categories.")
+                        .clicked()
+                    {
+                        let rows_col = self.backend.project().x_column.clone();
+                        let cols_col = self.backend.project().y_column.clone();
+                        match run_two_proportion_analysis(
+                            &self.backend.project().data_table,
+                            &self.backend.project().table_view,
+                            &rows_col,
+                            &cols_col,
+                        ) {
+                            Ok(result) => {
+                                self.backend.project_mut().status_message = format!(
+                                    "2-proportion z-test completed for {} vs {}",
+                                    rows_col, cols_col
+                                );
+                                self.backend.project_mut().results_preview =
+                                    format_two_proportion_result(&result);
+                            }
+                            Err(error) => {
+                                self.backend.project_mut().status_message = error.clone();
+                                self.backend.project_mut().results_preview = error;
+                            }
+                        }
+                    }
+                    if ui
+                        .button("Run Chi-squared")
+                        .on_hover_text("Uses X as rows and Y as columns.")
+                        .clicked()
+                    {
+                        let rows_col = self.backend.project().x_column.clone();
+                        let cols_col = self.backend.project().y_column.clone();
+                        let _ = self.backend.dispatch(AppCommand::RunChiSquaredAnalysis {
+                            rows_col,
+                            cols_col,
+                        });
+                    }
+                    ui.label("Uses X as row labels and Y as column labels.");
+                });
                 ui.end_row();
             });
     }

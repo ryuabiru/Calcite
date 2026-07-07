@@ -5,6 +5,10 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::analysis::{
+    ChiSquaredAnalysisResult, LinearRegressionAnalysisResult, TwoProportionAnalysisResult,
+};
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ColumnKind {
     Empty,
@@ -201,6 +205,18 @@ impl TableViewState {
     }
 }
 
+pub fn resolved_row_indices(table: &DataTable, table_view: &TableViewState) -> Vec<usize> {
+    if table.is_empty() {
+        return Vec::new();
+    }
+
+    if table_view.row_filter_query.trim().is_empty() {
+        (0..table.rows.len()).collect()
+    } else {
+        table_view.visible_row_indices.clone()
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ProjectState {
     pub loaded_file_path: Option<PathBuf>,
@@ -211,6 +227,9 @@ pub struct ProjectState {
     pub heatmap_normalization_mode: HeatmapNormalizationMode,
     pub data_table: DataTable,
     pub table_view: TableViewState,
+    pub linear_regression_result: Option<LinearRegressionAnalysisResult>,
+    pub chi_squared_result: Option<ChiSquaredAnalysisResult>,
+    pub two_proportion_result: Option<TwoProportionAnalysisResult>,
     pub results_preview: String,
     pub status_message: String,
 }
@@ -250,9 +269,10 @@ impl ProjectState {
                 row_filter_query: snapshot.table_view.row_filter_query,
                 visible_row_indices: Vec::new(),
             },
-            results_preview: String::new(),
-            status_message: "Project loaded".to_owned(),
+            ..Default::default()
         };
+        state.results_preview = String::new();
+        state.status_message = "Project loaded".to_owned();
         state.refresh_visible_row_indices();
         state
     }
@@ -260,7 +280,14 @@ impl ProjectState {
     pub fn replace_data_table(&mut self, table: DataTable) {
         self.data_table = table;
         self.table_view.reset();
+        self.clear_analysis_results();
         self.refresh_visible_row_indices();
+    }
+
+    pub fn clear_analysis_results(&mut self) {
+        self.linear_regression_result = None;
+        self.chi_squared_result = None;
+        self.two_proportion_result = None;
     }
 
     pub fn loaded_file_name(&self) -> Option<String> {
@@ -406,6 +433,7 @@ impl ProjectState {
     }
 
     fn after_table_mutation(&mut self) {
+        self.clear_analysis_results();
         if let Some(sort_column) = self.table_view.sort_column {
             let _ = self
                 .data_table

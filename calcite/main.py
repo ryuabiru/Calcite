@@ -1,6 +1,7 @@
 # main.py
 
 import sys
+import warnings
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt, QCoreApplication
 from .main_window import MainWindow
@@ -12,6 +13,11 @@ def plot(data=None):
     """
     Calciteアプリケーションを起動します。
     """
+    warnings.warn(
+        "The Python GUI is in retirement groundwork. Use the Rust/Tauri app for primary development.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if not QApplication.instance():
         QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     

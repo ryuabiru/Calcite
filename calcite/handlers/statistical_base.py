@@ -1,4 +1,5 @@
 from __future__ import annotations
+import warnings
 
 from PySide6.QtWidgets import QMessageBox
 
@@ -8,6 +9,12 @@ from calcite.services.statistics_service import (
     build_effective_groups,
     format_annotation_pair,
     prepare_analysis_dataframe,
+)
+
+warnings.warn(
+    "calcite.handlers.statistical_base is part of the legacy Python UI and will be retired after the Rust migration.",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
 

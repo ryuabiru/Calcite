@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+import warnings
+
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import QMenu, QToolBar
+
+warnings.warn(
+    "calcite.main_window_builders is legacy Python UI scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 def build_menu_bar(window):
@@ -34,7 +42,6 @@ def build_graph_toolbar(window):
         ("Violin Plot", "violin", False),
         ("Line Plot", "lineplot", False),
         ("Point Plot", "pointplot", False),
-        ("Paired Scatter", "paired_scatter", False),
         ("Histogram", "histogram", False),
     ]:
         action = QAction(label, window)
@@ -157,47 +164,13 @@ def _build_data_menu(window, menu_bar):
     pivot_action.triggered.connect(window.action_handler.show_pivot_dialog)
     data_menu.addAction(pivot_action)
 
-    filter_action = QAction("Filter...", window)
-    filter_action.triggered.connect(window.action_handler.show_advanced_filter_dialog)
-    data_menu.addAction(filter_action)
-
-    calculate_action = QAction("Calculate New Column...", window)
-    calculate_action.triggered.connect(window.action_handler.show_calculate_dialog)
-    data_menu.addAction(calculate_action)
-
 
 def _build_analysis_menu(window, menu_bar):
     analysis_menu = menu_bar.addMenu("Analysis")
     analysis_menu.addSection("Compare Means / Medians")
 
     for label, callback in [
-        ("Independent t-test...", window.action_handler.statistical_handler.perform_t_test),
-        ("Paired t-test...", window.action_handler.statistical_handler.perform_paired_t_test),
         ("One-way ANOVA...", window.action_handler.statistical_handler.perform_one_way_anova),
-    ]:
-        action = QAction(label, window)
-        action.triggered.connect(callback)
-        analysis_menu.addAction(action)
-
-    analysis_menu.addSeparator()
-    analysis_menu.addSection("Non-parametric Tests")
-    for label, callback in [
-        ("Mann-Whitney U test...", window.action_handler.statistical_handler.perform_mannwhitney_test),
-        ("Wilcoxon signed-rank test...", window.action_handler.statistical_handler.perform_wilcoxon_test),
-        ("Kruskal-Wallis test...", window.action_handler.statistical_handler.perform_kruskal_test),
-    ]:
-        action = QAction(label, window)
-        action.triggered.connect(callback)
-        analysis_menu.addAction(action)
-
-    analysis_menu.addSeparator()
-    analysis_menu.addSection("Assess Associations & Relationships")
-    for label, callback in [
-        ("2-Proportion z-test...", window.action_handler.statistical_handler.perform_two_proportion_test),
-        ("Correlation (Pearson)...", window.action_handler.statistical_handler.perform_pearson_correlation),
-        ("Correlation (Spearman)...", window.action_handler.statistical_handler.perform_spearman_correlation),
-        ("Chi-squared Test...", window.action_handler.statistical_handler.perform_chi_squared_test),
-        ("Regression...", window.action_handler.statistical_handler.perform_regression),
     ]:
         action = QAction(label, window)
         action.triggered.connect(callback)
@@ -212,6 +185,6 @@ def _build_analysis_menu(window, menu_bar):
 
 def _build_help_menu(window, menu_bar):
     help_menu = menu_bar.addMenu("Help")
-    license_action = QAction("Licenses...", window)
-    license_action.triggered.connect(window.action_handler.show_license_dialog)
-    help_menu.addAction(license_action)
+    migration_notes_action = QAction("Python Retirement Notes...", window)
+    migration_notes_action.triggered.connect(window.action_handler.show_migration_notes)
+    help_menu.addAction(migration_notes_action)

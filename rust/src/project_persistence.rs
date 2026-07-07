@@ -60,7 +60,13 @@ pub struct PersistedTableView {
     pub row_filter_query: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PersistedSettingsFile {
+    pub settings: ProjectSettingsSnapshot,
+    pub table_view: PersistedTableView,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PersistedAnalysisState {
     pub statistical_annotations: Vec<Value>,
     pub paired_annotations: Vec<Value>,
@@ -135,6 +141,25 @@ impl From<&ProjectState> for PersistedProjectState {
     }
 }
 
+impl From<&ProjectState> for PersistedSettingsFile {
+    fn from(state: &ProjectState) -> Self {
+        Self {
+            settings: ProjectSettingsSnapshot {
+                loaded_file_path: state
+                    .loaded_file_path
+                    .as_ref()
+                    .map(|path| path.display().to_string()),
+                current_graph_type: state.current_graph_type.clone(),
+                x_column: state.x_column.clone(),
+                y_column: state.y_column.clone(),
+                subgroup_column: state.subgroup_column.clone(),
+                heatmap_normalization: state.heatmap_normalization_mode,
+            },
+            table_view: PersistedTableView::from(&state.table_view),
+        }
+    }
+}
+
 impl From<&TableViewState> for PersistedTableView {
     fn from(state: &TableViewState) -> Self {
         Self {
@@ -153,6 +178,7 @@ pub fn save_project_directory(
     let directory = directory.as_ref();
     let manifest = ProjectArchiveManifest::new(!state.data_table.is_empty());
     let snapshot = PersistedProjectState::from(state);
+    let settings = PersistedSettingsFile::from(state);
 
     if manifest.files.dataframe.is_some() {
         let csv_path = directory.join(DATAFRAME_FILENAME);
@@ -160,7 +186,7 @@ pub fn save_project_directory(
     }
 
     let settings_path = directory.join(SETTINGS_FILENAME);
-    write_json(&settings_path, &snapshot)?;
+    write_json(&settings_path, &settings)?;
 
     let analysis_path = directory.join(ANALYSIS_FILENAME);
     write_json(&analysis_path, &snapshot.analysis)?;
@@ -184,7 +210,58 @@ pub fn load_project_directory(
         ));
     }
 
-    read_json::<PersistedProjectState>(&directory.join(SETTINGS_FILENAME))
+    let settings_path = directory.join(SETTINGS_FILENAME);
+    let legacy_snapshot = read_json::<PersistedProjectState>(&settings_path).ok();
+    let settings = if let Some(snapshot) = legacy_snapshot.as_ref() {
+        PersistedSettingsFile {
+            settings: snapshot.settings.clone(),
+            table_view: snapshot.table_view.clone(),
+        }
+    } else {
+        read_json::<PersistedSettingsFile>(&settings_path)?
+    };
+
+    let table = match manifest.files.dataframe.as_deref() {
+        Some(relative_path) => {
+            let csv_path = directory.join(relative_path);
+            match read_csv(&csv_path) {
+                Ok(table) => table,
+                Err(error) => {
+                    if let Some(snapshot) = legacy_snapshot.as_ref() {
+                        snapshot.table.clone()
+                    } else {
+                        return Err(error);
+                    }
+                }
+            }
+        }
+        None => legacy_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.table.clone())
+            .unwrap_or_else(empty_table),
+    };
+
+    let analysis_path = directory.join(ANALYSIS_FILENAME);
+    let analysis = read_json::<PersistedAnalysisState>(&analysis_path)
+        .or_else(|_| {
+            legacy_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.analysis.clone())
+                .ok_or_else(|| {
+                    format!(
+                        "Failed to read analysis state '{}'",
+                        analysis_path.display()
+                    )
+                })
+        })
+        .unwrap_or_default();
+
+    Ok(PersistedProjectState {
+        settings: settings.settings,
+        table,
+        table_view: settings.table_view,
+        analysis,
+    })
 }
 
 fn write_csv(path: &Path, headers: &[String], rows: &[Vec<String>]) -> Result<(), String> {
@@ -211,6 +288,50 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
         .map_err(|error| format!("Failed to serialize JSON '{}': {error}", path.display()))?;
     fs::write(path, json)
         .map_err(|error| format!("Failed to write JSON '{}': {error}", path.display()))
+}
+
+fn read_csv(path: &Path) -> Result<PersistedTable, String> {
+    let mut reader = csv::Reader::from_path(path)
+        .map_err(|error| format!("Failed to open CSV '{}': {error}", path.display()))?;
+
+    let headers = reader
+        .headers()
+        .map_err(|error| format!("Failed to read CSV headers '{}': {error}", path.display()))?
+        .iter()
+        .map(|value| value.to_owned())
+        .collect::<Vec<_>>();
+
+    let mut rows = Vec::new();
+    for record in reader.records() {
+        let record = record
+            .map_err(|error| format!("Failed to read CSV row '{}': {error}", path.display()))?;
+        rows.push(record.iter().map(|value| value.to_owned()).collect());
+    }
+
+    let table = crate::state::DataTable::from_rows(headers, rows);
+    Ok(PersistedTable {
+        headers: table.headers,
+        rows: table.rows,
+        column_metadata: table
+            .column_metadata
+            .into_iter()
+            .map(|metadata| PersistedColumnMetadata {
+                index: metadata.index,
+                name: metadata.name,
+                kind: metadata.kind,
+                non_empty_count: metadata.non_empty_count,
+                distinct_count: metadata.distinct_count,
+            })
+            .collect(),
+    })
+}
+
+fn empty_table() -> PersistedTable {
+    PersistedTable {
+        headers: Vec::new(),
+        rows: Vec::new(),
+        column_metadata: Vec::new(),
+    }
 }
 
 fn read_manifest(path: &Path) -> Result<ProjectArchiveManifest, String> {
@@ -331,5 +452,35 @@ mod tests {
 
         assert!(json.contains("\"schema_version\":2"));
         assert!(json.contains("\"dataframe\":null"));
+    }
+
+    #[test]
+    fn save_project_writes_settings_separately_from_table_snapshot() {
+        let temp_dir = std::env::temp_dir().join("calcite_rust_persistence_layout");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let mut project = ProjectState::new();
+        project.current_graph_type = "Heatmap".to_owned();
+        project.x_column = "x".to_owned();
+        project.data_table = DataTable::from_rows(
+            vec!["x".to_owned(), "y".to_owned()],
+            vec![vec!["A".to_owned(), "1".to_owned()]],
+        );
+
+        save_project_directory(&temp_dir, &project).expect("save project");
+
+        let settings_text =
+            fs::read_to_string(temp_dir.join(SETTINGS_FILENAME)).expect("read settings");
+        assert!(settings_text.contains("\"settings\""));
+        assert!(settings_text.contains("\"table_view\""));
+        assert!(!settings_text.contains("\"table\""));
+
+        let loaded = load_project_directory(&temp_dir).expect("load project");
+        assert_eq!(loaded.settings.current_graph_type, "Heatmap");
+        assert_eq!(loaded.table.headers, vec!["x", "y"]);
+        assert_eq!(loaded.table.rows, vec![vec!["A", "1"]]);
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

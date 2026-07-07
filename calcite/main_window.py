@@ -1,10 +1,19 @@
 # main_window.py
 
 from PySide6.QtWidgets import (
-    QMainWindow, QSplitter, QTableView, QMessageBox,
-    QTabWidget, QScrollArea
+    QFrame,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QScrollArea,
+    QSplitter,
+    QTabWidget,
+    QTableView,
+    QVBoxLayout,
+    QWidget,
 )
 from PySide6.QtCore import Qt
+import warnings
 
 # --- Local Imports ---
 from .graph_widget import GraphWidget
@@ -32,6 +41,11 @@ class MainWindow(QMainWindow):
     UIの配置と、各ハンドラーへの処理の委譲を担当する。
     """
     def __init__(self, data=None):
+        warnings.warn(
+            "calcite.main_window is legacy Python UI scaffolding kept for parity checks.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__()
         self.setWindowTitle("Calcite")
         self.resize(1380, 920)
@@ -52,6 +66,10 @@ class MainWindow(QMainWindow):
         self._create_menu_bar()
         self._create_toolbar()
         self._connect_signals()
+        self.statusBar().showMessage(
+            "Legacy Python GUI: use Rust/Tauri for primary development.",
+            10000,
+        )
         
         self.table_view.installEventFilter(self)
         
@@ -112,7 +130,6 @@ class MainWindow(QMainWindow):
             dataframe=dataframe,
             settings=self.properties_widget.get_properties(),
             statistical_annotations=self.app_state.statistical_annotations,
-            paired_annotations=self.app_state.paired_annotations,
             regression_line_params=self.app_state.regression_line_params,
             fit_params=self.app_state.fit_params,
         )
@@ -123,16 +140,37 @@ class MainWindow(QMainWindow):
         if state.settings:
             self.properties_widget.set_properties(state.settings)
         self.app_state.statistical_annotations = state.statistical_annotations
-        self.app_state.paired_annotations = state.paired_annotations
         self.app_state.regression_line_params = state.regression_line_params
         self.app_state.fit_params = state.fit_params
         self.graph_manager.update_graph()
 
 
     def _setup_ui(self):
+        central_widget = QWidget()
+        central_layout = QVBoxLayout(central_widget)
+        central_layout.setContentsMargins(12, 12, 12, 12)
+        central_layout.setSpacing(10)
+
+        retirement_banner = QFrame()
+        retirement_banner.setObjectName("retirementBanner")
+        retirement_layout = QVBoxLayout(retirement_banner)
+        retirement_layout.setContentsMargins(16, 12, 16, 12)
+        retirement_layout.setSpacing(4)
+
+        banner_title = QLabel("Legacy Python GUI")
+        banner_title.setObjectName("sectionTitle")
+        banner_message = QLabel(
+            "Rust/Tauri is now the primary development target. Use this window for parity checks and migration support."
+        )
+        banner_message.setWordWrap(True)
+        retirement_layout.addWidget(banner_title)
+        retirement_layout.addWidget(banner_message)
+        central_layout.addWidget(retirement_banner)
+
         # メインの分割を水平（左右）にする
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.setCentralWidget(main_splitter)
+        central_layout.addWidget(main_splitter)
+        self.setCentralWidget(central_widget)
 
         # --- 左カラム（タブ形式） ---
         left_tab_widget = QTabWidget()

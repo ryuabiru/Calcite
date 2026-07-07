@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import traceback
+import warnings
 
 from PySide6.QtWidgets import QMessageBox
 
 from ..application import CreateChildWindowUseCase, CreateSubsetUseCase
 from .action_base import ActionHandlerBase
+
+warnings.warn(
+    "calcite.handlers.action_table_handler is legacy Python UI scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class ActionTableHandler(ActionHandlerBase):

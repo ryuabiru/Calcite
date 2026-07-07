@@ -1,7 +1,15 @@
 # pandas_model.py
 
+import warnings
+
 import pandas as pd
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
+
+warnings.warn(
+    "calcite.pandas_model is legacy Python UI scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 class PandasModel(QAbstractTableModel):
     """

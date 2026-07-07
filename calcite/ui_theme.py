@@ -189,6 +189,16 @@ def build_application_stylesheet() -> str:
         border-radius: 16px;
     }
 
+    QFrame#retirementBanner {
+        background: #fff2e2;
+        border: 1px solid #e0a86f;
+        border-radius: 14px;
+    }
+
+    QFrame#retirementBanner QLabel {
+        background: transparent;
+    }
+
     QTextEdit {
         padding: 10px 12px;
     }

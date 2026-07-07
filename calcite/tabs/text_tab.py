@@ -1,4 +1,5 @@
 # tabs/text_tab.py
+import warnings
 
 from PySide6.QtWidgets import (
     QWidget, QFormLayout, QLabel, QLineEdit, 
@@ -7,6 +8,12 @@ from PySide6.QtWidgets import (
 )
 
 from .format_tab import NoScrollComboBox, NoScrollSpinBox, NoScrollDoubleSpinBox
+
+warnings.warn(
+    "calcite.tabs.text_tab is part of the legacy Python UI and will be retired after the Rust migration.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 class TextTab(QWidget):
     """テキストと凡例の設定タブのUIとロジック"""
@@ -32,16 +39,6 @@ class TextTab(QWidget):
         text_layout.addRow(QLabel("Title:"), self.title_edit)
         text_layout.addRow(QLabel("X-Axis Label:"), self.xaxis_edit)
         text_layout.addRow(QLabel("Y-Axis Label:"), self.yaxis_edit)
-        
-        # Paired scatter labels
-        self.paired_label1_label = QLabel("Paired Label 1:")
-        self.paired_label1_edit = QLineEdit()
-        self.paired_label2_label = QLabel("Paired Label 2:")
-        self.paired_label2_edit = QLineEdit()
-        text_layout.addRow(self.paired_label1_label, self.paired_label1_edit)
-        text_layout.addRow(self.paired_label2_label, self.paired_label2_edit)
-        self.paired_widgets = [self.paired_label1_label, self.paired_label1_edit, self.paired_label2_label, self.paired_label2_edit]
-        self.update_paired_labels_visibility(False) # Initially hidden
         
         main_layout.addWidget(text_group)
 
@@ -104,8 +101,6 @@ class TextTab(QWidget):
             'title': self.title_edit.text(),
             'xlabel': self.xaxis_edit.text(),
             'ylabel': self.yaxis_edit.text(),
-            'paired_label1': self.paired_label1_edit.text(),
-            'paired_label2': self.paired_label2_edit.text(),
             'title_fontsize': self.title_fontsize_spin.value(),
             'xlabel_fontsize': self.xlabel_fontsize_spin.value(),
             'ylabel_fontsize': self.ylabel_fontsize_spin.value(),
@@ -120,8 +115,6 @@ class TextTab(QWidget):
         self.title_edit.setText(props.get('title', ''))
         self.xaxis_edit.setText(props.get('xlabel', ''))
         self.yaxis_edit.setText(props.get('ylabel', ''))
-        self.paired_label1_edit.setText(props.get('paired_label1', ''))
-        self.paired_label2_edit.setText(props.get('paired_label2', ''))
         
         self.title_fontsize_spin.setValue(props.get('title_fontsize', 16))
         self.xlabel_fontsize_spin.setValue(props.get('xlabel_fontsize', 15))
@@ -136,11 +129,6 @@ class TextTab(QWidget):
             
         self.legend_title_edit.setText(props.get('legend_title', ''))
         self.legend_alpha_spin.setValue(props.get('legend_alpha', 1.0))
-
-    def update_paired_labels_visibility(self, visible):
-        """Show or hide the paired scatter labels"""
-        for widget in self.paired_widgets:
-            widget.setVisible(visible)
 
     def get_legend_position(self):
         return self.legend_pos_combo.currentData()

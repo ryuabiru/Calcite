@@ -21,8 +21,6 @@ def normalize_plot_request(request: PlotRequest) -> PlotRequest:
         y_col=request.y_col,
         subgroup_col=subgroup_col,
         facet_col=request.facet_col,
-        col1=request.col1,
-        col2=request.col2,
         properties=request.properties,
     )
 
@@ -59,14 +57,6 @@ class AnnotationSpec:
     box_pairs: list
     p_values: list[float]
     annotator_kwargs: dict
-
-
-@dataclass(frozen=True)
-class PairedPlotData:
-    plot_df_long: pd.DataFrame
-    tick_labels: list[str]
-    mean_x: pd.Index
-    mean_y: pd.Series
 
 
 @dataclass(frozen=True)
@@ -649,56 +639,4 @@ def build_annotation_spec(
         box_pairs=box_pairs,
         p_values=p_values,
         annotator_kwargs=annotator_kwargs,
-    )
-
-
-def build_paired_plot_data(df: pd.DataFrame, request: PlotRequest) -> PairedPlotData | None:
-    if not (request.col1 and request.col2 and request.col1 != request.col2):
-        return None
-
-    plot_df = df[[request.col1, request.col2]].dropna().copy()
-    if plot_df.empty:
-        return None
-
-    plot_df["ID"] = range(len(plot_df))
-    plot_df_long = pd.melt(
-        plot_df,
-        id_vars="ID",
-        value_vars=[request.col1, request.col2],
-        var_name="Condition",
-        value_name="Value",
-    )
-    mean_y = plot_df_long.groupby("Condition")["Value"].mean().reindex([request.col1, request.col2])
-    tick_labels = [
-        request.properties.get("paired_label1") or request.col1,
-        request.properties.get("paired_label2") or request.col2,
-    ]
-
-    return PairedPlotData(
-        plot_df_long=plot_df_long,
-        tick_labels=tick_labels,
-        mean_x=mean_y.index,
-        mean_y=mean_y,
-    )
-
-
-def build_paired_annotation_spec(plot_df_long: pd.DataFrame, annotations_to_plot: list[dict], ax) -> AnnotationSpec | None:
-    if not annotations_to_plot:
-        return None
-
-    box_pairs = [ann["box_pair"] for ann in annotations_to_plot]
-    p_values = [ann["p_value"] for ann in annotations_to_plot]
-    if not box_pairs:
-        return None
-
-    return AnnotationSpec(
-        box_pairs=box_pairs,
-        p_values=p_values,
-        annotator_kwargs={
-            "ax": ax,
-            "pairs": box_pairs,
-            "data": plot_df_long,
-            "x": "Condition",
-            "y": "Value",
-        },
     )

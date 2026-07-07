@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import warnings
 
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
-from ..dialogs.advanced_filter_dialog import AdvancedFilterDialog
-from ..dialogs.calculate_dialog import CalculateDialog
 from ..dialogs.pivot_dialog import PivotDialog
 from ..dialogs.restructure_dialog import RestructureDialog
+
+warnings.warn(
+    "calcite.handlers.action_dialog_adapters is legacy Python UI scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 @dataclass(frozen=True)
@@ -49,17 +54,6 @@ def get_clipboard_text():
     return QApplication.clipboard().text()
 
 
-def choose_calculate_settings(parent, columns):
-    dialog = CalculateDialog(columns, parent)
-    if not dialog.exec():
-        return None
-    settings = dialog.get_settings()
-    if not settings["new_column_name"] or not settings["formula"]:
-        QMessageBox.warning(parent, "Warning", "Please enter both a new column name and a formula.")
-        return None
-    return settings
-
-
 def choose_restructure_settings(parent, columns):
     dialog = RestructureDialog(columns, parent)
     if not dialog.exec():
@@ -78,16 +72,5 @@ def choose_pivot_settings(parent, columns):
     settings = dialog.get_settings()
     if not all(settings.values()):
         QMessageBox.warning(parent, "Warning", "Please select all three columns.")
-        return None
-    return settings
-
-
-def choose_filter_settings(parent, dataframe):
-    dialog = AdvancedFilterDialog(dataframe, parent)
-    if not dialog.exec():
-        return None
-    settings = dialog.get_settings()
-    if not settings:
-        QMessageBox.warning(parent, "Warning", "One or more filter conditions are incomplete or invalid.")
         return None
     return settings

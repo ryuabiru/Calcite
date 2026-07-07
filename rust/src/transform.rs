@@ -27,10 +27,10 @@ pub fn restructure_dataframe(
     headers.push(value_name.to_owned());
 
     let mut rows = Vec::with_capacity(table.rows.len() * value_indices.len());
-    for row in &table.rows {
-        let id_values = extract_cells(row, &id_indices);
-        for (value_label, value_index) in value_vars.iter().zip(value_indices.iter()) {
-            let mut new_row = id_values.clone();
+    for (value_label, value_index) in value_vars.iter().zip(value_indices.iter()) {
+        for row in &table.rows {
+            let id_values = extract_cells(row, &id_indices);
+            let mut new_row = id_values;
             new_row.push(value_label.clone());
             new_row.push(cell_value(row, *value_index));
             rows.push(new_row);
@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(result.headers, vec!["category", "kind", "amount"]);
         assert_eq!(result.rows.len(), 10);
         assert_eq!(result.rows[0], vec!["A", "label", "x"]);
-        assert_eq!(result.rows[1], vec!["A", "value", "1"]);
+        assert_eq!(result.rows[1], vec!["A", "label", "y"]);
     }
 
     #[test]

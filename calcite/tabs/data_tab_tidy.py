@@ -1,9 +1,16 @@
 # tabs/data_tab_tidy.py
+import warnings
 
 from PySide6.QtWidgets import QWidget, QFormLayout, QLabel, QComboBox
 from PySide6.QtCore import Signal
 
 from .format_tab import NoScrollComboBox
+
+warnings.warn(
+    "calcite.tabs.data_tab_tidy is part of the legacy Python UI and will be retired after the Rust migration.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 class TidyDataTab(QWidget):
     """

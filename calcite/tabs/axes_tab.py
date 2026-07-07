@@ -1,4 +1,6 @@
 # tabs/axes_tab.py
+import warnings
+
 from PySide6.QtWidgets import (
     QWidget, QFormLayout, QLabel, QLineEdit, 
     QHBoxLayout, QCheckBox, QScrollArea, QVBoxLayout, QGroupBox
@@ -6,6 +8,12 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QDoubleValidator
 
 from .format_tab import NoScrollComboBox, NoScrollDoubleSpinBox
+
+warnings.warn(
+    "calcite.tabs.axes_tab is part of the legacy Python UI and will be retired after the Rust migration.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 class AxesTab(QWidget):
     """軸設定タブのUIとロジック"""

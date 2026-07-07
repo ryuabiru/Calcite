@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import warnings
+
 from PySide6.QtCore import QSettings
+
+warnings.warn(
+    "calcite.main_window_persistence is legacy Python UI scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class MainWindowPersistence:

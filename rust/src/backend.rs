@@ -1,5 +1,17 @@
 use std::path::PathBuf;
 
+use crate::analysis::{
+    format_chi_squared_result, format_four_pl_regression_result, format_independent_t_test_result,
+    format_kruskal_wallis_result, format_linear_regression_result, format_mann_whitney_u_result,
+    format_one_way_anova_result, format_paired_t_test_result, format_pearson_correlation_result,
+    format_shapiro_wilk_result, format_spearman_correlation_result, format_two_proportion_result,
+    format_wilcoxon_signed_rank_result,
+    run_chi_squared_analysis, run_four_pl_regression_analysis, run_independent_t_test_analysis,
+    run_kruskal_wallis_analysis, run_linear_regression_analysis, run_mann_whitney_u_analysis,
+    run_one_way_anova_analysis, run_paired_t_test_analysis, run_pearson_correlation_analysis,
+    run_shapiro_wilk_analysis, run_spearman_correlation_analysis, run_two_proportion_analysis,
+    run_wilcoxon_signed_rank_analysis,
+};
 use crate::core::AppCommand;
 use crate::project_persistence::{load_project_directory, save_project_directory};
 use crate::state::ProjectState;
@@ -69,6 +81,45 @@ impl AppBackend {
                 self.project.y_column = y_column;
                 self.project.subgroup_column = subgroup_column;
                 Ok(())
+            }
+            AppCommand::RunPearsonCorrelationAnalysis { col1, col2 } => {
+                self.run_pearson_correlation_analysis(col1, col2)
+            }
+            AppCommand::RunSpearmanCorrelationAnalysis { col1, col2 } => {
+                self.run_spearman_correlation_analysis(col1, col2)
+            }
+            AppCommand::RunIndependentTTestAnalysis { col1, col2 } => {
+                self.run_independent_t_test_analysis(col1, col2)
+            }
+            AppCommand::RunPairedTTestAnalysis { col1, col2 } => {
+                self.run_paired_t_test_analysis(col1, col2)
+            }
+            AppCommand::RunOneWayAnovaAnalysis { group_col, value_col } => {
+                self.run_one_way_anova_analysis(group_col, value_col)
+            }
+            AppCommand::RunShapiroWilkAnalysis { group_col, value_col } => {
+                self.run_shapiro_wilk_analysis(group_col, value_col)
+            }
+            AppCommand::RunMannWhitneyUAnalysis { col1, col2 } => {
+                self.run_mann_whitney_u_analysis(col1, col2)
+            }
+            AppCommand::RunWilcoxonSignedRankAnalysis { col1, col2 } => {
+                self.run_wilcoxon_signed_rank_analysis(col1, col2)
+            }
+            AppCommand::RunKruskalWallisAnalysis { group_col, value_col } => {
+                self.run_kruskal_wallis_analysis(group_col, value_col)
+            }
+            AppCommand::RunLinearRegressionAnalysis { col1, col2 } => {
+                self.run_linear_regression_analysis(col1, col2)
+            }
+            AppCommand::RunFourPlRegressionAnalysis { col1, col2 } => {
+                self.run_four_pl_regression_analysis(col1, col2)
+            }
+            AppCommand::RunTwoProportionAnalysis { rows_col, cols_col } => {
+                self.run_two_proportion_analysis(rows_col, cols_col)
+            }
+            AppCommand::RunChiSquaredAnalysis { rows_col, cols_col } => {
+                self.run_chi_squared_analysis(rows_col, cols_col)
             }
             AppCommand::EditCell {
                 row_index,
@@ -245,6 +296,224 @@ impl AppBackend {
         );
         Ok(())
     }
+
+    fn run_chi_squared_analysis(
+        &mut self,
+        rows_col: String,
+        cols_col: String,
+    ) -> Result<(), String> {
+        let result = run_chi_squared_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &rows_col,
+            &cols_col,
+        )?;
+        self.project.chi_squared_result = Some(result.clone());
+        self.project.status_message = format!(
+            "Chi-squared analysis completed for {} vs {}",
+            rows_col, cols_col
+        );
+        self.project.results_preview = format_chi_squared_result(&result);
+        Ok(())
+    }
+
+    fn run_two_proportion_analysis(
+        &mut self,
+        rows_col: String,
+        cols_col: String,
+    ) -> Result<(), String> {
+        let result = run_two_proportion_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &rows_col,
+            &cols_col,
+        )?;
+        self.project.two_proportion_result = Some(result.clone());
+        self.project.status_message = format!(
+            "2-proportion z-test completed for {} vs {}",
+            rows_col, cols_col
+        );
+        self.project.results_preview = format_two_proportion_result(&result);
+        Ok(())
+    }
+
+    fn run_pearson_correlation_analysis(
+        &mut self,
+        col1: String,
+        col2: String,
+    ) -> Result<(), String> {
+        let result = run_pearson_correlation_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &col1,
+            &col2,
+        )?;
+        self.project.status_message = format!(
+            "Pearson correlation completed for {} vs {}",
+            col1, col2
+        );
+        self.project.results_preview = format_pearson_correlation_result(&result);
+        Ok(())
+    }
+
+    fn run_spearman_correlation_analysis(
+        &mut self,
+        col1: String,
+        col2: String,
+    ) -> Result<(), String> {
+        let result = run_spearman_correlation_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &col1,
+            &col2,
+        )?;
+        self.project.status_message = format!(
+            "Spearman correlation completed for {} vs {}",
+            col1, col2
+        );
+        self.project.results_preview = format_spearman_correlation_result(&result);
+        Ok(())
+    }
+
+    fn run_independent_t_test_analysis(
+        &mut self,
+        col1: String,
+        col2: String,
+    ) -> Result<(), String> {
+        let result = run_independent_t_test_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &col1,
+            &col2,
+        )?;
+        self.project.status_message = format!("Independent t-test completed for {} vs {}", col1, col2);
+        self.project.results_preview = format_independent_t_test_result(&result);
+        Ok(())
+    }
+
+    fn run_paired_t_test_analysis(&mut self, col1: String, col2: String) -> Result<(), String> {
+        let result = run_paired_t_test_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &col1,
+            &col2,
+        )?;
+        self.project.status_message = format!("Paired t-test completed for {} vs {}", col1, col2);
+        self.project.results_preview = format_paired_t_test_result(&result);
+        Ok(())
+    }
+
+    fn run_one_way_anova_analysis(
+        &mut self,
+        group_col: String,
+        value_col: String,
+    ) -> Result<(), String> {
+        let result = run_one_way_anova_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &group_col,
+            &value_col,
+        )?;
+        self.project.status_message = format!("One-way ANOVA completed for {} vs {}", group_col, value_col);
+        self.project.results_preview = format_one_way_anova_result(&result);
+        Ok(())
+    }
+
+    fn run_shapiro_wilk_analysis(
+        &mut self,
+        group_col: String,
+        value_col: String,
+    ) -> Result<(), String> {
+        let result = run_shapiro_wilk_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &group_col,
+            &value_col,
+        )?;
+        self.project.status_message = format!("Shapiro-Wilk test completed for {} vs {}", group_col, value_col);
+        self.project.results_preview = format_shapiro_wilk_result(&result);
+        Ok(())
+    }
+
+    fn run_mann_whitney_u_analysis(&mut self, col1: String, col2: String) -> Result<(), String> {
+        let result = run_mann_whitney_u_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &col1,
+            &col2,
+        )?;
+        self.project.status_message = format!("Mann-Whitney U test completed for {} vs {}", col1, col2);
+        self.project.results_preview = format_mann_whitney_u_result(&result);
+        Ok(())
+    }
+
+    fn run_wilcoxon_signed_rank_analysis(
+        &mut self,
+        col1: String,
+        col2: String,
+    ) -> Result<(), String> {
+        let result = run_wilcoxon_signed_rank_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &col1,
+            &col2,
+        )?;
+        self.project.status_message = format!("Wilcoxon signed-rank test completed for {} vs {}", col1, col2);
+        self.project.results_preview = format_wilcoxon_signed_rank_result(&result);
+        Ok(())
+    }
+
+    fn run_kruskal_wallis_analysis(
+        &mut self,
+        group_col: String,
+        value_col: String,
+    ) -> Result<(), String> {
+        let result = run_kruskal_wallis_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &group_col,
+            &value_col,
+        )?;
+        self.project.status_message = format!("Kruskal-Wallis test completed for {} vs {}", group_col, value_col);
+        self.project.results_preview = format_kruskal_wallis_result(&result);
+        Ok(())
+    }
+
+    fn run_linear_regression_analysis(
+        &mut self,
+        col1: String,
+        col2: String,
+    ) -> Result<(), String> {
+        let result = run_linear_regression_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &col1,
+            &col2,
+        )?;
+        self.project.linear_regression_result = Some(result.clone());
+        self.project.status_message = format!(
+            "Linear regression completed for {} vs {}",
+            col1, col2
+        );
+        self.project.results_preview = format_linear_regression_result(&result);
+        Ok(())
+    }
+
+    fn run_four_pl_regression_analysis(
+        &mut self,
+        col1: String,
+        col2: String,
+    ) -> Result<(), String> {
+        let result = run_four_pl_regression_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &col1,
+            &col2,
+        )?;
+        self.project.status_message = format!("4PL regression completed for {} vs {}", col1, col2);
+        self.project.results_preview = format_four_pl_regression_result(&result);
+        Ok(())
+    }
 }
 
 fn build_csv_load_summary(project: &ProjectState, path: &PathBuf) -> String {
@@ -338,6 +607,394 @@ mod tests {
     }
 
     #[test]
+    fn run_chi_squared_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_chi_squared_test.csv");
+        fs::write(
+            &path,
+            "group,label\nA,Yes\nA,Yes\nA,No\nB,Yes\nB,No\nB,No\n",
+        )
+        .expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunChiSquaredAnalysis {
+                rows_col: "group".to_owned(),
+                cols_col: "label".to_owned(),
+            })
+            .expect("chi-squared analysis");
+
+        assert!(
+            backend
+                .project()
+                .results_preview
+                .contains("Chi-squared Test Results")
+        );
+        assert!(backend.project().chi_squared_result.is_some());
+        assert!(
+            backend
+                .project()
+                .results_preview
+                .contains("Cramer's V")
+        );
+        assert_eq!(
+            backend.project().status_message,
+            "Chi-squared analysis completed for group vs label"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn run_pearson_correlation_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_pearson_test.csv");
+        fs::write(&path, "x,y\n1,2\n2,4\n3,6\n4,8\n").expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunPearsonCorrelationAnalysis {
+                col1: "x".to_owned(),
+                col2: "y".to_owned(),
+            })
+            .expect("pearson analysis");
+
+        assert!(
+            backend
+                .project()
+                .results_preview
+                .contains("Pearson Correlation Results")
+        );
+        assert!(
+            backend
+                .project()
+                .results_preview
+                .contains("Pearson's r")
+        );
+        assert_eq!(
+            backend.project().status_message,
+            "Pearson correlation completed for x vs y"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn run_spearman_correlation_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_spearman_test.csv");
+        fs::write(&path, "x,y\n1,10\n2,30\n3,20\n4,40\n").expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunSpearmanCorrelationAnalysis {
+                col1: "x".to_owned(),
+                col2: "y".to_owned(),
+            })
+            .expect("spearman analysis");
+
+        assert!(
+            backend
+                .project()
+                .results_preview
+                .contains("Spearman Correlation Results")
+        );
+        assert!(
+            backend
+                .project()
+                .results_preview
+                .contains("Spearman's rho")
+        );
+        assert_eq!(
+            backend.project().status_message,
+            "Spearman correlation completed for x vs y"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn run_independent_t_test_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_independent_t_test.csv");
+        fs::write(&path, "a,b\n1,2\n2,3\n3,4\n4,5\n").expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunIndependentTTestAnalysis {
+                col1: "a".to_owned(),
+                col2: "b".to_owned(),
+            })
+            .expect("independent t-test");
+
+        assert!(backend.project().results_preview.contains("Independent t-test Results"));
+        assert!(backend.project().results_preview.contains("p-value"));
+        assert_eq!(
+            backend.project().status_message,
+            "Independent t-test completed for a vs b"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn run_paired_t_test_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_paired_t_test.csv");
+        fs::write(&path, "a,b\n1,1.5\n2,2.5\n3,3.5\n4,4.5\n").expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunPairedTTestAnalysis {
+                col1: "a".to_owned(),
+                col2: "b".to_owned(),
+            })
+            .expect("paired t-test");
+
+        assert!(backend.project().results_preview.contains("Paired t-test Results"));
+        assert!(backend.project().results_preview.contains("Mean difference"));
+        assert_eq!(
+            backend.project().status_message,
+            "Paired t-test completed for a vs b"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn run_one_way_anova_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_anova_test.csv");
+        fs::write(&path, "group,value\nA,1\nA,2\nB,3\nB,4\nC,5\nC,6\n").expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunOneWayAnovaAnalysis {
+                group_col: "group".to_owned(),
+                value_col: "value".to_owned(),
+            })
+            .expect("anova");
+
+        assert!(backend.project().results_preview.contains("One-way ANOVA Results"));
+        assert!(backend.project().results_preview.contains("F-statistic"));
+        assert_eq!(
+            backend.project().status_message,
+            "One-way ANOVA completed for group vs value"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn run_shapiro_wilk_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_shapiro_test.csv");
+        fs::write(&path, "group,value\nA,1\nA,2\nA,3\nB,4\nB,5\nB,6\n").expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunShapiroWilkAnalysis {
+                group_col: "group".to_owned(),
+                value_col: "value".to_owned(),
+            })
+            .expect("shapiro");
+
+        assert!(backend.project().results_preview.contains("Shapiro-Wilk Normality Test Results"));
+        assert_eq!(
+            backend.project().status_message,
+            "Shapiro-Wilk test completed for group vs value"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn run_mann_whitney_u_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_mann_whitney_test.csv");
+        fs::write(&path, "a,b\n1,5\n2,4\n3,3\n4,2\n").expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunMannWhitneyUAnalysis {
+                col1: "a".to_owned(),
+                col2: "b".to_owned(),
+            })
+            .expect("mann whitney");
+
+        assert!(backend.project().results_preview.contains("Mann-Whitney U Test Results"));
+        assert_eq!(
+            backend.project().status_message,
+            "Mann-Whitney U test completed for a vs b"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn run_wilcoxon_signed_rank_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_wilcoxon_test.csv");
+        fs::write(&path, "a,b\n1,1.5\n2,2.2\n3,2.8\n4,4.1\n").expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunWilcoxonSignedRankAnalysis {
+                col1: "a".to_owned(),
+                col2: "b".to_owned(),
+            })
+            .expect("wilcoxon");
+
+        assert!(backend.project().results_preview.contains("Wilcoxon Signed-rank Test Results"));
+        assert_eq!(
+            backend.project().status_message,
+            "Wilcoxon signed-rank test completed for a vs b"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn run_kruskal_wallis_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_kruskal_test.csv");
+        fs::write(&path, "group,value\nA,1\nA,2\nB,3\nB,4\nC,5\nC,6\n").expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunKruskalWallisAnalysis {
+                group_col: "group".to_owned(),
+                value_col: "value".to_owned(),
+            })
+            .expect("kruskal");
+
+        assert!(backend.project().results_preview.contains("Kruskal-Wallis Test Results"));
+        assert_eq!(
+            backend.project().status_message,
+            "Kruskal-Wallis test completed for group vs value"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn run_linear_regression_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_linear_regression_test.csv");
+        fs::write(&path, "x,y\n1,2\n2,4\n3,6\n4,8\n").expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunLinearRegressionAnalysis {
+                col1: "x".to_owned(),
+                col2: "y".to_owned(),
+            })
+            .expect("linear regression analysis");
+
+        assert!(
+            backend
+                .project()
+                .results_preview
+                .contains("Linear Regression Results")
+        );
+        assert!(backend.project().linear_regression_result.is_some());
+        assert!(backend.project().results_preview.contains("R-squared"));
+        assert_eq!(
+            backend.project().status_message,
+            "Linear regression completed for x vs y"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn run_four_pl_regression_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_four_pl_test.csv");
+        fs::write(
+            &path,
+            "x,y\n0.1,0.25\n0.3,0.35\n1,0.7\n3,1.2\n10,1.75\n30,1.9\n",
+        )
+        .expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunFourPlRegressionAnalysis {
+                col1: "x".to_owned(),
+                col2: "y".to_owned(),
+            })
+            .expect("4pl");
+
+        assert!(backend.project().results_preview.contains("Non-linear Regression (4PL) Results"));
+        assert_eq!(
+            backend.project().status_message,
+            "4PL regression completed for x vs y"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn run_two_proportion_analysis_updates_results_preview() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_two_proportion_test.csv");
+        fs::write(
+            &path,
+            "group,label\nA,Yes\nA,Yes\nA,No\nB,Yes\nB,No\nB,No\n",
+        )
+        .expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::RunTwoProportionAnalysis {
+                rows_col: "group".to_owned(),
+                cols_col: "label".to_owned(),
+            })
+            .expect("two proportion analysis");
+
+        assert!(
+            backend
+                .project()
+                .results_preview
+                .contains("2-Proportion z-test Results")
+        );
+        assert!(backend.project().two_proportion_result.is_some());
+        assert!(backend.project().results_preview.contains("95% CI for difference"));
+        assert_eq!(
+            backend.project().status_message,
+            "2-proportion z-test completed for group vs label"
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
     fn load_csv_failure_keeps_error_detail_in_results() {
         let mut backend = AppBackend::new();
         let path = std::env::temp_dir().join("missing_calcite_rust.csv");
@@ -374,6 +1031,55 @@ mod tests {
 
         assert_eq!(backend.project().table_view.visible_row_indices, vec![1]);
         assert_eq!(backend.project().status_message, "Filtered 1 of 3 rows");
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn filtered_out_rows_do_not_fall_back_to_full_dataset_for_analysis() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_empty_filter_test.csv");
+        fs::write(&path, "x,y\n1,2\n3,4\n5,6\n").expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::SetRowFilter {
+                query: "missing".to_owned(),
+            })
+            .expect("set row filter");
+
+        let result = backend.dispatch(AppCommand::RunPearsonCorrelationAnalysis {
+            col1: "x".to_owned(),
+            col2: "y".to_owned(),
+        });
+
+        assert!(result.is_err());
+        assert_eq!(backend.project().table_view.visible_row_indices, Vec::<usize>::new());
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn toggle_sort_by_column_reorders_rows_and_updates_status() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_backend_sort_test.csv");
+        fs::write(&path, "name,value\nAlpha,3\nbeta,1\nGamma,2\n").expect("write temp csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv { path: path.clone() })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::ToggleSortByColumn { column_index: 1 })
+            .expect("sort by column");
+
+        assert_eq!(backend.project().data_table.rows[0][0], "beta");
+        assert_eq!(backend.project().data_table.rows[1][0], "Gamma");
+        assert_eq!(backend.project().data_table.rows[2][0], "Alpha");
+        assert_eq!(backend.project().table_view.sort_column, Some(1));
+        assert!(backend.project().table_view.sort_ascending);
+        assert_eq!(backend.project().status_message, "Sorted by value (ascending)");
 
         let _ = fs::remove_file(&path);
     }
@@ -465,6 +1171,22 @@ mod tests {
             })
             .expect("set filter");
         backend
+            .dispatch(AppCommand::SetGraphType {
+                graph_type: "Heatmap".to_owned(),
+            })
+            .expect("set graph type");
+        backend
+            .dispatch(AppCommand::SetColumns {
+                x_column: "name".to_owned(),
+                y_column: "value".to_owned(),
+                subgroup_column: "group".to_owned(),
+            })
+            .expect("set columns");
+        backend
+            .dispatch(AppCommand::ToggleSortByColumn { column_index: 1 })
+            .expect("sort by column");
+        backend.project_mut().toggle_row_selection(1);
+        backend
             .dispatch(AppCommand::SaveProject {
                 directory: path.clone(),
             })
@@ -479,6 +1201,12 @@ mod tests {
 
         assert_eq!(restored.project().data_table.headers, vec!["name", "value"]);
         assert_eq!(restored.project().table_view.row_filter_query, "A");
+        assert_eq!(restored.project().current_graph_type, "Heatmap");
+        assert_eq!(restored.project().x_column, "name");
+        assert_eq!(restored.project().y_column, "value");
+        assert_eq!(restored.project().subgroup_column, "group");
+        assert_eq!(restored.project().table_view.sort_column, Some(1));
+        assert_eq!(restored.project().table_view.selected_rows.len(), 1);
         assert_eq!(
             restored.project().status_message,
             format!("Project loaded from {}", path.display())

@@ -2,10 +2,17 @@
 このモジュールは、データフレームをワイド形式からロング形式に変換するための
 ユーザーインターフェースを提供するRestructureDialogクラスを定義します。
 """
+import warnings
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QLineEdit,
     QPushButton, QDialogButtonBox, QAbstractItemView
+)
+
+warnings.warn(
+    "calcite.dialogs.restructure_dialog is part of the legacy Python UI and will be retired after the Rust migration.",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
 class RestructureDialog(QDialog):

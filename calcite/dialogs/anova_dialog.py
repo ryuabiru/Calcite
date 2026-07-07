@@ -1,10 +1,17 @@
 # dialogs/anova_dialog.py
+import warnings
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QListWidget, QListWidgetItem,
     QDialogButtonBox, QAbstractItemView, QPushButton, QComboBox, QWidget
 )
 from PySide6.QtCore import Qt
+
+warnings.warn(
+    "calcite.dialogs.anova_dialog is part of the legacy Python UI and will be retired after the Rust migration.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 class AnovaDialog(QDialog):
     """

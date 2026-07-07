@@ -1,7 +1,15 @@
 # results_widget.py (新規作成)
 
+import warnings
+
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLabel
 from PySide6.QtGui import QFont
+
+warnings.warn(
+    "calcite.results_widget is legacy Python UI scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 class ResultsWidget(QWidget):
     """

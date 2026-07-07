@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 from .action_data_handler import ActionDataHandler
 from .action_file_handler import ActionFileHandler
 from .action_misc_handler import ActionMiscHandler
@@ -9,6 +11,11 @@ from .statistical_handler import StatisticalHandler
 
 class ActionHandler:
     def __init__(self, main_window):
+        warnings.warn(
+            "calcite.handlers.action_* is legacy Python UI scaffolding kept for parity checks.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.file_handler = ActionFileHandler(main_window)
         self.data_handler = ActionDataHandler(main_window)
         self.table_handler = ActionTableHandler(main_window)
@@ -30,12 +37,6 @@ class ActionHandler:
     def open_project(self):
         self.file_handler.open_project()
 
-    def show_calculate_dialog(self):
-        self.data_handler.show_calculate_dialog()
-
-    def calculate_new_column(self, settings):
-        self.data_handler.calculate_new_column(settings)
-
     def show_restructure_dialog(self):
         self.data_handler.show_restructure_dialog()
 
@@ -48,17 +49,11 @@ class ActionHandler:
     def pivot_data(self, settings):
         self.data_handler.pivot_data(settings)
 
-    def show_advanced_filter_dialog(self):
-        self.data_handler.show_advanced_filter_dialog()
-
-    def apply_advanced_filter(self, settings):
-        self.data_handler.apply_advanced_filter(settings)
-
     def create_table_from_selection(self):
         self.table_handler.create_table_from_selection()
 
-    def show_license_dialog(self):
-        self.misc_handler.show_license_dialog()
-
     def export_analysis_results(self):
         self.misc_handler.export_analysis_results()
+
+    def show_migration_notes(self):
+        self.misc_handler.show_migration_notes()

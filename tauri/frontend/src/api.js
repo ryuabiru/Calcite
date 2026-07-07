@@ -57,3 +57,72 @@ export async function applyGraphControls(graphType, query, xColumn, yColumn, sub
     subgroup_column: subgroupColumn,
   });
 }
+
+export async function toggleSortByColumn(columnIndex) {
+  return invoke("toggle_sort_by_column", { column_index: columnIndex });
+}
+
+export async function runPearsonCorrelationAnalysis(col1, col2) {
+  return invoke("run_pearson_correlation_analysis", { col1, col2 });
+}
+
+export async function runSpearmanCorrelationAnalysis(col1, col2) {
+  return invoke("run_spearman_correlation_analysis", { col1, col2 });
+}
+
+export async function runIndependentTTestAnalysis(col1, col2) {
+  return invoke("run_independent_t_test_analysis", { col1, col2 });
+}
+
+export async function runPairedTTestAnalysis(col1, col2) {
+  return invoke("run_paired_t_test_analysis", { col1, col2 });
+}
+
+export async function runOneWayAnovaAnalysis(groupCol, valueCol) {
+  return invoke("run_one_way_anova_analysis", { group_col: groupCol, value_col: valueCol });
+}
+
+export async function runShapiroWilkAnalysis(groupCol, valueCol) {
+  return invoke("run_shapiro_wilk_analysis", { group_col: groupCol, value_col: valueCol });
+}
+
+export async function runMannWhitneyUAnalysis(col1, col2) {
+  return invoke("run_mann_whitney_u_analysis", { col1, col2 });
+}
+
+export async function runWilcoxonSignedRankAnalysis(col1, col2) {
+  return invoke("run_wilcoxon_signed_rank_analysis", { col1, col2 });
+}
+
+export async function runKruskalWallisAnalysis(groupCol, valueCol) {
+  return invoke("run_kruskal_wallis_analysis", { group_col: groupCol, value_col: valueCol });
+}
+
+export async function runLinearRegressionAnalysis(col1, col2) {
+  return invoke("run_linear_regression_analysis", { col1, col2 });
+}
+
+export async function runFourPlRegressionAnalysis(col1, col2) {
+  return invoke("run_four_pl_regression_analysis", { col1, col2 });
+}
+
+export async function runTwoProportionAnalysis(rowsCol, colsCol) {
+  return invoke("run_two_proportion_analysis", { rows_col: rowsCol, cols_col: colsCol });
+}
+
+export async function restructureData(idVars, valueVars, varName, valueName) {
+  return invoke("restructure_data", {
+    id_vars: idVars,
+    value_vars: valueVars,
+    var_name: varName,
+    value_name: valueName,
+  });
+}
+
+export async function pivotData(idVars, varName, valueName) {
+  return invoke("pivot_data", {
+    id_vars: idVars,
+    var_name: varName,
+    value_name: valueName,
+  });
+}

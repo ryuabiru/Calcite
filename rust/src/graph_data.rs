@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::state::{DataTable, HeatmapNormalizationMode, TableViewState};
+use crate::state::{DataTable, HeatmapNormalizationMode, TableViewState, resolved_row_indices};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BarSegment {
@@ -37,6 +37,45 @@ pub struct StackedBarChartData {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ProportionPlotSegment {
+    pub label: String,
+    pub count: usize,
+    pub proportion: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProportionPlotData {
+    pub column_name: String,
+    pub segments: Vec<ProportionPlotSegment>,
+    pub visible_row_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MosaicChartData {
+    pub row_column_name: String,
+    pub column_column_name: String,
+    pub row_labels: Vec<String>,
+    pub column_labels: Vec<String>,
+    pub counts: Vec<Vec<usize>>,
+    pub visible_row_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistogramBin {
+    pub label: String,
+    pub count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HistogramChartData {
+    pub column_name: String,
+    pub bins: Vec<HistogramBin>,
+    pub visible_row_count: usize,
+    pub min_value: f64,
+    pub max_value: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct CorrelationHeatmapData {
     pub column_names: Vec<String>,
     pub values: Vec<Vec<Option<f64>>>,
@@ -63,11 +102,7 @@ pub fn build_bar_chart_data(
         .headers
         .iter()
         .position(|header| header == column_name)?;
-    let row_indices: Vec<usize> = if table_view.visible_row_indices.is_empty() {
-        (0..table.rows.len()).collect()
-    } else {
-        table_view.visible_row_indices.clone()
-    };
+    let row_indices = resolved_row_indices(table, table_view);
 
     if row_indices.is_empty() {
         return None;
@@ -116,6 +151,30 @@ pub fn build_bar_chart_data(
     })
 }
 
+pub fn build_proportion_plot_data(
+    table: &DataTable,
+    table_view: &TableViewState,
+    column_name: &str,
+) -> Option<ProportionPlotData> {
+    let bar_data = build_bar_chart_data(table, table_view, column_name)?;
+    let visible_row_count = bar_data.visible_row_count.max(1) as f64;
+    let segments = bar_data
+        .segments
+        .into_iter()
+        .map(|segment| ProportionPlotSegment {
+            proportion: segment.count as f64 / visible_row_count,
+            count: segment.count,
+            label: segment.label,
+        })
+        .collect::<Vec<_>>();
+
+    Some(ProportionPlotData {
+        column_name: bar_data.column_name,
+        segments,
+        visible_row_count: bar_data.visible_row_count,
+    })
+}
+
 pub fn build_stacked_bar_chart_data(
     table: &DataTable,
     table_view: &TableViewState,
@@ -130,11 +189,7 @@ pub fn build_stacked_bar_chart_data(
         .headers
         .iter()
         .position(|header| header == subgroup_column_name)?;
-    let row_indices: Vec<usize> = if table_view.visible_row_indices.is_empty() {
-        (0..table.rows.len()).collect()
-    } else {
-        table_view.visible_row_indices.clone()
-    };
+    let row_indices = resolved_row_indices(table, table_view);
 
     if row_indices.is_empty() {
         return None;
@@ -201,6 +256,145 @@ pub fn build_stacked_bar_chart_data(
     })
 }
 
+pub fn build_mosaic_chart_data(
+    table: &DataTable,
+    table_view: &TableViewState,
+    row_column_name: &str,
+    column_column_name: &str,
+) -> Option<MosaicChartData> {
+    let row_index = table
+        .headers
+        .iter()
+        .position(|header| header == row_column_name)?;
+    let column_index = table
+        .headers
+        .iter()
+        .position(|header| header == column_column_name)?;
+    let row_indices = resolved_row_indices(table, table_view);
+
+    if row_indices.is_empty() {
+        return None;
+    }
+
+    let mut row_labels: Vec<String> = Vec::new();
+    let mut column_labels: Vec<String> = Vec::new();
+    let mut counts: HashMap<(String, String), usize> = HashMap::new();
+
+    for row_idx in row_indices.iter().copied() {
+        let Some(row) = table.rows.get(row_idx) else {
+            continue;
+        };
+        let row_label = normalize_label(row.get(row_index).map(String::as_str));
+        let column_label = normalize_label(row.get(column_index).map(String::as_str));
+        if !row_labels.contains(&row_label) {
+            row_labels.push(row_label.clone());
+        }
+        if !column_labels.contains(&column_label) {
+            column_labels.push(column_label.clone());
+        }
+        *counts.entry((row_label, column_label)).or_insert(0) += 1;
+    }
+
+    if row_labels.is_empty() || column_labels.is_empty() {
+        return None;
+    }
+
+    let matrix = row_labels
+        .iter()
+        .map(|row_label| {
+            column_labels
+                .iter()
+                .map(|column_label| {
+                    counts
+                        .get(&(row_label.clone(), column_label.clone()))
+                        .copied()
+                        .unwrap_or(0)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    Some(MosaicChartData {
+        row_column_name: row_column_name.to_owned(),
+        column_column_name: column_column_name.to_owned(),
+        row_labels,
+        column_labels,
+        counts: matrix,
+        visible_row_count: row_indices.len(),
+    })
+}
+
+pub fn build_histogram_chart_data(
+    table: &DataTable,
+    table_view: &TableViewState,
+    column_name: &str,
+) -> Option<HistogramChartData> {
+    let column_index = table
+        .headers
+        .iter()
+        .position(|header| header == column_name)?;
+    let row_indices = resolved_row_indices(table, table_view);
+
+    let values = row_indices
+        .iter()
+        .filter_map(|row_index| table.rows.get(*row_index))
+        .filter_map(|row| row.get(column_index))
+        .filter_map(|value| value.trim().parse::<f64>().ok())
+        .collect::<Vec<_>>();
+
+    if values.is_empty() {
+        return None;
+    }
+
+    let min_value = values
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, f64::min);
+    let max_value = values
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let bin_count = (values.len() as f64).sqrt().round().clamp(1.0, 8.0) as usize;
+    let span = (max_value - min_value).max(f64::EPSILON);
+    let bin_width = span / bin_count as f64;
+    let mut counts = vec![0usize; bin_count];
+
+    for value in values {
+        let mut bin_index = ((value - min_value) / bin_width).floor() as usize;
+        if bin_index >= bin_count {
+            bin_index = bin_count - 1;
+        }
+        counts[bin_index] += 1;
+    }
+
+    let bins = (0..bin_count)
+        .map(|index| {
+            let lower = min_value + (index as f64 * bin_width);
+            let upper = if index == bin_count - 1 {
+                max_value
+            } else {
+                min_value + ((index + 1) as f64 * bin_width)
+            };
+            HistogramBin {
+                label: format!(
+                    "{}-{}",
+                    compact_float(lower),
+                    compact_float(upper)
+                ),
+                count: counts[index],
+            }
+        })
+        .collect();
+
+    Some(HistogramChartData {
+        column_name: column_name.to_owned(),
+        bins,
+        visible_row_count: row_indices.len(),
+        min_value,
+        max_value,
+    })
+}
+
 fn normalize_label(value: Option<&str>) -> String {
     let value = value.unwrap_or("").trim();
     if value.is_empty() {
@@ -256,11 +450,7 @@ pub fn build_heatmap_chart_data(
         .headers
         .iter()
         .position(|header| header == column_column_name)?;
-    let row_indices: Vec<usize> = if table_view.visible_row_indices.is_empty() {
-        (0..table.rows.len()).collect()
-    } else {
-        table_view.visible_row_indices.clone()
-    };
+    let row_indices = resolved_row_indices(table, table_view);
 
     if row_indices.is_empty() {
         return None;
@@ -438,6 +628,21 @@ fn pearson_correlation(table: &DataTable, left_index: usize, right_index: usize)
     }
 }
 
+fn compact_float(value: f64) -> String {
+    if (value - value.round()).abs() < f64::EPSILON {
+        format!("{}", value.round() as i64)
+    } else {
+        let mut text = format!("{value:.2}");
+        while text.contains('.') && text.ends_with('0') {
+            text.pop();
+        }
+        if text.ends_with('.') {
+            text.pop();
+        }
+        text
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -557,6 +762,92 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn build_proportion_plot_data_normalizes_counts() {
+        let table = DataTable {
+            headers: vec!["category".to_owned()],
+            rows: vec![
+                vec!["A".to_owned()],
+                vec!["A".to_owned()],
+                vec!["B".to_owned()],
+                vec!["".to_owned()],
+            ],
+            column_metadata: vec![],
+        };
+        let table_view = TableViewState {
+            sort_column: None,
+            sort_ascending: true,
+            selected_rows: BTreeSet::new(),
+            row_filter_query: String::new(),
+            visible_row_indices: vec![0, 1, 2, 3],
+        };
+
+        let chart = build_proportion_plot_data(&table, &table_view, "category")
+            .expect("proportion plot data");
+
+        assert_eq!(chart.visible_row_count, 4);
+        assert_eq!(chart.segments[0].label, "A");
+        assert_eq!(chart.segments[0].count, 2);
+        assert!((chart.segments[0].proportion - 0.5).abs() < 1e-6);
+        assert_eq!(chart.segments[2].label, "(empty)");
+    }
+
+    #[test]
+    fn build_mosaic_chart_data_counts_pairs() {
+        let table = DataTable {
+            headers: vec!["row".to_owned(), "column".to_owned()],
+            rows: vec![
+                vec!["A".to_owned(), "X".to_owned()],
+                vec!["A".to_owned(), "X".to_owned()],
+                vec!["A".to_owned(), "Y".to_owned()],
+                vec!["B".to_owned(), "X".to_owned()],
+            ],
+            column_metadata: vec![],
+        };
+        let table_view = TableViewState {
+            sort_column: None,
+            sort_ascending: true,
+            selected_rows: BTreeSet::new(),
+            row_filter_query: String::new(),
+            visible_row_indices: vec![0, 1, 2, 3],
+        };
+
+        let chart = build_mosaic_chart_data(&table, &table_view, "row", "column")
+            .expect("mosaic chart data");
+
+        assert_eq!(chart.row_labels, vec!["A", "B"]);
+        assert_eq!(chart.column_labels, vec!["X", "Y"]);
+        assert_eq!(chart.counts, vec![vec![2, 1], vec![1, 0]]);
+        assert_eq!(chart.visible_row_count, 4);
+    }
+
+    #[test]
+    fn build_histogram_chart_data_bins_numeric_values() {
+        let table = DataTable {
+            headers: vec!["value".to_owned()],
+            rows: vec![
+                vec!["1".to_owned()],
+                vec!["2".to_owned()],
+                vec!["3".to_owned()],
+                vec!["4".to_owned()],
+            ],
+            column_metadata: vec![],
+        };
+        let table_view = TableViewState {
+            sort_column: None,
+            sort_ascending: true,
+            selected_rows: BTreeSet::new(),
+            row_filter_query: String::new(),
+            visible_row_indices: vec![0, 1, 2, 3],
+        };
+
+        let chart = build_histogram_chart_data(&table, &table_view, "value").expect("histogram");
+
+        assert_eq!(chart.visible_row_count, 4);
+        assert_eq!(chart.bins.iter().map(|bin| bin.count).sum::<usize>(), 4);
+        assert!(!chart.bins.is_empty());
     }
 
     #[test]

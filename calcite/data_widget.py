@@ -1,9 +1,17 @@
 # calcite/data_widget.py
 
+import warnings
+
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton
 from PySide6.QtCore import Signal
 
 from .tabs.data_tab import DataTab
+
+warnings.warn(
+    "calcite.data_widget is legacy Python UI scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 class DataWidget(QWidget):
     graphUpdateRequest = Signal()

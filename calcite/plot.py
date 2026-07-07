@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+import warnings
+
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+warnings.warn(
+    "calcite.plot is legacy Python plotting scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 def set_plot_style() -> None:

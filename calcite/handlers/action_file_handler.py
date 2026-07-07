@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import traceback
+import warnings
 
 from PySide6.QtWidgets import QMessageBox
 
@@ -12,6 +13,12 @@ from .action_dialog_adapters import (
     choose_open_project_file,
     choose_save_project_file,
     get_clipboard_text,
+)
+
+warnings.warn(
+    "calcite.handlers.action_file_handler is legacy Python UI scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
 

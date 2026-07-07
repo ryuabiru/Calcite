@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import warnings
+
 from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+warnings.warn(
+    "calcite.handlers.graph_canvas_handler is legacy Python rendering scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class GraphCanvasHandler:

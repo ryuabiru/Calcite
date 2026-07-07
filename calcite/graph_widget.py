@@ -1,11 +1,19 @@
 # graph_widget.py
 
+import warnings
+
 import matplotlib
 matplotlib.use('QtAgg')
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+
+warnings.warn(
+    "calcite.graph_widget is legacy Python UI scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 class GraphWidget(QWidget):
     """

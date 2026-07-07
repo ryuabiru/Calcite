@@ -4,16 +4,8 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import curve_fit
-from scipy.stats import chi2_contingency, linregress, norm, pearsonr, shapiro, spearmanr
+from scipy.stats import chi2_contingency, norm, pearsonr, shapiro, spearmanr
 from statsmodels.stats.proportion import proportion_confint
-
-
-@dataclass(frozen=True)
-class RegressionAnalysisResult:
-    regression_line_params: dict | None
-    fit_params: dict | None
-    summary_lines: list[str]
 
 
 @dataclass(frozen=True)
@@ -78,68 +70,6 @@ class ShapiroAnalysisResult:
     value_col: str
     group_name: str
     groups: list[ShapiroGroupResult]
-
-
-def sigmoid_4pl(x, bottom, top, hill_slope, log_ec50):
-    return bottom + (top - bottom) / (1 + 10 ** ((log_ec50 - x) * hill_slope))
-
-
-class RunRegressionAnalysisUseCase:
-    def execute(
-        self,
-        dataframe: pd.DataFrame,
-        x_col: str,
-        y_col: str,
-        model: str,
-        subgroup_col: str | None = None,
-    ) -> RegressionAnalysisResult:
-        regression_line_params: dict | None = {}
-        fit_params: dict | None = {}
-        summary_lines: list[str] = []
-
-        groups_to_fit = [None]
-        if subgroup_col and subgroup_col in dataframe.columns:
-            groups_to_fit = sorted(dataframe[subgroup_col].dropna().unique())
-
-        for group in groups_to_fit:
-            subset_df = dataframe if group is None else dataframe[dataframe[subgroup_col] == group]
-            if group is not None:
-                summary_lines.append(f"\n--- Sub-group: {group} ---")
-
-            if model == "linear":
-                line_result, summary_line = _run_linear_regression(subset_df, x_col, y_col)
-                if line_result is None:
-                    continue
-                if group is not None:
-                    regression_line_params[group] = line_result
-                else:
-                    regression_line_params = line_result
-                summary_lines.append(summary_line)
-
-            elif model == "4pl":
-                fit_result, summary_line = _run_four_pl_regression(subset_df, x_col, y_col)
-                if fit_result is None:
-                    continue
-                if group is not None:
-                    fit_params[group] = fit_result
-                else:
-                    fit_params = fit_result
-                summary_lines.append(summary_line)
-
-        if model == "linear":
-            fit_params = None
-            if regression_line_params == {}:
-                regression_line_params = None
-        else:
-            regression_line_params = None
-            if fit_params == {}:
-                fit_params = None
-
-        return RegressionAnalysisResult(
-            regression_line_params=regression_line_params,
-            fit_params=fit_params,
-            summary_lines=summary_lines,
-        )
 
 
 class RunChiSquaredAnalysisUseCase:
@@ -272,44 +202,3 @@ class RunShapiroAnalysisUseCase:
                 )
             )
         return ShapiroAnalysisResult(value_col=value_col, group_name=group_name, groups=groups)
-
-
-def _run_linear_regression(subset_df: pd.DataFrame, x_col: str, y_col: str):
-    x_data = subset_df[x_col].dropna()
-    y_data = subset_df[y_col].dropna()
-    common_indices = x_data.index.intersection(y_data.index)
-    x_data = x_data.loc[common_indices]
-    y_data = y_data.loc[common_indices]
-
-    if len(x_data) < 2:
-        return None, ""
-
-    slope, intercept, r_value, p_value, _ = linregress(x_data, y_data)
-    result = {
-        "x_line": np.array([x_data.min(), x_data.max()]),
-        "y_line": slope * np.array([x_data.min(), x_data.max()]) + intercept,
-        "r_squared": r_value**2,
-    }
-    summary_line = f"Y = {slope:.4f} * X + {intercept:.4f}\nR-squared: {r_value**2:.4f}, p-value: {p_value:.4f}"
-    return result, summary_line
-
-
-def _run_four_pl_regression(subset_df: pd.DataFrame, x_col: str, y_col: str):
-    fit_df = subset_df[[x_col, y_col]].dropna().copy()
-    if fit_df.empty or (fit_df[x_col] <= 0).any():
-        return None, ""
-
-    fit_df["log_x"] = np.log10(fit_df[x_col])
-    x_data, y_data = fit_df["log_x"], fit_df[y_col]
-
-    p0 = [y_data.min(), y_data.max(), 1.0, np.median(x_data)]
-    params, _ = curve_fit(sigmoid_4pl, x_data, y_data, p0=p0, maxfev=10000)
-    y_pred = sigmoid_4pl(x_data, *params)
-    r_squared = 1 - (np.sum((y_data - y_pred) ** 2) / np.sum((y_data - np.mean(y_data)) ** 2))
-
-    result = {"params": params, "r_squared": r_squared, "log_x_data": x_data}
-    summary_line = (
-        f"Top: {params[1]:.4f}, Bottom: {params[0]:.4f}, "
-        f"Hill Slope: {params[2]:.4f}, EC50: {10**params[3]:.4f}\nR-squared: {r_squared:.4f}"
-    )
-    return result, summary_line

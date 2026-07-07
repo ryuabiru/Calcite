@@ -1,5 +1,7 @@
 # properties_widget.py
 
+import warnings
+
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from PySide6.QtCore import Signal
 
@@ -7,6 +9,12 @@ from .application.ui_controller import resolve_legend_position_for_graph_type
 from .tabs.format_tab import FormatTab
 from .tabs.text_tab import TextTab
 from .tabs.axes_tab import AxesTab
+
+warnings.warn(
+    "calcite.properties_widget is legacy Python UI scaffolding kept for parity checks.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 class PropertiesWidget(QWidget):
     propertiesChanged = Signal()
@@ -43,8 +51,6 @@ class PropertiesWidget(QWidget):
         self.axes_tab.set_properties(props)
 
     def sync_graph_type(self, graph_type, previous_graph_type):
-        self.text_tab.update_paired_labels_visibility(graph_type == "paired_scatter")
-
         next_legend_position = resolve_legend_position_for_graph_type(
             previous_graph_type=previous_graph_type,
             next_graph_type=graph_type,
