@@ -231,8 +231,8 @@ impl CalciteRustApp {
         {
             self.placeholder_surface(
                 ui,
-                "Rust graph renderer bootstrap",
-                "This region will host the new Rust-native plotting pipeline.",
+                "Rust graph renderer",
+                "This region hosts the native Rust plotting pipeline for supported graph types.",
                 [
                     ui.available_width().max(1.0),
                     (ui.available_height() - 8.0).max(1.0),
@@ -1464,8 +1464,8 @@ impl CalciteRustApp {
         ui.add_space(8.0);
         self.placeholder_surface(
             ui,
-            "Table view bootstrap",
-            "CSV loading, table rendering, sorting, filtering, and selection state will move here first.",
+            "Table view",
+            "CSV loading, table rendering, sorting, filtering, and selection are available in the native shell.",
             [ui.available_width().max(1.0), 120.0],
         );
         ui.add_space(10.0);
@@ -1478,22 +1478,22 @@ impl CalciteRustApp {
 
     fn show_properties_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("Properties");
-        ui.label("The Rust version will reintroduce plot properties incrementally.");
+        ui.label("The native Rust shell exposes the core plot controls that are available today.");
         ui.add_space(8.0);
             egui::Grid::new("properties_grid")
             .num_columns(2)
             .spacing([12.0, 10.0])
             .show(ui, |ui| {
                 ui.label("Theme");
-                ui.label("Warm light bootstrap");
+                ui.label("Warm light shell");
                 ui.end_row();
 
                 ui.label("Legend");
-                ui.label("Planned");
+                ui.label("Basic categorical legends");
                 ui.end_row();
 
                 ui.label("Axes");
-                ui.label("Planned");
+                ui.label("Auto-labeled axes");
                 ui.end_row();
 
                 ui.label("Heatmap");

@@ -693,6 +693,7 @@ name = "calcite-tauri"
 version = "0.1.0"
 dependencies = [
  "calcite_rust",
+ "rfd",
  "serde",
  "tauri",
  "tauri-build",

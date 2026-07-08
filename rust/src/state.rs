@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::core::{FilterCondition, FilterConnector, FilterOperator};
+use crate::formula::{evaluate_formula, format_number};
 use crate::analysis::{
     ChiSquaredAnalysisResult, LinearRegressionAnalysisResult, TwoProportionAnalysisResult,
 };
@@ -224,12 +226,14 @@ pub struct ProjectState {
     pub x_column: String,
     pub y_column: String,
     pub subgroup_column: String,
+    pub y_log_scale: bool,
     pub heatmap_normalization_mode: HeatmapNormalizationMode,
     pub data_table: DataTable,
     pub table_view: TableViewState,
     pub linear_regression_result: Option<LinearRegressionAnalysisResult>,
     pub chi_squared_result: Option<ChiSquaredAnalysisResult>,
     pub two_proportion_result: Option<TwoProportionAnalysisResult>,
+    pub graph_annotation_summary: String,
     pub results_preview: String,
     pub status_message: String,
 }
@@ -238,7 +242,8 @@ impl ProjectState {
     pub fn new() -> Self {
         Self {
             current_graph_type: "Scatter Plot".to_owned(),
-            results_preview: "Rust bootstrap shell\n\nThis panel will eventually show statistical outputs and analysis summaries.".to_owned(),
+            results_preview: "Rust bootstrap shell\n\nReady for CSV loading and analysis.".to_owned(),
+            graph_annotation_summary: String::new(),
             status_message: "Ready".to_owned(),
             ..Default::default()
         }
@@ -260,6 +265,7 @@ impl ProjectState {
             x_column: snapshot.settings.x_column,
             y_column: snapshot.settings.y_column,
             subgroup_column: snapshot.settings.subgroup_column,
+            y_log_scale: snapshot.settings.y_log_scale,
             heatmap_normalization_mode: snapshot.settings.heatmap_normalization,
             data_table: table,
             table_view: TableViewState {
@@ -272,6 +278,7 @@ impl ProjectState {
             ..Default::default()
         };
         state.results_preview = String::new();
+        state.graph_annotation_summary = snapshot.analysis.graph_annotation_summary;
         state.status_message = "Project loaded".to_owned();
         state.refresh_visible_row_indices();
         state
@@ -288,6 +295,7 @@ impl ProjectState {
         self.linear_regression_result = None;
         self.chi_squared_result = None;
         self.two_proportion_result = None;
+        self.graph_annotation_summary.clear();
     }
 
     pub fn loaded_file_name(&self) -> Option<String> {
@@ -380,6 +388,86 @@ impl ProjectState {
         Ok(())
     }
 
+    pub fn rename_column(&mut self, column_index: usize, name: String) -> Result<(), String> {
+        if name.trim().is_empty() {
+            return Err("Column name cannot be empty".to_owned());
+        }
+        if self
+            .data_table
+            .headers
+            .iter()
+            .enumerate()
+            .any(|(index, header)| index != column_index && header == &name)
+        {
+            return Err(format!("Column '{name}' already exists"));
+        }
+
+        let old_name = self
+            .data_table
+            .headers
+            .get(column_index)
+            .cloned()
+            .ok_or_else(|| format!("Column index {column_index} is out of range"))?;
+        self.data_table.headers[column_index] = name.clone();
+        self.data_table.rebuild_column_metadata();
+        self.after_table_mutation();
+        self.status_message = format!("Renamed column {old_name} to {name}");
+        Ok(())
+    }
+
+    pub fn calculate_new_column(&mut self, name: String, formula: String) -> Result<(), String> {
+        if name.trim().is_empty() {
+            return Err("New column name cannot be empty".to_owned());
+        }
+        if self.data_table.column_index(&name).is_some() {
+            return Err(format!("Column '{name}' already exists"));
+        }
+
+        let headers = self.data_table.headers.clone();
+        let mut values = Vec::with_capacity(self.data_table.rows.len());
+        for (row_index, row) in self.data_table.rows.iter().enumerate() {
+            let value = evaluate_formula(&formula, &headers, row)
+                .map_err(|error| format!("Row {}: {error}", row_index + 1))?;
+            values.push(format_number(value));
+        }
+
+        self.data_table.headers.push(name);
+        for (row, value) in self.data_table.rows.iter_mut().zip(values) {
+            row.push(value);
+        }
+        self.data_table.rebuild_column_metadata();
+        self.after_table_mutation();
+        Ok(())
+    }
+
+    pub fn fill_down_selection(&mut self) -> Result<(), String> {
+        let Some(&source_row_index) = self.table_view.selected_rows.iter().next() else {
+            return Err("Select at least one row to fill down".to_owned());
+        };
+
+        let source_row = self
+            .data_table
+            .rows
+            .get(source_row_index)
+            .cloned()
+            .ok_or_else(|| format!("Row index {source_row_index} is out of range"))?;
+
+        for row_index in self.table_view.selected_rows.iter().copied() {
+            if let Some(target_row) = self.data_table.rows.get_mut(row_index) {
+                *target_row = source_row.clone();
+            }
+        }
+
+        self.data_table.rebuild_column_metadata();
+        self.after_table_mutation();
+        self.status_message = format!(
+            "Filled down {} selected row(s) from row {}",
+            self.table_view.selected_rows.len(),
+            source_row_index + 1
+        );
+        Ok(())
+    }
+
     pub fn toggle_sort_by_column(&mut self, column_index: usize) -> Result<(), String> {
         let ascending = match self.table_view.sort_column {
             Some(current) if current == column_index => !self.table_view.sort_ascending,
@@ -422,6 +510,79 @@ impl ProjectState {
                 self.data_table.row_count()
             )
         };
+    }
+
+    pub fn set_advanced_row_filter(
+        &mut self,
+        conditions: Vec<FilterCondition>,
+    ) -> Result<(), String> {
+        if conditions.is_empty() {
+            self.set_row_filter("");
+            return Ok(());
+        }
+
+        for condition in &conditions {
+            if condition.column.trim().is_empty() {
+                return Err("Filter column cannot be empty".to_owned());
+            }
+            if self.data_table.column_index(&condition.column).is_none() {
+                return Err(format!("Unknown filter column '{}'", condition.column));
+            }
+        }
+
+        self.table_view.row_filter_query = render_filter_summary(&conditions);
+        self.table_view.visible_row_indices = evaluate_filter_conditions(
+            &self.data_table.rows,
+            &self.data_table.headers,
+            &conditions,
+        )?;
+        self.status_message = format!(
+            "Filtered {} of {} rows",
+            self.table_view.visible_row_indices.len(),
+            self.data_table.row_count()
+        );
+        Ok(())
+    }
+
+    pub fn paste_delimited_text(&mut self, text: &str, start_row: usize) -> Result<(), String> {
+        if self.data_table.is_empty() {
+            return Err("No CSV loaded".to_owned());
+        }
+
+        let pasted_rows = load_delimited_text_rows(text)?;
+        if pasted_rows.is_empty() {
+            return Err("Clipboard text is empty".to_owned());
+        }
+
+        let width = pasted_rows.first().map(|row| row.len()).unwrap_or(0);
+        if width == 0 {
+            return Err("Clipboard text does not contain any columns".to_owned());
+        }
+        if width > self.data_table.column_count() {
+            return Err("Clipboard data is wider than the current table".to_owned());
+        }
+
+        let required_rows = start_row + pasted_rows.len();
+        while self.data_table.rows.len() < required_rows {
+            self.data_table
+                .rows
+                .push(vec![String::new(); self.data_table.column_count()]);
+        }
+
+        for (row_offset, pasted_row) in pasted_rows.iter().enumerate() {
+            let target_row = start_row + row_offset;
+            if let Some(existing_row) = self.data_table.rows.get_mut(target_row) {
+                for (column_index, value) in pasted_row.iter().enumerate() {
+                    if let Some(cell) = existing_row.get_mut(column_index) {
+                        *cell = value.clone();
+                    }
+                }
+            }
+        }
+
+        self.data_table.rebuild_column_metadata();
+        self.after_table_mutation();
+        Ok(())
     }
 
     pub fn refresh_visible_row_indices(&mut self) {
@@ -529,6 +690,117 @@ fn build_visible_row_indices(rows: &[Vec<String>], query: &str) -> Vec<usize> {
         .collect()
 }
 
+fn render_filter_summary(conditions: &[FilterCondition]) -> String {
+    conditions
+        .iter()
+        .enumerate()
+        .map(|(index, condition)| {
+            let operator = match condition.operator {
+                FilterOperator::Equals => "==",
+                FilterOperator::NotEquals => "!=",
+                FilterOperator::GreaterThan => ">",
+                FilterOperator::LessThan => "<",
+                FilterOperator::GreaterThanOrEqual => ">=",
+                FilterOperator::LessThanOrEqual => "<=",
+                FilterOperator::Contains => "contains",
+                FilterOperator::NotContains => "not contains",
+                FilterOperator::StartsWith => "starts with",
+                FilterOperator::EndsWith => "ends with",
+            };
+            let connector = match condition.connector {
+                FilterConnector::And => "AND",
+                FilterConnector::Or => "OR",
+            };
+            if index == 0 {
+                format!("{} {} {}", condition.column, operator, condition.value)
+            } else {
+                format!(
+                    "{} {} {} {}",
+                    connector, condition.column, operator, condition.value
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn evaluate_filter_conditions(
+    rows: &[Vec<String>],
+    headers: &[String],
+    conditions: &[FilterCondition],
+) -> Result<Vec<usize>, String> {
+    let mut visible = Vec::new();
+    for (row_index, row) in rows.iter().enumerate() {
+        if evaluate_row_filter(row, headers, conditions)? {
+            visible.push(row_index);
+        }
+    }
+    Ok(visible)
+}
+
+fn evaluate_row_filter(
+    row: &[String],
+    headers: &[String],
+    conditions: &[FilterCondition],
+) -> Result<bool, String> {
+    let mut current: Option<bool> = None;
+    for condition in conditions {
+        let matches = evaluate_condition(row, headers, condition)?;
+        current = Some(match current {
+            None => matches,
+            Some(previous) => match condition.connector {
+                FilterConnector::And => previous && matches,
+                FilterConnector::Or => previous || matches,
+            },
+        });
+    }
+    Ok(current.unwrap_or(true))
+}
+
+fn evaluate_condition(
+    row: &[String],
+    headers: &[String],
+    condition: &FilterCondition,
+) -> Result<bool, String> {
+    let column_index = headers
+        .iter()
+        .position(|header| header == &condition.column)
+        .ok_or_else(|| format!("Unknown filter column '{}'", condition.column))?;
+    let cell = row.get(column_index).map(String::as_str).unwrap_or("").trim();
+    let value = condition.value.trim();
+
+    let result = match condition.operator {
+        FilterOperator::Equals => cell.eq_ignore_ascii_case(value),
+        FilterOperator::NotEquals => !cell.eq_ignore_ascii_case(value),
+        FilterOperator::Contains => cell.to_lowercase().contains(&value.to_lowercase()),
+        FilterOperator::NotContains => !cell.to_lowercase().contains(&value.to_lowercase()),
+        FilterOperator::StartsWith => cell.to_lowercase().starts_with(&value.to_lowercase()),
+        FilterOperator::EndsWith => cell.to_lowercase().ends_with(&value.to_lowercase()),
+        FilterOperator::GreaterThan
+        | FilterOperator::LessThan
+        | FilterOperator::GreaterThanOrEqual
+        | FilterOperator::LessThanOrEqual => {
+            let left = cell.parse::<f64>().map_err(|_| {
+                format!(
+                    "Column '{}' must be numeric for comparison operators",
+                    condition.column
+                )
+            })?;
+            let right = value.parse::<f64>().map_err(|_| {
+                format!("Filter value '{}' must be numeric for comparison operators", value)
+            })?;
+            match condition.operator {
+                FilterOperator::GreaterThan => left > right,
+                FilterOperator::LessThan => left < right,
+                FilterOperator::GreaterThanOrEqual => left >= right,
+                FilterOperator::LessThanOrEqual => left <= right,
+                _ => unreachable!(),
+            }
+        }
+    };
+    Ok(result)
+}
+
 pub fn load_csv_table(path: impl AsRef<Path>) -> Result<DataTable, String> {
     let path = path.as_ref();
     let mut reader = csv::Reader::from_path(path)
@@ -578,6 +850,35 @@ pub fn load_delimited_text_table(text: &str) -> Result<DataTable, String> {
     }
 
     Ok(DataTable::from_rows(headers, rows))
+}
+
+fn load_delimited_text_rows(text: &str) -> Result<Vec<Vec<String>>, String> {
+    let delimiter = detect_delimiter(text);
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .delimiter(delimiter)
+        .from_reader(Cursor::new(text));
+
+    let mut rows = Vec::new();
+    for record in reader.records() {
+        let record = record.map_err(|error| format!("Failed to read clipboard row: {error}"))?;
+        let row = record.iter().map(|value| value.to_owned()).collect::<Vec<_>>();
+        if row.iter().all(|cell| cell.trim().is_empty()) {
+            continue;
+        }
+        rows.push(row);
+    }
+
+    if rows.is_empty() {
+        return Ok(rows);
+    }
+
+    let expected_width = rows[0].len();
+    if rows.iter().any(|row| row.len() != expected_width) {
+        return Err("Clipboard text must have a consistent column count".to_owned());
+    }
+
+    Ok(rows)
 }
 
 fn compare_cells(left: &str, right: &str) -> Ordering {
@@ -772,6 +1073,111 @@ mod tests {
     }
 
     #[test]
+    fn project_state_applies_advanced_row_filter() {
+        let mut state = ProjectState::new();
+        state.set_loaded_table(
+            PathBuf::from("/tmp/example.csv"),
+            DataTable {
+                headers: vec!["name".to_owned(), "value".to_owned(), "group".to_owned()],
+                rows: vec![
+                    vec!["Alpha".to_owned(), "1".to_owned(), "A".to_owned()],
+                    vec!["beta".to_owned(), "5".to_owned(), "B".to_owned()],
+                    vec!["Gamma".to_owned(), "9".to_owned(), "A".to_owned()],
+                ],
+                column_metadata: vec![],
+            },
+        );
+
+        state
+            .set_advanced_row_filter(vec![
+                FilterCondition {
+                    connector: FilterConnector::And,
+                    column: "group".to_owned(),
+                    operator: FilterOperator::Equals,
+                    value: "A".to_owned(),
+                },
+                FilterCondition {
+                    connector: FilterConnector::And,
+                    column: "value".to_owned(),
+                    operator: FilterOperator::GreaterThan,
+                    value: "5".to_owned(),
+                },
+            ])
+            .expect("advanced filter");
+
+        assert_eq!(state.table_view.visible_row_indices, vec![2]);
+        assert!(state
+            .table_view
+            .row_filter_query
+            .contains("group == A"));
+
+        state
+            .set_advanced_row_filter(vec![
+                FilterCondition {
+                    connector: FilterConnector::And,
+                    column: "name".to_owned(),
+                    operator: FilterOperator::Contains,
+                    value: "beta".to_owned(),
+                },
+                FilterCondition {
+                    connector: FilterConnector::Or,
+                    column: "value".to_owned(),
+                    operator: FilterOperator::Equals,
+                    value: "1".to_owned(),
+                },
+            ])
+            .expect("advanced filter with or");
+
+        assert_eq!(state.table_view.visible_row_indices, vec![0, 1]);
+    }
+
+    #[test]
+    fn project_state_pastes_delimited_text_over_existing_rows() {
+        let mut state = ProjectState::new();
+        state.replace_data_table(DataTable::from_rows(
+            vec!["name".to_owned(), "value".to_owned()],
+            vec![
+                vec!["A".to_owned(), "1".to_owned()],
+                vec!["B".to_owned(), "2".to_owned()],
+                vec!["C".to_owned(), "3".to_owned()],
+            ],
+        ));
+
+        state
+            .paste_delimited_text("X\t10\nY\t20\n", 1)
+            .expect("paste data");
+
+        assert_eq!(state.data_table.rows[0], vec!["A", "1"]);
+        assert_eq!(state.data_table.rows[1], vec!["X", "10"]);
+        assert_eq!(state.data_table.rows[2], vec!["Y", "20"]);
+    }
+
+    #[test]
+    fn project_state_renames_columns_and_fills_down_selection() {
+        let mut state = ProjectState::new();
+        state.replace_data_table(DataTable::from_rows(
+            vec!["name".to_owned(), "value".to_owned()],
+            vec![
+                vec!["A".to_owned(), "1".to_owned()],
+                vec!["B".to_owned(), "2".to_owned()],
+                vec!["C".to_owned(), "3".to_owned()],
+            ],
+        ));
+
+        state
+            .rename_column(1, "amount".to_owned())
+            .expect("rename column");
+        assert_eq!(state.data_table.headers, vec!["name", "amount"]);
+
+        state.toggle_row_selection(0);
+        state.toggle_row_selection(2);
+        state.fill_down_selection().expect("fill down");
+
+        assert_eq!(state.data_table.rows[0], vec!["A", "1"]);
+        assert_eq!(state.data_table.rows[2], vec!["A", "1"]);
+    }
+
+    #[test]
     fn project_state_imports_delimited_text() {
         let mut state = ProjectState::new();
 
@@ -844,6 +1250,29 @@ mod tests {
 
         state.remove_column(1).expect("remove column");
         assert_eq!(state.data_table.headers, vec!["name", "value"]);
+    }
+
+    #[test]
+    fn project_state_calculates_new_column_from_formula() {
+        let mut state = ProjectState::new();
+        state.replace_data_table(DataTable::from_rows(
+            vec!["value".to_owned(), "scale".to_owned()],
+            vec![
+                vec!["1".to_owned(), "100".to_owned()],
+                vec!["2".to_owned(), "100".to_owned()],
+            ],
+        ));
+
+        state
+            .calculate_new_column("scaled".to_owned(), "'value' * 'scale' / 100".to_owned())
+            .expect("calculate new column");
+
+        assert_eq!(
+            state.data_table.headers,
+            vec!["value", "scale", "scaled"]
+        );
+        assert_eq!(state.data_table.rows[0][2], "1");
+        assert_eq!(state.data_table.rows[1][2], "2");
     }
 
     #[test]

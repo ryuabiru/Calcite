@@ -33,6 +33,8 @@ pub struct ProjectSettingsSnapshot {
     pub y_column: String,
     pub subgroup_column: String,
     #[serde(default)]
+    pub y_log_scale: bool,
+    #[serde(default)]
     pub heatmap_normalization: HeatmapNormalizationMode,
 }
 
@@ -72,6 +74,8 @@ pub struct PersistedAnalysisState {
     pub paired_annotations: Vec<Value>,
     pub regression_line_params: Option<Value>,
     pub fit_params: Option<Value>,
+    #[serde(default)]
+    pub graph_annotation_summary: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -107,6 +111,7 @@ impl From<&ProjectState> for PersistedProjectState {
                 x_column: state.x_column.clone(),
                 y_column: state.y_column.clone(),
                 subgroup_column: state.subgroup_column.clone(),
+                y_log_scale: state.y_log_scale,
                 heatmap_normalization: state.heatmap_normalization_mode,
             },
             table: PersistedTable {
@@ -136,6 +141,7 @@ impl From<&ProjectState> for PersistedProjectState {
                 paired_annotations: Vec::new(),
                 regression_line_params: None,
                 fit_params: None,
+                graph_annotation_summary: state.graph_annotation_summary.clone(),
             },
         }
     }
@@ -153,6 +159,7 @@ impl From<&ProjectState> for PersistedSettingsFile {
                 x_column: state.x_column.clone(),
                 y_column: state.y_column.clone(),
                 subgroup_column: state.subgroup_column.clone(),
+                y_log_scale: state.y_log_scale,
                 heatmap_normalization: state.heatmap_normalization_mode,
             },
             table_view: PersistedTableView::from(&state.table_view),
@@ -438,6 +445,7 @@ mod tests {
             snapshot.settings.heatmap_normalization,
             HeatmapNormalizationMode::Total
         );
+        assert!(!snapshot.settings.y_log_scale);
         assert_eq!(snapshot.table.headers, vec!["x", "y"]);
         assert_eq!(snapshot.table.column_metadata[1].kind, ColumnKind::Numeric);
         assert_eq!(snapshot.table_view.sort_column, Some(1));
@@ -478,8 +486,76 @@ mod tests {
 
         let loaded = load_project_directory(&temp_dir).expect("load project");
         assert_eq!(loaded.settings.current_graph_type, "Heatmap");
+        assert!(!loaded.settings.y_log_scale);
         assert_eq!(loaded.table.headers, vec!["x", "y"]);
         assert_eq!(loaded.table.rows, vec![vec!["A", "1"]]);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn load_project_defaults_missing_graph_annotation_summary() {
+        let temp_dir = std::env::temp_dir().join("calcite_rust_legacy_analysis_state");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let manifest = ProjectArchiveManifest::new(false);
+        write_json(&temp_dir.join(MANIFEST_FILENAME), &manifest).expect("write manifest");
+
+        let settings = PersistedSettingsFile {
+            settings: ProjectSettingsSnapshot {
+                loaded_file_path: None,
+                current_graph_type: "Bar Chart".to_owned(),
+                x_column: "x".to_owned(),
+                y_column: "y".to_owned(),
+                subgroup_column: String::new(),
+                y_log_scale: false,
+                heatmap_normalization: HeatmapNormalizationMode::Count,
+            },
+            table_view: PersistedTableView {
+                sort_column: None,
+                sort_ascending: true,
+                selected_rows: vec![],
+                row_filter_query: String::new(),
+            },
+        };
+        write_json(&temp_dir.join(SETTINGS_FILENAME), &settings).expect("write settings");
+
+        let legacy_analysis = serde_json::json!({
+            "statistical_annotations": [],
+            "paired_annotations": [],
+            "regression_line_params": null,
+            "fit_params": null
+        });
+        write_json(&temp_dir.join(ANALYSIS_FILENAME), &legacy_analysis).expect("write analysis");
+
+        let loaded = load_project_directory(&temp_dir).expect("load legacy project");
+        assert_eq!(loaded.analysis.graph_annotation_summary, "");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn save_and_load_project_preserves_graph_annotation_summary() {
+        let temp_dir = std::env::temp_dir().join("calcite_rust_annotation_roundtrip");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let mut project = ProjectState::new();
+        project.current_graph_type = "Box Plot".to_owned();
+        project.graph_annotation_summary = "Dunn: alpha != beta".to_owned();
+        project.y_log_scale = true;
+        project.data_table = DataTable::from_rows(
+            vec!["group".to_owned(), "value".to_owned()],
+            vec![vec!["A".to_owned(), "1".to_owned()]],
+        );
+
+        save_project_directory(&temp_dir, &project).expect("save project");
+        let loaded = load_project_directory(&temp_dir).expect("load project");
+
+        assert_eq!(loaded.settings.current_graph_type, "Box Plot");
+        assert!(loaded.settings.y_log_scale);
+        assert_eq!(loaded.analysis.graph_annotation_summary, "Dunn: alpha != beta");
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

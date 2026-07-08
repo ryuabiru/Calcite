@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use crate::state::{DataTable, TableViewState, resolved_row_indices};
@@ -89,6 +90,26 @@ pub struct OneWayAnovaAnalysisResult {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct TukeyHsdComparisonResult {
+    pub left_label: String,
+    pub right_label: String,
+    pub mean_difference: f64,
+    pub q_statistic: f64,
+    pub adjusted_p_value: f64,
+    pub significant: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TukeyHsdAnalysisResult {
+    pub group_col: String,
+    pub value_col: String,
+    pub groups: Vec<OneWayAnovaGroupResult>,
+    pub mean_square_within: f64,
+    pub within_group_df: usize,
+    pub comparisons: Vec<TukeyHsdComparisonResult>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct MannWhitneyUAnalysisResult {
     pub col1: String,
     pub col2: String,
@@ -127,6 +148,24 @@ pub struct KruskalWallisAnalysisResult {
     pub h_statistic: f64,
     pub p_value: f64,
     pub degrees_of_freedom: usize,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DunnComparisonResult {
+    pub left_label: String,
+    pub right_label: String,
+    pub rank_difference: f64,
+    pub z_statistic: f64,
+    pub adjusted_p_value: f64,
+    pub significant: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DunnPostHocAnalysisResult {
+    pub group_col: String,
+    pub value_col: String,
+    pub groups: Vec<KruskalWallisGroupResult>,
+    pub comparisons: Vec<DunnComparisonResult>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -908,6 +947,172 @@ pub fn format_one_way_anova_result(result: &OneWayAnovaAnalysisResult) -> String
     text
 }
 
+pub fn run_tukey_hsd_analysis(
+    table: &DataTable,
+    table_view: &TableViewState,
+    group_col: &str,
+    value_col: &str,
+) -> Result<TukeyHsdAnalysisResult, String> {
+    let (groups, grouped_values) = collect_grouped_numeric_values(table, table_view, group_col, value_col)?;
+    let group_count = groups.len();
+    let total_sample_size: usize = groups.iter().map(|group| group.sample_size).sum();
+    if group_count < 2 || total_sample_size <= group_count {
+        return Err("Tukey HSD requires at least two groups with at least two samples each".to_owned());
+    }
+
+    let mut ss_within = 0.0;
+    for group in &groups {
+        let values = grouped_values.get(&group.label).expect("group values exist");
+        ss_within += values
+            .iter()
+            .map(|value| (value - group.mean).powi(2))
+            .sum::<f64>();
+    }
+    let within_group_df = total_sample_size - group_count;
+    if within_group_df == 0 {
+        return Err("Tukey HSD requires variability within groups".to_owned());
+    }
+    let mean_square_within = ss_within / within_group_df as f64;
+    if mean_square_within <= f64::EPSILON {
+        return Err("Tukey HSD requires non-zero within-group variance".to_owned());
+    }
+
+    let mut comparisons = Vec::new();
+    for left_index in 0..groups.len() {
+        for right_index in (left_index + 1)..groups.len() {
+            let left = &groups[left_index];
+            let right = &groups[right_index];
+            let raw_difference = left.mean - right.mean;
+            let standard_error =
+                (mean_square_within / 2.0 * (1.0 / left.sample_size as f64 + 1.0 / right.sample_size as f64))
+                    .sqrt();
+            if standard_error <= f64::EPSILON {
+                continue;
+            }
+            let q_statistic = raw_difference.abs() / standard_error;
+            let raw_p_value = tukey_familywise_p_value(q_statistic, groups.len(), within_group_df);
+            comparisons.push(TukeyHsdComparisonResult {
+                left_label: left.label.clone(),
+                right_label: right.label.clone(),
+                mean_difference: raw_difference,
+                q_statistic,
+                adjusted_p_value: raw_p_value,
+                significant: raw_p_value < 0.05,
+            });
+        }
+    }
+
+    Ok(TukeyHsdAnalysisResult {
+        group_col: group_col.to_owned(),
+        value_col: value_col.to_owned(),
+        groups,
+        mean_square_within,
+        within_group_df,
+        comparisons,
+    })
+}
+
+pub fn format_tukey_hsd_result(result: &TukeyHsdAnalysisResult) -> String {
+    let mut text = String::from("Tukey HSD Results\n=================\n\n");
+    text.push_str(&format!(
+        "Grouping by: '{}'\nValue column: '{}'\n\n---\n",
+        result.group_col, result.value_col
+    ));
+    for group in &result.groups {
+        text.push_str(&format!(
+            "- Group {}: mean {:.4} (n={})\n",
+            group.label, group.mean, group.sample_size
+        ));
+    }
+    text.push_str(&format!(
+        "\nMean square within: {:.4}\nDegrees of freedom: {}\n\n",
+        result.mean_square_within, result.within_group_df
+    ));
+    if result.comparisons.is_empty() {
+        text.push_str("No pairwise comparisons were available.\n");
+    } else {
+        text.push_str("Pairwise comparisons:\n");
+        for comparison in &result.comparisons {
+            text.push_str(&format!(
+                "- {} vs {}: diff {:.4}, q {:.4}, adjusted p-value {:.4}{}\n",
+                comparison.left_label,
+                comparison.right_label,
+                comparison.mean_difference,
+                comparison.q_statistic,
+                comparison.adjusted_p_value,
+                if comparison.significant { " *" } else { "" }
+            ));
+        }
+        text.push('\n');
+    }
+    if result.comparisons.iter().any(|comparison| comparison.significant) {
+        text.push_str("Conclusion: At least one adjusted pairwise difference is significant.");
+    } else {
+        text.push_str("Conclusion: No adjusted pairwise differences reached significance.");
+    }
+    text
+}
+
+fn collect_grouped_numeric_values(
+    table: &DataTable,
+    table_view: &TableViewState,
+    group_col: &str,
+    value_col: &str,
+) -> Result<(Vec<OneWayAnovaGroupResult>, HashMap<String, Vec<f64>>), String> {
+    let group_index = table
+        .headers
+        .iter()
+        .position(|header| header == group_col)
+        .ok_or_else(|| format!("Unknown group column '{group_col}'"))?;
+    let value_index = table
+        .headers
+        .iter()
+        .position(|header| header == value_col)
+        .ok_or_else(|| format!("Unknown value column '{value_col}'"))?;
+    let row_indices = resolved_row_indices(table, table_view);
+
+    let mut grouped_values: HashMap<String, Vec<f64>> = HashMap::new();
+    let mut order = Vec::new();
+    for row_index in row_indices {
+        let Some(row) = table.rows.get(row_index) else {
+            continue;
+        };
+        let group_label = normalize_label(row.get(group_index).map(String::as_str));
+        let Some(value) = row.get(value_index) else {
+            continue;
+        };
+        let Ok(value) = value.trim().parse::<f64>() else {
+            continue;
+        };
+        if !grouped_values.contains_key(&group_label) {
+            order.push(group_label.clone());
+        }
+        grouped_values.entry(group_label).or_default().push(value);
+    }
+
+    let groups = order
+        .iter()
+        .filter_map(|label| {
+            let values = grouped_values.get(label)?;
+            if values.len() < 2 {
+                return None;
+            }
+            let mean = values.iter().sum::<f64>() / values.len() as f64;
+            Some(OneWayAnovaGroupResult {
+                label: label.clone(),
+                sample_size: values.len(),
+                mean,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if groups.len() < 2 {
+        return Err("At least two groups with at least two samples each are required".to_owned());
+    }
+
+    Ok((groups, grouped_values))
+}
+
 pub fn run_mann_whitney_u_analysis(
     table: &DataTable,
     table_view: &TableViewState,
@@ -1164,6 +1369,165 @@ pub fn format_kruskal_wallis_result(result: &KruskalWallisAnalysisResult) -> Str
         text.push_str("Conclusion: At least one group distribution differs significantly (p < 0.05).");
     } else {
         text.push_str("Conclusion: No significant distributional difference was detected (p >= 0.05).");
+    }
+    text
+}
+
+pub fn run_dunn_post_hoc_analysis(
+    table: &DataTable,
+    table_view: &TableViewState,
+    group_col: &str,
+    value_col: &str,
+) -> Result<DunnPostHocAnalysisResult, String> {
+    let group_index = table
+        .headers
+        .iter()
+        .position(|header| header == group_col)
+        .ok_or_else(|| format!("Unknown group column '{group_col}'"))?;
+    let value_index = table
+        .headers
+        .iter()
+        .position(|header| header == value_col)
+        .ok_or_else(|| format!("Unknown value column '{value_col}'"))?;
+    let row_indices = resolved_row_indices(table, table_view);
+
+    let mut grouped_values: HashMap<String, Vec<f64>> = HashMap::new();
+    let mut order = Vec::new();
+    for row_index in row_indices {
+        let Some(row) = table.rows.get(row_index) else {
+            continue;
+        };
+        let group_label = normalize_label(row.get(group_index).map(String::as_str));
+        let Some(value) = row.get(value_index) else {
+            continue;
+        };
+        let Ok(value) = value.trim().parse::<f64>() else {
+            continue;
+        };
+        if !grouped_values.contains_key(&group_label) {
+            order.push(group_label.clone());
+        }
+        grouped_values.entry(group_label).or_default().push(value);
+    }
+
+    let mut pooled = Vec::new();
+    for (label, values) in &grouped_values {
+        for value in values {
+            pooled.push((*value, label.clone()));
+        }
+    }
+    if pooled.len() < 2 || order.len() < 2 {
+        return Err("Dunn post-hoc analysis requires at least two groups".to_owned());
+    }
+
+    pooled.sort_by(|left, right| left.0.partial_cmp(&right.0).unwrap_or(Ordering::Equal));
+    let pooled_values = pooled.iter().map(|(value, _)| *value).collect::<Vec<_>>();
+    let ranks = rank_with_ties(&pooled_values);
+    let tie_correction = tie_correction_factor(&pooled_values);
+
+    let mut rank_sums: HashMap<String, f64> = HashMap::new();
+    let mut group_sizes: HashMap<String, usize> = HashMap::new();
+    for ((_, label), rank) in pooled.iter().zip(ranks.iter()) {
+        *rank_sums.entry(label.clone()).or_insert(0.0) += *rank;
+        *group_sizes.entry(label.clone()).or_insert(0) += 1;
+    }
+
+    let total_n = pooled.len() as f64;
+    let mut comparisons = Vec::new();
+    for left_index in 0..order.len() {
+        let left_label = &order[left_index];
+        for right_label in order.iter().skip(left_index + 1) {
+            let left_n = *group_sizes.get(left_label).unwrap_or(&0) as f64;
+            let right_n = *group_sizes.get(right_label).unwrap_or(&0) as f64;
+            let left_ranks = rank_sums.get(left_label).copied().unwrap_or(0.0);
+            let right_ranks = rank_sums.get(right_label).copied().unwrap_or(0.0);
+            let left_mean_rank = left_ranks / left_n.max(1.0);
+            let right_mean_rank = right_ranks / right_n.max(1.0);
+            let rank_difference = left_mean_rank - right_mean_rank;
+            let variance_factor = ((total_n * (total_n + 1.0)) / 12.0)
+                * (1.0 / left_n.max(1.0) + 1.0 / right_n.max(1.0));
+            let variance_factor = variance_factor * tie_correction.max(1e-12);
+            let z_statistic = if variance_factor <= f64::EPSILON {
+                0.0
+            } else {
+                rank_difference / variance_factor.sqrt()
+            };
+            comparisons.push(DunnComparisonResult {
+                left_label: left_label.clone(),
+                right_label: right_label.clone(),
+                rank_difference,
+                z_statistic,
+                adjusted_p_value: 0.0,
+                significant: false,
+            });
+        }
+    }
+
+    let mut p_values = comparisons
+        .iter()
+        .map(|comparison| 2.0 * (1.0 - normal_cdf(comparison.z_statistic.abs())))
+        .collect::<Vec<_>>();
+    let adjusted_p_values = holm_adjust_p_values(&mut p_values);
+
+    let mut comparisons = comparisons;
+    for (comparison, adjusted_p_value) in comparisons.iter_mut().zip(adjusted_p_values.into_iter()) {
+        comparison.adjusted_p_value = adjusted_p_value;
+        comparison.significant = adjusted_p_value < 0.05;
+    }
+
+    let groups = order
+        .iter()
+        .filter_map(|label| {
+            let values = grouped_values.get(label)?;
+            let mean_rank = rank_sums.get(label).copied().unwrap_or(0.0) / values.len() as f64;
+            Some(KruskalWallisGroupResult {
+                label: label.clone(),
+                sample_size: values.len(),
+                mean_rank,
+            })
+        })
+        .collect();
+
+    Ok(DunnPostHocAnalysisResult {
+        group_col: group_col.to_owned(),
+        value_col: value_col.to_owned(),
+        groups,
+        comparisons,
+    })
+}
+
+pub fn format_dunn_post_hoc_result(result: &DunnPostHocAnalysisResult) -> String {
+    let mut text = String::from("Dunn Post-hoc Results\n======================\n\n");
+    text.push_str(&format!(
+        "Grouping by: '{}'\nValue column: '{}'\n\n---\n",
+        result.group_col, result.value_col
+    ));
+    for group in &result.groups {
+        text.push_str(&format!(
+            "- Group {}: mean rank {:.4} (n={})\n",
+            group.label, group.mean_rank, group.sample_size
+        ));
+    }
+    text.push_str("\nPairwise comparisons:\n");
+    if result.comparisons.is_empty() {
+        text.push_str("- None\n");
+    } else {
+        for comparison in &result.comparisons {
+            text.push_str(&format!(
+                "- {} vs {}: rank diff {:.4}, z {:.4}, adjusted p-value {:.4}{}\n",
+                comparison.left_label,
+                comparison.right_label,
+                comparison.rank_difference,
+                comparison.z_statistic,
+                comparison.adjusted_p_value,
+                if comparison.significant { " *" } else { "" }
+            ));
+        }
+    }
+    if result.comparisons.iter().any(|comparison| comparison.significant) {
+        text.push_str("\nConclusion: At least one pairwise rank difference is significant.");
+    } else {
+        text.push_str("\nConclusion: No adjusted pairwise rank differences reached significance.");
     }
     text
 }
@@ -2095,6 +2459,61 @@ fn sample_variance(values: &[f64], mean: f64) -> f64 {
         diff * diff
     });
     sum_sq.sum::<f64>() / (values.len() as f64 - 1.0)
+}
+
+fn tukey_familywise_p_value(q_statistic: f64, group_count: usize, df: usize) -> f64 {
+    if !q_statistic.is_finite() || group_count < 2 || df == 0 {
+        return 1.0;
+    }
+    let pairwise_t = q_statistic / std::f64::consts::SQRT_2;
+    let raw_p = 2.0 * (1.0 - student_t_cdf(pairwise_t.abs(), df as f64));
+    let comparison_count = group_count.saturating_mul(group_count.saturating_sub(1)) / 2;
+    1.0 - (1.0 - raw_p.clamp(0.0, 1.0)).powi(comparison_count.max(1) as i32)
+}
+
+fn tie_correction_factor(values: &[f64]) -> f64 {
+    if values.len() < 2 {
+        return 1.0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|left, right| left.partial_cmp(right).unwrap_or(Ordering::Equal));
+    let n = sorted.len() as f64;
+    let mut correction = 0.0;
+    let mut index = 0;
+    while index < sorted.len() {
+        let mut end = index + 1;
+        while end < sorted.len() && (sorted[end] - sorted[index]).abs() <= f64::EPSILON {
+            end += 1;
+        }
+        let tie_count = (end - index) as f64;
+        if tie_count > 1.0 {
+            correction += tie_count.powi(3) - tie_count;
+        }
+        index = end;
+    }
+    if correction <= f64::EPSILON {
+        1.0
+    } else {
+        1.0 - correction / (n.powi(3) - n)
+    }
+}
+
+fn holm_adjust_p_values(p_values: &mut [f64]) -> Vec<f64> {
+    let mut indexed = p_values
+        .iter()
+        .copied()
+        .enumerate()
+        .collect::<Vec<_>>();
+    indexed.sort_by(|left, right| left.1.partial_cmp(&right.1).unwrap_or(Ordering::Equal));
+    let m = indexed.len();
+    let mut adjusted = vec![0.0; m];
+    let mut running_max: f64 = 0.0;
+    for (rank, (index, p_value)) in indexed.into_iter().enumerate() {
+        let adjusted_value = ((m - rank) as f64 * p_value).clamp(0.0, 1.0);
+        running_max = running_max.max(adjusted_value);
+        adjusted[index] = running_max;
+    }
+    adjusted
 }
 
 fn f_distribution_p_value(f_stat: f64, dfn: f64, dfd: f64) -> f64 {

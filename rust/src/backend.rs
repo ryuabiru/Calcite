@@ -2,15 +2,16 @@ use std::path::PathBuf;
 
 use crate::analysis::{
     format_chi_squared_result, format_four_pl_regression_result, format_independent_t_test_result,
-    format_kruskal_wallis_result, format_linear_regression_result, format_mann_whitney_u_result,
-    format_one_way_anova_result, format_paired_t_test_result, format_pearson_correlation_result,
-    format_shapiro_wilk_result, format_spearman_correlation_result, format_two_proportion_result,
+    format_dunn_post_hoc_result, format_kruskal_wallis_result, format_linear_regression_result,
+    format_mann_whitney_u_result, format_one_way_anova_result, format_paired_t_test_result,
+    format_pearson_correlation_result, format_shapiro_wilk_result,
+    format_spearman_correlation_result, format_tukey_hsd_result, format_two_proportion_result,
     format_wilcoxon_signed_rank_result,
     run_chi_squared_analysis, run_four_pl_regression_analysis, run_independent_t_test_analysis,
-    run_kruskal_wallis_analysis, run_linear_regression_analysis, run_mann_whitney_u_analysis,
-    run_one_way_anova_analysis, run_paired_t_test_analysis, run_pearson_correlation_analysis,
-    run_shapiro_wilk_analysis, run_spearman_correlation_analysis, run_two_proportion_analysis,
-    run_wilcoxon_signed_rank_analysis,
+    run_dunn_post_hoc_analysis, run_kruskal_wallis_analysis, run_linear_regression_analysis,
+    run_mann_whitney_u_analysis, run_one_way_anova_analysis, run_paired_t_test_analysis,
+    run_pearson_correlation_analysis, run_shapiro_wilk_analysis, run_spearman_correlation_analysis,
+    run_tukey_hsd_analysis, run_two_proportion_analysis, run_wilcoxon_signed_rank_analysis,
 };
 use crate::core::AppCommand;
 use crate::project_persistence::{load_project_directory, save_project_directory};
@@ -57,8 +58,15 @@ impl AppBackend {
                 var_name,
                 value_name,
             } => self.pivot_data(id_vars, var_name, value_name),
+            AppCommand::CalculateNewColumn { name, formula } => {
+                self.calculate_new_column(name, formula)
+            }
             AppCommand::SetGraphType { graph_type } => {
                 self.project.set_graph_type(graph_type);
+                Ok(())
+            }
+            AppCommand::SetYLogScale { enabled } => {
+                self.project.y_log_scale = enabled;
                 Ok(())
             }
             AppCommand::ToggleSortByColumn { column_index } => {
@@ -71,6 +79,12 @@ impl AppBackend {
             AppCommand::SetRowFilter { query } => {
                 self.project.set_row_filter(query);
                 Ok(())
+            }
+            AppCommand::PasteDelimitedText { text, start_row } => {
+                self.paste_delimited_text(text, start_row)
+            }
+            AppCommand::SetAdvancedRowFilter { conditions } => {
+                self.project.set_advanced_row_filter(conditions)
             }
             AppCommand::SetColumns {
                 x_column,
@@ -97,6 +111,9 @@ impl AppBackend {
             AppCommand::RunOneWayAnovaAnalysis { group_col, value_col } => {
                 self.run_one_way_anova_analysis(group_col, value_col)
             }
+            AppCommand::RunTukeyHsdAnalysis { group_col, value_col } => {
+                self.run_tukey_hsd_analysis(group_col, value_col)
+            }
             AppCommand::RunShapiroWilkAnalysis { group_col, value_col } => {
                 self.run_shapiro_wilk_analysis(group_col, value_col)
             }
@@ -108,6 +125,9 @@ impl AppBackend {
             }
             AppCommand::RunKruskalWallisAnalysis { group_col, value_col } => {
                 self.run_kruskal_wallis_analysis(group_col, value_col)
+            }
+            AppCommand::RunDunnPostHocAnalysis { group_col, value_col } => {
+                self.run_dunn_post_hoc_analysis(group_col, value_col)
             }
             AppCommand::RunLinearRegressionAnalysis { col1, col2 } => {
                 self.run_linear_regression_analysis(col1, col2)
@@ -131,7 +151,11 @@ impl AppBackend {
             AppCommand::InsertColumn { column_index, name } => {
                 self.insert_column(column_index, name)
             }
+            AppCommand::RenameColumn { column_index, name } => {
+                self.rename_column(column_index, name)
+            }
             AppCommand::RemoveColumn { column_index } => self.remove_column(column_index),
+            AppCommand::FillDownSelection => self.fill_down_selection(),
         }
     }
 
@@ -156,6 +180,20 @@ impl AppBackend {
 
     fn import_delimited_text(&mut self, text: String, source_label: String) -> Result<(), String> {
         self.project.import_delimited_text(&text, &source_label)?;
+        Ok(())
+    }
+
+    fn paste_delimited_text(&mut self, text: String, start_row: usize) -> Result<(), String> {
+        self.project.paste_delimited_text(&text, start_row)?;
+        self.project.status_message = format!(
+            "Pasted clipboard data starting at row {}",
+            start_row + 1
+        );
+        self.project.results_preview = format!(
+            "Pasted text into {} row(s) and {} column(s)",
+            self.project.data_table.row_count(),
+            self.project.data_table.column_count()
+        );
         Ok(())
     }
 
@@ -189,6 +227,16 @@ impl AppBackend {
             "Loaded project snapshot with {} rows and {} columns",
             self.project.data_table.row_count(),
             self.project.data_table.column_count()
+        );
+        Ok(())
+    }
+
+    fn calculate_new_column(&mut self, name: String, formula: String) -> Result<(), String> {
+        let formula_preview = formula.clone();
+        self.project.calculate_new_column(name.clone(), formula)?;
+        self.project.status_message = format!("Calculated new column {name}");
+        self.project.results_preview = format!(
+            "Calculated column {name} using formula: {formula_preview}"
         );
         Ok(())
     }
@@ -287,12 +335,28 @@ impl AppBackend {
         Ok(())
     }
 
+    fn rename_column(&mut self, column_index: usize, name: String) -> Result<(), String> {
+        self.project.rename_column(column_index, name.clone())?;
+        self.project.results_preview =
+            format!("Renamed column {} to {}", column_index + 1, name);
+        Ok(())
+    }
+
     fn remove_column(&mut self, column_index: usize) -> Result<(), String> {
         self.project.remove_column(column_index)?;
         self.project.results_preview = format!(
             "Removed column {} ({} columns total)",
             column_index + 1,
             self.project.data_table.column_count()
+        );
+        Ok(())
+    }
+
+    fn fill_down_selection(&mut self) -> Result<(), String> {
+        self.project.fill_down_selection()?;
+        self.project.results_preview = format!(
+            "Filled down {} selected row(s)",
+            self.project.table_view.selected_rows.len()
         );
         Ok(())
     }
@@ -334,6 +398,7 @@ impl AppBackend {
             rows_col, cols_col
         );
         self.project.results_preview = format_two_proportion_result(&result);
+        self.project.graph_annotation_summary.clear();
         Ok(())
     }
 
@@ -353,6 +418,7 @@ impl AppBackend {
             col1, col2
         );
         self.project.results_preview = format_pearson_correlation_result(&result);
+        self.project.graph_annotation_summary.clear();
         Ok(())
     }
 
@@ -372,6 +438,7 @@ impl AppBackend {
             col1, col2
         );
         self.project.results_preview = format_spearman_correlation_result(&result);
+        self.project.graph_annotation_summary.clear();
         Ok(())
     }
 
@@ -388,6 +455,7 @@ impl AppBackend {
         )?;
         self.project.status_message = format!("Independent t-test completed for {} vs {}", col1, col2);
         self.project.results_preview = format_independent_t_test_result(&result);
+        self.project.graph_annotation_summary.clear();
         Ok(())
     }
 
@@ -400,6 +468,7 @@ impl AppBackend {
         )?;
         self.project.status_message = format!("Paired t-test completed for {} vs {}", col1, col2);
         self.project.results_preview = format_paired_t_test_result(&result);
+        self.project.graph_annotation_summary.clear();
         Ok(())
     }
 
@@ -416,6 +485,35 @@ impl AppBackend {
         )?;
         self.project.status_message = format!("One-way ANOVA completed for {} vs {}", group_col, value_col);
         self.project.results_preview = format_one_way_anova_result(&result);
+        self.project.graph_annotation_summary = String::new();
+        Ok(())
+    }
+
+    fn run_tukey_hsd_analysis(
+        &mut self,
+        group_col: String,
+        value_col: String,
+    ) -> Result<(), String> {
+        let result = run_tukey_hsd_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &group_col,
+            &value_col,
+        )?;
+        self.project.status_message = format!("Tukey HSD completed for {} vs {}", group_col, value_col);
+        self.project.results_preview = format_tukey_hsd_result(&result);
+        self.project.graph_annotation_summary = build_post_hoc_annotation_summary(
+            "Tukey HSD",
+            &result
+                .comparisons
+                .iter()
+                .filter(|comparison| comparison.significant)
+                .map(|comparison| format!(
+                    "{} > {}",
+                    comparison.left_label, comparison.right_label
+                ))
+                .collect::<Vec<_>>(),
+        );
         Ok(())
     }
 
@@ -432,6 +530,7 @@ impl AppBackend {
         )?;
         self.project.status_message = format!("Shapiro-Wilk test completed for {} vs {}", group_col, value_col);
         self.project.results_preview = format_shapiro_wilk_result(&result);
+        self.project.graph_annotation_summary.clear();
         Ok(())
     }
 
@@ -444,6 +543,7 @@ impl AppBackend {
         )?;
         self.project.status_message = format!("Mann-Whitney U test completed for {} vs {}", col1, col2);
         self.project.results_preview = format_mann_whitney_u_result(&result);
+        self.project.graph_annotation_summary.clear();
         Ok(())
     }
 
@@ -460,6 +560,7 @@ impl AppBackend {
         )?;
         self.project.status_message = format!("Wilcoxon signed-rank test completed for {} vs {}", col1, col2);
         self.project.results_preview = format_wilcoxon_signed_rank_result(&result);
+        self.project.graph_annotation_summary.clear();
         Ok(())
     }
 
@@ -476,6 +577,35 @@ impl AppBackend {
         )?;
         self.project.status_message = format!("Kruskal-Wallis test completed for {} vs {}", group_col, value_col);
         self.project.results_preview = format_kruskal_wallis_result(&result);
+        self.project.graph_annotation_summary = String::new();
+        Ok(())
+    }
+
+    fn run_dunn_post_hoc_analysis(
+        &mut self,
+        group_col: String,
+        value_col: String,
+    ) -> Result<(), String> {
+        let result = run_dunn_post_hoc_analysis(
+            &self.project.data_table,
+            &self.project.table_view,
+            &group_col,
+            &value_col,
+        )?;
+        self.project.status_message = format!("Dunn post-hoc completed for {} vs {}", group_col, value_col);
+        self.project.results_preview = format_dunn_post_hoc_result(&result);
+        self.project.graph_annotation_summary = build_post_hoc_annotation_summary(
+            "Dunn",
+            &result
+                .comparisons
+                .iter()
+                .filter(|comparison| comparison.significant)
+                .map(|comparison| format!(
+                    "{} != {}",
+                    comparison.left_label, comparison.right_label
+                ))
+                .collect::<Vec<_>>(),
+        );
         Ok(())
     }
 
@@ -496,6 +626,7 @@ impl AppBackend {
             col1, col2
         );
         self.project.results_preview = format_linear_regression_result(&result);
+        self.project.graph_annotation_summary = String::new();
         Ok(())
     }
 
@@ -512,6 +643,7 @@ impl AppBackend {
         )?;
         self.project.status_message = format!("4PL regression completed for {} vs {}", col1, col2);
         self.project.results_preview = format_four_pl_regression_result(&result);
+        self.project.graph_annotation_summary.clear();
         Ok(())
     }
 }
@@ -552,6 +684,13 @@ fn build_csv_load_error_status(path: &PathBuf) -> String {
 
 fn build_csv_load_error_summary(path: &PathBuf, error: &str) -> String {
     format!("Failed to load CSV '{}': {error}", path.display())
+}
+
+fn build_post_hoc_annotation_summary(label: &str, comparisons: &[String]) -> String {
+    if comparisons.is_empty() {
+        return format!("{label}: no significant pairwise differences");
+    }
+    format!("{label}: {}", comparisons.join(", "))
 }
 
 fn column_kind_label(kind: &crate::state::ColumnKind) -> &'static str {
@@ -1156,13 +1295,14 @@ mod tests {
     fn save_and_load_project_directory_round_trips_state() {
         let mut backend = AppBackend::new();
         let path = std::env::temp_dir().join("calcite_rust_project_roundtrip");
+        let expected_loaded_file_path = path.join("input.csv");
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).expect("create temp dir");
-        fs::write(path.join("input.csv"), "name,value\nA,1\nB,2\n").expect("write csv");
+        fs::write(&expected_loaded_file_path, "name,value\nA,1\nB,2\n").expect("write csv");
 
         backend
             .dispatch(AppCommand::LoadCsv {
-                path: path.join("input.csv"),
+                path: expected_loaded_file_path.clone(),
             })
             .expect("load csv");
         backend
@@ -1176,6 +1316,9 @@ mod tests {
             })
             .expect("set graph type");
         backend
+            .dispatch(AppCommand::SetYLogScale { enabled: true })
+            .expect("set y log scale");
+        backend
             .dispatch(AppCommand::SetColumns {
                 x_column: "name".to_owned(),
                 y_column: "value".to_owned(),
@@ -1186,6 +1329,7 @@ mod tests {
             .dispatch(AppCommand::ToggleSortByColumn { column_index: 1 })
             .expect("sort by column");
         backend.project_mut().toggle_row_selection(1);
+        backend.project_mut().graph_annotation_summary = "Tukey HSD: alpha > beta".to_owned();
         backend
             .dispatch(AppCommand::SaveProject {
                 directory: path.clone(),
@@ -1200,13 +1344,84 @@ mod tests {
             .expect("load project");
 
         assert_eq!(restored.project().data_table.headers, vec!["name", "value"]);
+        assert_eq!(
+            restored.project().loaded_file_path.as_deref(),
+            Some(expected_loaded_file_path.as_path())
+        );
         assert_eq!(restored.project().table_view.row_filter_query, "A");
         assert_eq!(restored.project().current_graph_type, "Heatmap");
         assert_eq!(restored.project().x_column, "name");
         assert_eq!(restored.project().y_column, "value");
         assert_eq!(restored.project().subgroup_column, "group");
+        assert!(restored.project().y_log_scale);
         assert_eq!(restored.project().table_view.sort_column, Some(1));
         assert_eq!(restored.project().table_view.selected_rows.len(), 1);
+        assert_eq!(
+            restored.project().graph_annotation_summary,
+            "Tukey HSD: alpha > beta"
+        );
+        assert_eq!(
+            restored.project().status_message,
+            format!("Project loaded from {}", path.display())
+        );
+
+        let _ = fs::remove_dir_all(&path);
+    }
+
+    #[test]
+    fn graph_control_commands_round_trip_through_project_save_load() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_graph_control_roundtrip");
+        let expected_loaded_file_path = path.join("input.csv");
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).expect("create temp dir");
+        fs::write(&expected_loaded_file_path, "x,y,group\n1,2,A\n2,4,B\n3,6,A\n")
+            .expect("write csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv {
+                path: expected_loaded_file_path.clone(),
+            })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::SetGraphType {
+                graph_type: "Scatter Plot".to_owned(),
+            })
+            .expect("set graph type");
+        backend
+            .dispatch(AppCommand::SetColumns {
+                x_column: "x".to_owned(),
+                y_column: "y".to_owned(),
+                subgroup_column: "group".to_owned(),
+            })
+            .expect("set columns");
+        backend
+            .dispatch(AppCommand::SetRowFilter {
+                query: "A".to_owned(),
+            })
+            .expect("set row filter");
+        backend
+            .dispatch(AppCommand::SaveProject {
+                directory: path.clone(),
+            })
+            .expect("save project");
+
+        let mut restored = AppBackend::new();
+        restored
+            .dispatch(AppCommand::LoadProject {
+                directory: path.clone(),
+            })
+            .expect("load project");
+
+        assert_eq!(restored.project().current_graph_type, "Scatter Plot");
+        assert_eq!(restored.project().x_column, "x");
+        assert_eq!(restored.project().y_column, "y");
+        assert_eq!(restored.project().subgroup_column, "group");
+        assert_eq!(restored.project().table_view.row_filter_query, "A");
+        assert_eq!(
+            restored.project().loaded_file_path.as_deref(),
+            Some(expected_loaded_file_path.as_path())
+        );
         assert_eq!(
             restored.project().status_message,
             format!("Project loaded from {}", path.display())

@@ -6,6 +6,7 @@ build = "build.rs"
 
 [dependencies]
 calcite_rust = { path = "../../rust" }
+rfd = "0.15"
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
 

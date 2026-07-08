@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod backend;
 pub mod core;
+pub mod formula;
 pub mod graph_data;
 pub mod project_persistence;
 pub mod state;

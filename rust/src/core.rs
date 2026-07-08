@@ -1,5 +1,35 @@
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum FilterConnector {
+    And,
+    Or,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum FilterOperator {
+    Equals,
+    NotEquals,
+    GreaterThan,
+    LessThan,
+    GreaterThanOrEqual,
+    LessThanOrEqual,
+    Contains,
+    NotContains,
+    StartsWith,
+    EndsWith,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FilterCondition {
+    pub connector: FilterConnector,
+    pub column: String,
+    pub operator: FilterOperator,
+    pub value: String,
+}
+
 #[derive(Clone, Debug)]
 pub enum AppCommand {
     LoadCsv {
@@ -29,8 +59,15 @@ pub enum AppCommand {
         var_name: String,
         value_name: String,
     },
+    CalculateNewColumn {
+        name: String,
+        formula: String,
+    },
     SetGraphType {
         graph_type: String,
+    },
+    SetYLogScale {
+        enabled: bool,
     },
     ToggleSortByColumn {
         column_index: usize,
@@ -40,6 +77,13 @@ pub enum AppCommand {
     },
     SetRowFilter {
         query: String,
+    },
+    PasteDelimitedText {
+        text: String,
+        start_row: usize,
+    },
+    SetAdvancedRowFilter {
+        conditions: Vec<FilterCondition>,
     },
     SetColumns {
         x_column: String,
@@ -66,6 +110,10 @@ pub enum AppCommand {
         group_col: String,
         value_col: String,
     },
+    RunTukeyHsdAnalysis {
+        group_col: String,
+        value_col: String,
+    },
     RunShapiroWilkAnalysis {
         group_col: String,
         value_col: String,
@@ -79,6 +127,10 @@ pub enum AppCommand {
         col2: String,
     },
     RunKruskalWallisAnalysis {
+        group_col: String,
+        value_col: String,
+    },
+    RunDunnPostHocAnalysis {
         group_col: String,
         value_col: String,
     },
@@ -113,7 +165,12 @@ pub enum AppCommand {
         column_index: usize,
         name: String,
     },
+    RenameColumn {
+        column_index: usize,
+        name: String,
+    },
     RemoveColumn {
         column_index: usize,
     },
+    FillDownSelection,
 }

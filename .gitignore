@@ -4,6 +4,7 @@ __pycache__/
 
 # Personal files
 開発ログ.md
+.DS_Store
 
 # for PyPI
 dist
@@ -21,3 +22,5 @@ rust/target/
 # Tauri / frontend generated files
 tauri/node_modules/
 tauri/src-tauri/gen/
+tauri/src-tauri/manifest.json
+tauri/src-tauri/state/
