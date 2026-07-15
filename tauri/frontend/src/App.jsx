@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Menu } from "@tauri-apps/api/menu";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import {
   applyGraphControls,
@@ -95,6 +96,7 @@ const EMPTY_SNAPSHOT = {
   y_column: "",
   subgroup_column: "",
   row_filter_query: "",
+  row_filter_conditions: [],
   visible_row_count: 0,
   selected_row_count: 0,
   sort_column: null,
@@ -274,7 +276,17 @@ function readStoredUiState() {
   }
 }
 
+function readWindowMode() {
+  if (typeof window === "undefined") {
+    return "main";
+  }
+  const mode = new URL(window.location.href).searchParams.get("mode");
+  return mode === "data-editor" ? "data-editor" : "main";
+}
+
 export default function App() {
+  const windowMode = readWindowMode();
+  const isDataEditorWindow = windowMode === "data-editor";
   const storedUiState = readStoredUiState();
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const [csvPath, setCsvPath] = useState(() => storedUiState.csvPath || "");
@@ -297,7 +309,9 @@ export default function App() {
   const [calculateFormula, setCalculateFormula] = useState(
     () => storedUiState.calculateFormula || "'Value' * 100",
   );
-  const [filterConditions, setFilterConditions] = useState([createFilterCondition()]);
+  const [filterConditions, setFilterConditions] = useState(
+    () => storedUiState.filterConditions || [createFilterCondition()],
+  );
   const [graphType, setGraphType] = useState(() => storedUiState.graphType || "Bar Chart");
   const [rowFilter, setRowFilter] = useState(() => storedUiState.rowFilter || "");
   const [xColumn, setXColumn] = useState(() => storedUiState.xColumn || "");
@@ -308,11 +322,13 @@ export default function App() {
   const [yLogScale, setYLogScale] = useState(() => storedUiState.yLogScale || false);
   const [errorMessage, setErrorMessage] = useState("");
   const [showAbout, setShowAbout] = useState(false);
-  const [workspaceTab, setWorkspaceTab] = useState("data");
-  const [dataTab, setDataTab] = useState("load");
+  const [workspaceTab, setWorkspaceTab] = useState(isDataEditorWindow ? "data" : "plot");
+  const [dataTab, setDataTab] = useState(isDataEditorWindow ? "transform" : "table");
   const [resultsTab, setResultsTab] = useState("summary");
   const [contextMenu, setContextMenu] = useState(null);
   const [dragMessage, setDragMessage] = useState("");
+  const [activeCell, setActiveCell] = useState(null);
+  const [activeCellValue, setActiveCellValue] = useState("");
   const graphCanvasRef = useRef(null);
   const hasLoadedProjectDir = useRef(false);
   const hasLoadedUiState = useRef(false);
@@ -330,6 +346,11 @@ export default function App() {
         setXColumn(nextSnapshot.x_column);
         setYColumn(nextSnapshot.y_column);
         setSubgroupColumn(nextSnapshot.subgroup_column);
+        setFilterConditions(
+          nextSnapshot.row_filter_conditions && nextSnapshot.row_filter_conditions.length > 0
+            ? nextSnapshot.row_filter_conditions
+            : [createFilterCondition()],
+        );
       }
       setYLogScale(nextSnapshot.y_log_scale || false);
       setErrorMessage("");
@@ -435,6 +456,26 @@ export default function App() {
     await openProjectDirectory(path);
   }
 
+  async function openDataEditorWindow() {
+    const editorLabel = `data-editor-${Date.now()}`;
+    const editorUrl = `${window.location.pathname}?mode=data-editor`;
+    const editorWindow = new WebviewWindow(editorLabel, {
+      url: editorUrl,
+      title: "Calcite Data Editor",
+      width: 1320,
+      height: 920,
+      minWidth: 980,
+      minHeight: 720,
+      resizable: true,
+      center: true,
+    });
+
+    editorWindow.once("tauri://error", (event) => {
+      const payload = event?.payload;
+      setErrorMessage(`Failed to open data editor:\n${payload}`);
+    });
+  }
+
   useEffect(() => {
     refreshSnapshot().catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
@@ -490,19 +531,21 @@ export default function App() {
         calculateFormula,
         graphType,
         rowFilter,
+        filterConditions,
         xColumn,
         yColumn,
         subgroupColumn,
         yLogScale,
       }),
     );
-  }, [csvPath, calculateColumnName, calculateFormula, graphType, rowFilter, xColumn, yColumn, subgroupColumn, yLogScale]);
+  }, [csvPath, calculateColumnName, calculateFormula, graphType, rowFilter, filterConditions, xColumn, yColumn, subgroupColumn, yLogScale]);
 
   useEffect(() => {
     function onKeyDown(event) {
       if (event.key === "Escape") {
         setShowAbout(false);
         setContextMenu(null);
+        setActiveCell(null);
       }
     }
 
@@ -628,7 +671,9 @@ export default function App() {
     snapshot.visible_row_indices.length > 0 || snapshot.row_filter_query.trim() !== ""
       ? snapshot.visible_row_indices
       : snapshot.rows.map((_, index) => index);
-  const previewRowIndices = visibleRowIndices.slice(0, 25);
+  const previewRowIndices = isDataEditorWindow
+    ? visibleRowIndices
+    : visibleRowIndices.slice(0, 25);
   const previewRows = previewRowIndices
     .map((rowIndex) => ({ rowIndex, row: snapshot.rows[rowIndex] }))
     .filter(({ row }) => Array.isArray(row));
@@ -760,6 +805,24 @@ export default function App() {
     setContextMenu(null);
   }
 
+  function beginCellEdit(rowIndex, columnIndex) {
+    setActiveCell({ rowIndex, columnIndex });
+    setActiveCellValue(snapshot.rows[rowIndex]?.[columnIndex] ?? "");
+  }
+
+  async function commitActiveCell() {
+    if (!activeCell) {
+      return;
+    }
+    const { rowIndex, columnIndex } = activeCell;
+    await runAction(() => editCell(rowIndex, columnIndex, activeCellValue));
+    setActiveCell(null);
+  }
+
+  function cancelActiveCell() {
+    setActiveCell(null);
+  }
+
   function openColumnContextMenu(event, header, role = null) {
     event.preventDefault();
     event.stopPropagation();
@@ -856,7 +919,7 @@ export default function App() {
     <main className="app-shell">
       <header className="app-header">
         <div className="app-header-main">
-          <strong className="app-title">Calcite</strong>
+          <strong className="app-title">{isDataEditorWindow ? "Calcite Data Editor" : "Calcite"}</strong>
           <span className="header-divider" aria-hidden="true" />
           <span className="header-meta" title={snapshot.loaded_file_path || snapshot.loaded_file_name || ""}>
             {snapshot.loaded_file_name || "No file loaded"}
@@ -866,6 +929,11 @@ export default function App() {
           </span>
         </div>
         <div className="app-header-actions" aria-label="Primary actions">
+          {!isDataEditorWindow ? (
+            <button type="button" onClick={() => runAction(openDataEditorWindow)}>
+              Open Data Editor
+            </button>
+          ) : null}
           <button type="button" className="primary-button" onClick={chooseCsvAndLoad}>
             Load CSV
           </button>
@@ -902,23 +970,42 @@ export default function App() {
         </div>
       ) : null}
 
-      <section className="workbench">
+      <section className={isDataEditorWindow ? "workbench workbench-data-editor" : "workbench"}>
         <aside className="workbench-sidebar workbench-left">
           <article className="panel dataframe-panel">
             <div className="panel-header">
               <div>
-                <h2>Workspace</h2>
+                <h2>{isDataEditorWindow ? "Data Editor" : "Data"}</h2>
               </div>
-              <TabStrip tabs={WORKSPACE_TABS} activeTab={workspaceTab} onChange={setWorkspaceTab} compact />
+              {isDataEditorWindow ? (
+                <TabStrip tabs={DATA_TABS} activeTab={dataTab} onChange={setDataTab} compact />
+              ) : null}
             </div>
             <div className="panel-body">
-              {workspaceTab === "data" ? (
-                <>
+              <>
                   <div className="panel-subtitle-row">
                     <span className="panel-subtitle-badge">Data</span>
-                    <p>Load, reshape, filter, and inspect the active table.</p>
+                    <p>
+                      {isDataEditorWindow
+                        ? "Edit, reshape, pivot, and inspect the active table in a larger workspace."
+                        : "Inspect the active table while setting up the graph."}
+                    </p>
                   </div>
-                  <TabStrip tabs={DATA_TABS} activeTab={dataTab} onChange={setDataTab} />
+                  {!isDataEditorWindow ? (
+                    <div className="subpanel workspace-callout">
+                      <div className="subpanel-heading">
+                        <h3>Open a larger editor when needed</h3>
+                      </div>
+                      <p className="panel-caption panel-caption-compact">
+                        Keep this preview beside the graph, and move restructuring or heavy editing into a separate window.
+                      </p>
+                      <div className="actions">
+                        <button type="button" onClick={() => runAction(openDataEditorWindow)}>
+                          Open Data Editor Window
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                   {dataTab === "load" ? (
                     <>
                       <div className="drop-target">
@@ -1186,7 +1273,130 @@ export default function App() {
                   ) : null}
                   {dataTab === "table" ? (
                     <>
-                      <details className="subpanel accordion" open>
+                      <div className="subpanel">
+                        <div className="subpanel-heading">
+                          <h3>Table Preview</h3>
+                          <span>{snapshot.visible_row_count} visible rows</span>
+                        </div>
+                        <p className="table-preview-note">
+                          Double-click a cell to edit it directly.
+                        </p>
+                        {snapshot.headers.length === 0 ? (
+                          <div className="table-empty">Load a CSV to render the table preview.</div>
+                        ) : (
+                          <div className="table-preview-scroll">
+                            <table className="table-preview">
+                              <thead>
+                                <tr>
+                                  <th className="row-index-cell">#</th>
+                                  {snapshot.headers.map((header, columnIndex) => (
+                                    <th key={`${header}-${columnIndex}`} onContextMenu={(event) => openTableHeaderContextMenu(event, header, columnIndex)}>
+                                      <button
+                                        className="table-header-button"
+                                        onClick={() => runAction(() => toggleSortByColumn(columnIndex))}
+                                        title={`Sort by ${header}`}
+                                      >
+                                        {header}
+                                        {snapshot.sort_column === columnIndex
+                                          ? snapshot.sort_ascending
+                                            ? " ▲"
+                                            : " ▼"
+                                          : ""}
+                                      </button>
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {previewRows.map(({ row, rowIndex }) => (
+                                  <tr
+                                    key={`preview-row-${rowIndex}`}
+                                    className={selectedRowIndices.includes(rowIndex) ? "row-selected" : ""}
+                                    onClick={() => runAction(() => toggleRowSelection(rowIndex))}
+                                    onContextMenu={(event) => {
+                                      event.preventDefault();
+                                      setContextMenu({
+                                        kind: "row",
+                                        x: event.clientX,
+                                        y: event.clientY,
+                                        rowIndex,
+                                      });
+                                    }}
+                                  >
+                                    <th className="row-index-cell">{rowIndex + 1}</th>
+                                    {snapshot.headers.map((_, columnIndex) => {
+                                      const isEditing =
+                                        activeCell?.rowIndex === rowIndex &&
+                                        activeCell?.columnIndex === columnIndex;
+                                      return (
+                                        <td
+                                          key={`${rowIndex}-${columnIndex}`}
+                                          className={isEditing ? "table-cell-editing" : "table-cell"}
+                                          onDoubleClick={(event) => {
+                                            event.stopPropagation();
+                                            beginCellEdit(rowIndex, columnIndex);
+                                          }}
+                                        >
+                                          {isEditing ? (
+                                            <input
+                                              autoFocus
+                                              className="table-cell-input"
+                                              value={activeCellValue}
+                                              onChange={(event) => setActiveCellValue(event.target.value)}
+                                              onClick={(event) => event.stopPropagation()}
+                                              onBlur={() => commitActiveCell()}
+                                              onKeyDown={(event) => {
+                                                if (event.key === "Enter") {
+                                                  event.preventDefault();
+                                                  commitActiveCell();
+                                                } else if (event.key === "Escape") {
+                                                  event.preventDefault();
+                                                  cancelActiveCell();
+                                                }
+                                              }}
+                                            />
+                                          ) : (
+                                            row[columnIndex] ?? ""
+                                          )}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        {snapshot.visible_row_count > previewRows.length ? (
+                          <p className="table-preview-note">
+                            Showing first {previewRows.length} of {snapshot.visible_row_count} visible rows.
+                          </p>
+                        ) : snapshot.row_filter_query.trim() !== "" && snapshot.visible_row_count === 0 ? (
+                          <p className="table-preview-note">
+                            No rows matched filter "{snapshot.row_filter_query}".
+                          </p>
+                        ) : null}
+                      </div>
+                      <details className="subpanel accordion">
+                        <summary>Columns</summary>
+                        <div className="subpanel-content">
+                          <ul className="chip-list">
+                            {snapshot.headers.map((header) => (
+                              <li className="chip" key={header}>
+                                <span className="chip-label">{header}</span>
+                                <span className="chip-actions">
+                                  <button onContextMenu={(event) => openColumnContextMenu(event, header, "x")} onClick={() => applyColumnSelection("x", header)}>X</button>
+                                  <button onContextMenu={(event) => openColumnContextMenu(event, header, "y")} onClick={() => applyColumnSelection("y", header)}>Y</button>
+                                  <button onContextMenu={(event) => openColumnContextMenu(event, header, "subgroup")} onClick={() => applyColumnSelection("subgroup", header)}>
+                                    Group
+                                  </button>
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </details>
+                      <details className="subpanel accordion" open={isDataEditorWindow}>
                         <summary>Table Edit</summary>
                         <div className="subpanel-content">
                           <label>
@@ -1281,270 +1491,194 @@ export default function App() {
                           </div>
                         </div>
                       </details>
-                      <details className="subpanel accordion">
-                        <summary>Columns</summary>
-                        <div className="subpanel-content">
-                          <ul className="chip-list">
-                            {snapshot.headers.map((header) => (
-                              <li className="chip" key={header}>
-                                <span className="chip-label">{header}</span>
-                                <span className="chip-actions">
-                                  <button onContextMenu={(event) => openColumnContextMenu(event, header, "x")} onClick={() => applyColumnSelection("x", header)}>X</button>
-                                  <button onContextMenu={(event) => openColumnContextMenu(event, header, "y")} onClick={() => applyColumnSelection("y", header)}>Y</button>
-                                  <button onContextMenu={(event) => openColumnContextMenu(event, header, "subgroup")} onClick={() => applyColumnSelection("subgroup", header)}>
-                                    Group
-                                  </button>
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </details>
-                      <div className="subpanel">
-                        <div className="subpanel-heading">
-                          <h3>Table Preview</h3>
-                          <span>{snapshot.visible_row_count} visible rows</span>
-                        </div>
-                        {snapshot.headers.length === 0 ? (
-                          <div className="table-empty">Load a CSV to render the table preview.</div>
-                        ) : (
-                          <div className="table-preview-scroll">
-                            <table className="table-preview">
-                              <thead>
-                                <tr>
-                                  <th className="row-index-cell">#</th>
-                                  {snapshot.headers.map((header, columnIndex) => (
-                                    <th key={`${header}-${columnIndex}`} onContextMenu={(event) => openTableHeaderContextMenu(event, header, columnIndex)}>
-                                      <button
-                                        className="table-header-button"
-                                        onClick={() => runAction(() => toggleSortByColumn(columnIndex))}
-                                        title={`Sort by ${header}`}
-                                      >
-                                        {header}
-                                        {snapshot.sort_column === columnIndex
-                                          ? snapshot.sort_ascending
-                                            ? " ▲"
-                                            : " ▼"
-                                          : ""}
-                                      </button>
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {previewRows.map(({ row, rowIndex }) => (
-                                  <tr
-                                    key={`preview-row-${rowIndex}`}
-                                    className={selectedRowIndices.includes(rowIndex) ? "row-selected" : ""}
-                                    onClick={() => runAction(() => toggleRowSelection(rowIndex))}
-                                    onContextMenu={(event) => {
-                                      event.preventDefault();
-                                      setContextMenu({
-                                        kind: "row",
-                                        x: event.clientX,
-                                        y: event.clientY,
-                                        rowIndex,
-                                      });
-                                    }}
-                                  >
-                                    <th className="row-index-cell">{rowIndex + 1}</th>
-                                    {snapshot.headers.map((_, columnIndex) => (
-                                      <td key={`${rowIndex}-${columnIndex}`}>
-                                        {row[columnIndex] ?? ""}
-                                      </td>
-                                    ))}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                        {snapshot.visible_row_count > previewRows.length ? (
-                          <p className="table-preview-note">
-                            Showing first {previewRows.length} of {snapshot.visible_row_count} visible rows.
-                          </p>
-                        ) : snapshot.row_filter_query.trim() !== "" && snapshot.visible_row_count === 0 ? (
-                          <p className="table-preview-note">
-                            No rows matched filter "{snapshot.row_filter_query}".
-                          </p>
-                        ) : null}
-                      </div>
                     </>
                   ) : null}
-                </>
-              ) : null}
-              {workspaceTab === "plot" ? (
-                <>
-                  <div className="panel-subtitle-row">
-                    <span className="panel-subtitle-badge">Plot setup</span>
-                    <p>Choose the graph type, columns, row filter, and scale.</p>
-                  </div>
-                  <label>
-                    Graph Type
-                    <select value={graphType} onChange={(event) => setGraphType(event.target.value)}>
-                      {GRAPH_TYPES.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                      {!GRAPH_TYPES.includes(graphType) ? <option value={graphType}>{graphType}</option> : null}
-                    </select>
-                  </label>
-                  <label>
-                    Row Filter
-                    <input value={rowFilter} onChange={(event) => setRowFilter(event.target.value)} placeholder="beta" />
-                  </label>
-                  <label>
-                    X Column
-                    <input value={xColumn} onChange={(event) => setXColumn(event.target.value)} placeholder="Category" />
-                  </label>
-                  <label>
-                    Y Column
-                    <input value={yColumn} onChange={(event) => setYColumn(event.target.value)} placeholder="Value" />
-                  </label>
-                  <label>
-                    Sub-group
-                    <input value={subgroupColumn} onChange={(event) => setSubgroupColumn(event.target.value)} placeholder="Group" />
-                  </label>
-                  <label className="checkbox-row">
-                    <input
-                      type="checkbox"
-                      checked={yLogScale}
-                      onChange={(event) => updateYLogScale(event.target.checked)}
-                    />
-                    Y Log Scale
-                  </label>
-                  <div className="actions">
-                    <button
-                      type="button"
-                      className="primary-button"
-                      onClick={() =>
-                        runAction(() =>
-                          applyGraphControls(
-                            graphType,
-                            rowFilter,
-                            xColumn,
-                            yColumn,
-                            subgroupColumn,
-                            yLogScale,
-                          ),
-                        )
-                      }
-                    >
-                      Apply Plot
-                    </button>
-                    <button type="button" onClick={() => runAction(exportGraphSvg)}>
-                      Save SVG
-                    </button>
-                  </div>
-                </>
-              ) : null}
-              {workspaceTab === "analysis" ? (
-                <>
-                  <div className="panel-subtitle-row">
-                    <span className="panel-subtitle-badge">Analysis</span>
-                    <p>Run statistics against the current X and Y columns.</p>
-                  </div>
-                  <div className="analysis-quick-actions">
-                    <button onClick={() => runAction(() => runOneWayAnovaAnalysis(xColumn, yColumn))}>
-                      ANOVA
-                    </button>
-                    <button onClick={() => runAction(() => runPearsonCorrelationAnalysis(xColumn, yColumn))}>
-                      Pearson
-                    </button>
-                    <button onClick={() => runAction(() => runLinearRegressionAnalysis(xColumn, yColumn))}>
-                      Regression
-                    </button>
-                    <button onClick={() => runAction(() => runChiSquaredAnalysis(xColumn, yColumn))}>
-                      Chi-Squared
-                    </button>
-                  </div>
-                  <details className="subpanel accordion" open>
-                    <summary>More analyses</summary>
-                    <div className="subpanel-content">
-                      <div className="actions">
-                        <button onClick={() => runAction(() => runTukeyHsdAnalysis(xColumn, yColumn))}>
-                          Run Tukey HSD
-                        </button>
-                        <button onClick={() => runAction(() => runShapiroWilkAnalysis(xColumn, yColumn))}>
-                          Run Shapiro-Wilk
-                        </button>
-                        <button onClick={() => runAction(() => runMannWhitneyUAnalysis(xColumn, yColumn))}>
-                          Run Mann-Whitney U
-                        </button>
-                        <button onClick={() => runAction(() => runIndependentTTestAnalysis(xColumn, yColumn))}>
-                          Run Independent t-test
-                        </button>
-                        <button onClick={() => runAction(() => runWilcoxonSignedRankAnalysis(xColumn, yColumn))}>
-                          Run Wilcoxon
-                        </button>
-                        <button onClick={() => runAction(() => runPairedTTestAnalysis(xColumn, yColumn))}>
-                          Run Paired t-test
-                        </button>
-                        <button onClick={() => runAction(() => runKruskalWallisAnalysis(xColumn, yColumn))}>
-                          Run Kruskal-Wallis
-                        </button>
-                        <button onClick={() => runAction(() => runDunnPostHocAnalysis(xColumn, yColumn))}>
-                          Run Dunn
-                        </button>
-                        <button onClick={() => runAction(() => runFourPlRegressionAnalysis(xColumn, yColumn))}>
-                          Run 4PL
-                        </button>
-                        <button onClick={() => runAction(() => runSpearmanCorrelationAnalysis(xColumn, yColumn))}>
-                          Run Spearman
-                        </button>
-                        <button onClick={() => runAction(() => runTwoProportionAnalysis(xColumn, yColumn))}>
-                          Run 2-Proportion
-                        </button>
-                        <button onClick={() => runAction(() => runChiSquaredAnalysis(xColumn, yColumn))}>
-                          Run Chi-Squared
-                        </button>
-                      </div>
-                    </div>
-                  </details>
-                </>
-              ) : null}
+              </>
             </div>
           </article>
         </aside>
 
-        <section className="workbench-focus">
-          <article className="panel graph-panel graph-focus-panel">
-            <div className="graph-panel-header">
-              <div>
-                <h2>Graph</h2>
-                <p className="panel-caption panel-caption-compact">
-                  {snapshot.current_graph_type} from {snapshot.visible_row_count}/{snapshot.row_count} visible rows.
-                </p>
+        {!isDataEditorWindow ? (
+          <section className="workbench-focus">
+            <article className="panel graph-panel graph-focus-panel">
+              <div className="graph-panel-header">
+                <div>
+                  <h2>Graph</h2>
+                  <p className="panel-caption panel-caption-compact">
+                    {snapshot.current_graph_type} from {snapshot.visible_row_count}/{snapshot.row_count} visible rows.
+                  </p>
+                </div>
+                <button type="button" onClick={() => runAction(exportGraphSvg)} title={`Saves as ${buildGraphExportName(snapshot)}`}>
+                  Save SVG
+                </button>
               </div>
-              <button type="button" onClick={() => runAction(exportGraphSvg)} title={`Saves as ${buildGraphExportName(snapshot)}`}>
-                Save SVG
-              </button>
-            </div>
-            <div className="panel-body">
-              <div className="graph-summary">
-                {renderOverviewItems(overviewItems, "graph-summary-wide")}
+              <div className="panel-body">
+                <div className="graph-summary">
+                  {renderOverviewItems(overviewItems, "graph-summary-wide")}
+                </div>
+                <div className="graph-canvas graph-canvas-focus" ref={graphCanvasRef}>
+                  <GraphView snapshot={snapshot} graphType={graphType} yLogScale={yLogScale} />
+                </div>
               </div>
-              <div className="graph-canvas graph-canvas-focus" ref={graphCanvasRef}>
-                <GraphView snapshot={snapshot} graphType={graphType} yLogScale={yLogScale} />
-              </div>
-            </div>
-          </article>
-        </section>
+            </article>
+          </section>
+        ) : null}
 
-        <aside className="workbench-sidebar workbench-right">
-          <article className="panel results-panel">
-            <div className="panel-header">
-              <div>
-                <h2>Results</h2>
-                <p className="panel-caption">
-                  Keep the latest summary visible, then open log or notes only when you need them.
-                </p>
+        {!isDataEditorWindow ? (
+          <aside className="workbench-sidebar workbench-right">
+            <article className="panel results-panel plot-config-panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Plot</h2>
+                  <p className="panel-caption">
+                    Choose the graph type, columns, row filter, and scale while looking at the table.
+                  </p>
+                </div>
               </div>
-              <TabStrip tabs={RESULTS_TABS} activeTab={resultsTab} onChange={setResultsTab} compact />
-            </div>
-            <div className="panel-body">
-              {resultsTab === "summary" ? (
+              <div className="panel-body">
+                <label>
+                  Graph Type
+                  <select value={graphType} onChange={(event) => setGraphType(event.target.value)}>
+                    {GRAPH_TYPES.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                    {!GRAPH_TYPES.includes(graphType) ? <option value={graphType}>{graphType}</option> : null}
+                  </select>
+                </label>
+                <label>
+                  Row Filter
+                  <input value={rowFilter} onChange={(event) => setRowFilter(event.target.value)} placeholder="beta" />
+                </label>
+                <label>
+                  X Column
+                  <input value={xColumn} onChange={(event) => setXColumn(event.target.value)} placeholder="Category" />
+                </label>
+                <label>
+                  Y Column
+                  <input value={yColumn} onChange={(event) => setYColumn(event.target.value)} placeholder="Value" />
+                </label>
+                <label>
+                  Sub-group
+                  <input value={subgroupColumn} onChange={(event) => setSubgroupColumn(event.target.value)} placeholder="Group" />
+                </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={yLogScale}
+                    onChange={(event) => updateYLogScale(event.target.checked)}
+                  />
+                  Y Log Scale
+                </label>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() =>
+                      runAction(() =>
+                        applyGraphControls(
+                          graphType,
+                          rowFilter,
+                          xColumn,
+                          yColumn,
+                          subgroupColumn,
+                          yLogScale,
+                        ),
+                      )
+                    }
+                  >
+                    Apply Plot
+                  </button>
+                  <button type="button" onClick={() => runAction(exportGraphSvg)}>
+                    Save SVG
+                  </button>
+                </div>
+              </div>
+            </article>
+
+            <article className="panel results-panel analysis-panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Analysis</h2>
+                  <p className="panel-caption">
+                    Run statistics against the current X and Y columns.
+                  </p>
+                </div>
+              </div>
+              <div className="panel-body">
+                <div className="analysis-quick-actions">
+                  <button onClick={() => runAction(() => runOneWayAnovaAnalysis(xColumn, yColumn))}>
+                    ANOVA
+                  </button>
+                  <button onClick={() => runAction(() => runPearsonCorrelationAnalysis(xColumn, yColumn))}>
+                    Pearson
+                  </button>
+                  <button onClick={() => runAction(() => runLinearRegressionAnalysis(xColumn, yColumn))}>
+                    Regression
+                  </button>
+                  <button onClick={() => runAction(() => runChiSquaredAnalysis(xColumn, yColumn))}>
+                    Chi-Squared
+                  </button>
+                </div>
+                <details className="subpanel accordion">
+                  <summary>More analyses</summary>
+                  <div className="subpanel-content">
+                    <div className="actions">
+                      <button onClick={() => runAction(() => runTukeyHsdAnalysis(xColumn, yColumn))}>
+                        Run Tukey HSD
+                      </button>
+                      <button onClick={() => runAction(() => runShapiroWilkAnalysis(xColumn, yColumn))}>
+                        Run Shapiro-Wilk
+                      </button>
+                      <button onClick={() => runAction(() => runMannWhitneyUAnalysis(xColumn, yColumn))}>
+                        Run Mann-Whitney U
+                      </button>
+                      <button onClick={() => runAction(() => runIndependentTTestAnalysis(xColumn, yColumn))}>
+                        Run Independent t-test
+                      </button>
+                      <button onClick={() => runAction(() => runWilcoxonSignedRankAnalysis(xColumn, yColumn))}>
+                        Run Wilcoxon
+                      </button>
+                      <button onClick={() => runAction(() => runPairedTTestAnalysis(xColumn, yColumn))}>
+                        Run Paired t-test
+                      </button>
+                      <button onClick={() => runAction(() => runKruskalWallisAnalysis(xColumn, yColumn))}>
+                        Run Kruskal-Wallis
+                      </button>
+                      <button onClick={() => runAction(() => runDunnPostHocAnalysis(xColumn, yColumn))}>
+                        Run Dunn
+                      </button>
+                      <button onClick={() => runAction(() => runFourPlRegressionAnalysis(xColumn, yColumn))}>
+                        Run 4PL
+                      </button>
+                      <button onClick={() => runAction(() => runSpearmanCorrelationAnalysis(xColumn, yColumn))}>
+                        Run Spearman
+                      </button>
+                      <button onClick={() => runAction(() => runTwoProportionAnalysis(xColumn, yColumn))}>
+                        Run 2-Proportion
+                      </button>
+                      <button onClick={() => runAction(() => runChiSquaredAnalysis(xColumn, yColumn))}>
+                        Run Chi-Squared
+                      </button>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </article>
+
+            <article className="panel results-panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Results</h2>
+                  <p className="panel-caption">
+                    Keep the latest summary visible, then open log or notes only when you need them.
+                  </p>
+                </div>
+                <TabStrip tabs={RESULTS_TABS} activeTab={resultsTab} onChange={setResultsTab} compact />
+              </div>
+              <div className="panel-body">
+                {resultsTab === "summary" ? (
                 <>
                   <div className="results-toolbar">
                     <button onClick={() => setErrorMessage("")} disabled={!errorMessage}>
@@ -1619,10 +1753,11 @@ export default function App() {
                     <strong>No graph annotations yet</strong>
                   </div>
                 )
-              ) : null}
-            </div>
-          </article>
-        </aside>
+                ) : null}
+              </div>
+            </article>
+          </aside>
+        ) : null}
       </section>
 
       {renderContextMenu()}

@@ -47,6 +47,9 @@
 - The Tauri React analysis pane now exposes chi-squared analysis from the existing Rust backend.
 - The Tauri React header now exposes project load alongside project save.
 - The Tauri shell now supports native CSV/project pickers, CSV export save dialogs, file-drop import, and a File menu.
+- The Tauri shell now supports a separate `Data Editor` window so table editing and reshaping can move out of the graph-focused main window.
+- The Tauri React table preview now supports direct inline cell editing by double-click.
+- The Data Editor window now expands the table preview to the full visible row set instead of limiting it to the first 25 rows.
 
 ## Main Branch Parity Check
 
@@ -79,6 +82,7 @@ Main branch と Rust/Tauri 現状を比較した結果を、機能領域ごと�
 - 主要状態の保存・復元をさらに堅くする
 - 表示文言、エラー表示、結果要約を読みやすくする
 - グラフと結果の見た目を整えて、Rust/Tauri 側の操作感を安定させる
+- `main window` と `Data Editor window` の責務分離を進める
 
 ## Development Plan
 
@@ -185,10 +189,26 @@ Targets:
 - 画面レイアウトの微調整
 - renderer / use-case tests の追加
 - ネイティブのファイル選択、ドラッグ&ドロップ、メニュー連携を広げる
+- Data Editor の実用化と main/editor の役割分担の固定
 
 Exit Criteria:
 
 - 日常利用で気になる欠点が減り、回帰検知がしやすい状態になる
+
+Progress:
+
+- advanced filter condition state now round-trips through project save/load and re-applies after table mutation
+- bar/count/stacked-bar/histogram layout now keeps bars inside the plotting region more reliably
+- main window now keeps a graph-adjacent table preview while a separate Data Editor window can open for larger edits
+- table preview cells can now be edited inline, and the Data Editor window shows the full visible row set
+
+## Data Editor Tasks
+
+- Move reshape / pivot / calculate / column editing into a toolbar-like Data Editor layout instead of stacked accordion sections.
+- Add keyboard-first table navigation in the Data Editor window.
+- Add larger-scale copy/paste flows for rectangular multi-cell edits.
+- Decide whether project/file actions should stay duplicated in both windows or centralize around the main shell.
+- Add focused UX tests around main-window preview vs Data Editor responsibilities.
 
 ## Rust Migration Direction
 
@@ -240,6 +260,7 @@ Exit Criteria:
 - Refactored large handlers into smaller modules.
 - Removed the legacy Python GUI shell and its orchestration modules.
 - Added broader service-layer and application-layer tests.
+- Split the Tauri React shell toward a `main graph window` plus a dedicated `Data Editor` window mode.
 
 ### Visualization additions
 
@@ -258,6 +279,7 @@ Exit Criteria:
 - Improved default legend placement for categorical plots.
 - Added sortable table preview headers and filtered-row rendering in the Tauri React shell.
 - Added DataFrame column chip actions for updating graph settings from the preview.
+- Added inline table-cell editing and a dedicated larger Data Editor window for table-centric work.
 - Added Rust-native proportion plot, mosaic plot, and histogram renderers.
 - Added Rust-native chi-squared analysis with p-value, residuals, and contribution tables.
 - Added Rust-native Pearson correlation analysis with sample size and p-value reporting.

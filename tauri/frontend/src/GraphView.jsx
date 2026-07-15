@@ -31,6 +31,35 @@ function formatNumber(value) {
   return value.toFixed(2);
 }
 
+function getPlotArea() {
+  return {
+    left: MARGIN.left,
+    right: WIDTH - MARGIN.right,
+    top: MARGIN.top,
+    bottom: HEIGHT - MARGIN.bottom,
+    width: WIDTH - MARGIN.left - MARGIN.right,
+    height: HEIGHT - MARGIN.top - MARGIN.bottom,
+  };
+}
+
+function buildCategoricalLayout(categoryCount, options = {}) {
+  const plot = getPlotArea();
+  const safeCount = Math.max(categoryCount, 1);
+  const gapRatio = options.gapRatio ?? 0.28;
+  const outerPadding = options.outerPadding ?? 0.18;
+  const totalStep = plot.width / safeCount;
+  const bandWidth = totalStep * (1 - gapRatio);
+  const innerWidth = bandWidth * (1 - outerPadding * 2);
+  const xScale = (index) => plot.left + totalStep * index + totalStep / 2;
+  return {
+    plot,
+    xScale,
+    totalStep,
+    bandWidth,
+    innerWidth: Math.max(12, innerWidth),
+  };
+}
+
 function getVisibleRows(snapshot) {
   const indices =
     snapshot.visible_row_indices.length > 0 || snapshot.row_filter_query.trim() !== ""
@@ -227,11 +256,11 @@ function drawBarPlot({ snapshot, rows, xName, yName, subgroupName, annotationSum
 
   const allMeans = groups.flatMap(([, values]) => values.map((entry) => entry.mean).filter(Number.isFinite));
   const yDomain = { min: 0, max: Math.max(...allMeans, 1) * 1.15 };
-  const plotWidth = WIDTH - MARGIN.left - MARGIN.right;
-  const xScale = buildLinearScale(0, Math.max(cloud.categories.length - 1, 1), MARGIN.left + 26, WIDTH - MARGIN.right - 26);
+  const layout = buildCategoricalLayout(cloud.categories.length, { gapRatio: 0.24, outerPadding: 0.12 });
+  const xScale = layout.xScale;
   const yScale = buildLinearScale(yDomain.min, yDomain.max, HEIGHT - MARGIN.bottom, MARGIN.top);
   const seriesCount = groups.length;
-  const bandWidth = Math.max(20, plotWidth / Math.max(cloud.categories.length, 1) * 0.6);
+  const barWidth = Math.max(10, layout.innerWidth / Math.max(seriesCount, 1) - 4);
   const annotations = parseAnnotationSummary(annotationSummary);
 
   return (
@@ -242,8 +271,6 @@ function drawBarPlot({ snapshot, rows, xName, yName, subgroupName, annotationSum
       {renderYAxisTickLabels({ domainMin: yDomain.min, domainMax: yDomain.max })}
       {renderVerticalGridLines(Math.max(cloud.categories.length, 4))}
       {renderTopRightSpines()}
-      <line x1={MARGIN.left} y1={HEIGHT - MARGIN.bottom} x2={WIDTH - MARGIN.right} y2={HEIGHT - MARGIN.bottom} stroke="#6b5d4d" />
-      <line x1={MARGIN.left} y1={MARGIN.top} x2={MARGIN.left} y2={HEIGHT - MARGIN.bottom} stroke="#6b5d4d" />
       {cloud.categories.map((category, index) => (
         <text
           key={`bar-x-${category}`}
@@ -264,8 +291,10 @@ function drawBarPlot({ snapshot, rows, xName, yName, subgroupName, annotationSum
               if (!Number.isFinite(entry.mean)) {
                 return null;
               }
-              const xCenter = xScale(categoryIndex) + ((seriesIndex - (seriesCount - 1) / 2) * (bandWidth / Math.max(seriesCount, 1)));
-              const barWidth = Math.max(10, bandWidth / Math.max(seriesCount, 1) - 4);
+              const slotWidth = layout.innerWidth / Math.max(seriesCount, 1);
+              const xCenter =
+                xScale(categoryIndex) +
+                (seriesIndex - (seriesCount - 1) / 2) * slotWidth;
               const barTop = yScale(entry.mean);
               return (
                 <g key={`${seriesLabel}-${entry.category}`}>
@@ -284,6 +313,7 @@ function drawBarPlot({ snapshot, rows, xName, yName, subgroupName, annotationSum
           </g>
         );
       })}
+      {renderPrimaryAxes()}
       {renderPairAnnotations({
         annotations,
         categories: cloud.categories,
@@ -303,10 +333,11 @@ function drawCountPlot({ snapshot, rows, xName, subgroupName, annotationSummary 
     1,
     ...[...summary.seriesMap.values()].flatMap((categoryMap) => [...categoryMap.values()]),
   );
-  const xScale = buildLinearScale(0, Math.max(summary.categories.length - 1, 1), MARGIN.left + 26, WIDTH - MARGIN.right - 26);
+  const layout = buildCategoricalLayout(summary.categories.length, { gapRatio: 0.24, outerPadding: 0.12 });
+  const xScale = layout.xScale;
   const yScale = buildLinearScale(0, maxCount * 1.2, HEIGHT - MARGIN.bottom, MARGIN.top);
   const groups = [...summary.seriesMap.entries()];
-  const bandWidth = Math.max(20, (WIDTH - MARGIN.left - MARGIN.right) / Math.max(summary.categories.length, 1) * 0.7);
+  const barWidth = Math.max(10, layout.innerWidth / Math.max(groups.length, 1) - 4);
   const annotations = parseAnnotationSummary(annotationSummary);
 
   return (
@@ -317,8 +348,6 @@ function drawCountPlot({ snapshot, rows, xName, subgroupName, annotationSummary 
       {renderYAxisTickLabels({ domainMin: 0, domainMax: maxCount * 1.2 })}
       {renderVerticalGridLines(Math.max(summary.categories.length, 4))}
       {renderTopRightSpines()}
-      <line x1={MARGIN.left} y1={HEIGHT - MARGIN.bottom} x2={WIDTH - MARGIN.right} y2={HEIGHT - MARGIN.bottom} stroke="#6b5d4d" />
-      <line x1={MARGIN.left} y1={MARGIN.top} x2={MARGIN.left} y2={HEIGHT - MARGIN.bottom} stroke="#6b5d4d" />
       {summary.categories.map((category, index) => (
         <text key={`count-x-${category}`} x={xScale(index)} y={HEIGHT - 24} textAnchor="middle" fontSize="12" fill="#6b5d4d">
           {category}
@@ -330,8 +359,10 @@ function drawCountPlot({ snapshot, rows, xName, subgroupName, annotationSummary 
           <g key={seriesLabel}>
             {summary.categories.map((category, categoryIndex) => {
               const count = categoryMap.get(category) || 0;
-              const xCenter = xScale(categoryIndex) + ((seriesIndex - (groups.length - 1) / 2) * (bandWidth / Math.max(groups.length, 1)));
-              const barWidth = Math.max(10, bandWidth / Math.max(groups.length, 1) - 4);
+              const slotWidth = layout.innerWidth / Math.max(groups.length, 1);
+              const xCenter =
+                xScale(categoryIndex) +
+                (seriesIndex - (groups.length - 1) / 2) * slotWidth;
               const barTop = yScale(count);
               return (
                 <g key={`${seriesLabel}-${category}`}>
@@ -350,6 +381,7 @@ function drawCountPlot({ snapshot, rows, xName, subgroupName, annotationSummary 
           </g>
         );
       })}
+      {renderPrimaryAxes()}
       {renderPairAnnotations({
         annotations,
         categories: summary.categories,
@@ -370,9 +402,9 @@ function drawStackedBarPlot({ snapshot, rows, xName, subgroupName, normalized = 
     return renderNoData("No stacked bar data", "No values were available.");
   }
 
-  const xScale = buildLinearScale(0, Math.max(summary.categories.length - 1, 1), MARGIN.left + 26, WIDTH - MARGIN.right - 26);
-  const plotHeight = HEIGHT - MARGIN.top - MARGIN.bottom;
-  const bandWidth = Math.max(24, (WIDTH - MARGIN.left - MARGIN.right) / Math.max(summary.categories.length, 1) * 0.62);
+  const layout = buildCategoricalLayout(summary.categories.length, { gapRatio: 0.3, outerPadding: 0.08 });
+  const xScale = layout.xScale;
+  const bandWidth = Math.max(18, layout.innerWidth);
   const yMax = normalized ? 1 : Math.max(
     1,
     ...summary.categories.map((category) =>
@@ -394,8 +426,6 @@ function drawStackedBarPlot({ snapshot, rows, xName, subgroupName, normalized = 
       })}
       {renderVerticalGridLines(Math.max(summary.categories.length, 4))}
       {renderTopRightSpines()}
-      <line x1={MARGIN.left} y1={HEIGHT - MARGIN.bottom} x2={WIDTH - MARGIN.right} y2={HEIGHT - MARGIN.bottom} stroke="#6b5d4d" />
-      <line x1={MARGIN.left} y1={MARGIN.top} x2={MARGIN.left} y2={HEIGHT - MARGIN.bottom} stroke="#6b5d4d" />
       {summary.categories.map((category, index) => (
         <text key={`stack-x-${category}`} x={xScale(index)} y={HEIGHT - 24} textAnchor="middle" fontSize="12" fill="#6b5d4d">
           {category}
@@ -434,6 +464,7 @@ function drawStackedBarPlot({ snapshot, rows, xName, subgroupName, normalized = 
           </g>
         );
       })}
+      {renderPrimaryAxes()}
       {renderPairAnnotations({
         annotations,
         categories: summary.categories,
@@ -465,9 +496,10 @@ function drawHistogram({ snapshot, rows, xName }) {
     counts[index] += 1;
   });
   const maxCount = Math.max(...counts, 1);
-  const xScale = buildLinearScale(0, bins - 1, MARGIN.left + 26, WIDTH - MARGIN.right - 26);
+  const layout = buildCategoricalLayout(bins, { gapRatio: 0.24, outerPadding: 0.1 });
+  const xScale = layout.xScale;
   const yScale = buildLinearScale(0, maxCount * 1.2, HEIGHT - MARGIN.bottom, MARGIN.top);
-  const barWidth = Math.max(12, ((WIDTH - MARGIN.left - MARGIN.right) / bins) * 0.72);
+  const barWidth = Math.max(12, layout.innerWidth);
 
   return (
     <svg width={WIDTH} height={HEIGHT} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} fontFamily={SVG_FONT_FAMILY}>
@@ -477,8 +509,6 @@ function drawHistogram({ snapshot, rows, xName }) {
       {renderYAxisTickLabels({ domainMin: 0, domainMax: maxCount * 1.2 })}
       {renderVerticalGridLines(Math.max(bins, 4))}
       {renderTopRightSpines()}
-      <line x1={MARGIN.left} y1={HEIGHT - MARGIN.bottom} x2={WIDTH - MARGIN.right} y2={HEIGHT - MARGIN.bottom} stroke="#6b5d4d" />
-      <line x1={MARGIN.left} y1={MARGIN.top} x2={MARGIN.left} y2={HEIGHT - MARGIN.bottom} stroke="#6b5d4d" />
       {counts.map((count, index) => {
         const x = xScale(index);
         const barTop = yScale(count);
@@ -499,6 +529,7 @@ function drawHistogram({ snapshot, rows, xName }) {
           </g>
         );
       })}
+      {renderPrimaryAxes()}
     </svg>
   );
 }
@@ -961,6 +992,15 @@ function renderTopRightSpines() {
     <>
       <line x1={MARGIN.left} y1={MARGIN.top} x2={WIDTH - MARGIN.right} y2={MARGIN.top} stroke="#ccb79d" opacity="0.45" />
       <line x1={WIDTH - MARGIN.right} y1={MARGIN.top} x2={WIDTH - MARGIN.right} y2={HEIGHT - MARGIN.bottom} stroke="#ccb79d" opacity="0.45" />
+    </>
+  );
+}
+
+function renderPrimaryAxes() {
+  return (
+    <>
+      <line x1={MARGIN.left} y1={HEIGHT - MARGIN.bottom} x2={WIDTH - MARGIN.right} y2={HEIGHT - MARGIN.bottom} stroke="#6b5d4d" />
+      <line x1={MARGIN.left} y1={MARGIN.top} x2={MARGIN.left} y2={HEIGHT - MARGIN.bottom} stroke="#6b5d4d" />
     </>
   );
 }
@@ -1531,8 +1571,8 @@ function drawPairedScatter({ snapshot, rows, xName, yName, yLogScale = false }) 
 
 function GraphViewImpl({ snapshot, graphType, yLogScale = false }, ref) {
   const rows = getVisibleRows(snapshot);
-  const xName = snapshot.x_column || snapshot.headers[0] || "";
-  const yName = snapshot.y_column || snapshot.headers[1] || "";
+  const xName = snapshot.x_column || "";
+  const yName = snapshot.y_column || "";
   const subgroupName = snapshot.subgroup_column || "";
   const annotationSummary = snapshot.graph_annotation_summary || "";
 
