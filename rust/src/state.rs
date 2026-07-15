@@ -188,6 +188,7 @@ pub struct TableViewState {
     pub sort_ascending: bool,
     pub selected_rows: BTreeSet<usize>,
     pub row_filter_query: String,
+    pub row_filter_conditions: Vec<FilterCondition>,
     pub visible_row_indices: Vec<usize>,
 }
 
@@ -197,6 +198,7 @@ impl TableViewState {
         self.sort_ascending = true;
         self.selected_rows.clear();
         self.row_filter_query.clear();
+        self.row_filter_conditions.clear();
         self.visible_row_indices.clear();
     }
 
@@ -273,6 +275,7 @@ impl ProjectState {
                 sort_ascending: snapshot.table_view.sort_ascending,
                 selected_rows: snapshot.table_view.selected_rows.into_iter().collect(),
                 row_filter_query: snapshot.table_view.row_filter_query,
+                row_filter_conditions: snapshot.table_view.row_filter_conditions,
                 visible_row_indices: Vec::new(),
             },
             ..Default::default()
@@ -497,6 +500,7 @@ impl ProjectState {
 
     pub fn set_row_filter(&mut self, query: impl Into<String>) {
         self.table_view.row_filter_query = query.into();
+        self.table_view.row_filter_conditions.clear();
         self.refresh_visible_row_indices();
         self.status_message = if self.table_view.row_filter_query.is_empty() {
             format!(
@@ -531,6 +535,7 @@ impl ProjectState {
         }
 
         self.table_view.row_filter_query = render_filter_summary(&conditions);
+        self.table_view.row_filter_conditions = conditions.clone();
         self.table_view.visible_row_indices = evaluate_filter_conditions(
             &self.data_table.rows,
             &self.data_table.headers,
@@ -588,6 +593,13 @@ impl ProjectState {
     pub fn refresh_visible_row_indices(&mut self) {
         self.table_view.visible_row_indices = if self.data_table.is_empty() {
             Vec::new()
+        } else if !self.table_view.row_filter_conditions.is_empty() {
+            evaluate_filter_conditions(
+                &self.data_table.rows,
+                &self.data_table.headers,
+                &self.table_view.row_filter_conditions,
+            )
+            .unwrap_or_default()
         } else {
             build_visible_row_indices(&self.data_table.rows, &self.table_view.row_filter_query)
         };
@@ -1129,6 +1141,50 @@ mod tests {
             .expect("advanced filter with or");
 
         assert_eq!(state.table_view.visible_row_indices, vec![0, 1]);
+    }
+
+    #[test]
+    fn project_state_reapplies_advanced_filter_after_table_mutation() {
+        let mut state = ProjectState::new();
+        state.set_loaded_table(
+            PathBuf::from("/tmp/example.csv"),
+            DataTable {
+                headers: vec!["name".to_owned(), "value".to_owned(), "group".to_owned()],
+                rows: vec![
+                    vec!["Alpha".to_owned(), "1".to_owned(), "A".to_owned()],
+                    vec!["beta".to_owned(), "5".to_owned(), "B".to_owned()],
+                    vec!["Gamma".to_owned(), "9".to_owned(), "A".to_owned()],
+                ],
+                column_metadata: vec![],
+            },
+        );
+
+        state
+            .set_advanced_row_filter(vec![
+                FilterCondition {
+                    connector: FilterConnector::And,
+                    column: "group".to_owned(),
+                    operator: FilterOperator::Equals,
+                    value: "A".to_owned(),
+                },
+                FilterCondition {
+                    connector: FilterConnector::And,
+                    column: "value".to_owned(),
+                    operator: FilterOperator::GreaterThan,
+                    value: "5".to_owned(),
+                },
+            ])
+            .expect("advanced filter");
+
+        assert_eq!(state.table_view.visible_row_indices, vec![2]);
+
+        state
+            .edit_cell(0, 1, "8".to_owned())
+            .expect("edit cell");
+        state.after_table_mutation();
+
+        assert_eq!(state.table_view.row_filter_conditions.len(), 2);
+        assert_eq!(state.table_view.visible_row_indices, vec![0, 2]);
     }
 
     #[test]

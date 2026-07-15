@@ -666,6 +666,7 @@ mod tests {
             sort_ascending: true,
             selected_rows: BTreeSet::new(),
             row_filter_query: String::new(),
+            row_filter_conditions: Vec::new(),
             visible_row_indices: vec![0, 1, 2, 3],
         };
 
@@ -707,6 +708,7 @@ mod tests {
             sort_ascending: true,
             selected_rows: BTreeSet::new(),
             row_filter_query: "a".to_owned(),
+            row_filter_conditions: Vec::new(),
             visible_row_indices: vec![0, 2],
         };
 
@@ -739,6 +741,7 @@ mod tests {
             sort_ascending: true,
             selected_rows: BTreeSet::new(),
             row_filter_query: String::new(),
+            row_filter_conditions: Vec::new(),
             visible_row_indices: vec![0, 1, 2, 3],
         };
 
@@ -781,6 +784,7 @@ mod tests {
             sort_ascending: true,
             selected_rows: BTreeSet::new(),
             row_filter_query: String::new(),
+            row_filter_conditions: Vec::new(),
             visible_row_indices: vec![0, 1, 2, 3],
         };
 
@@ -811,6 +815,7 @@ mod tests {
             sort_ascending: true,
             selected_rows: BTreeSet::new(),
             row_filter_query: String::new(),
+            row_filter_conditions: Vec::new(),
             visible_row_indices: vec![0, 1, 2, 3],
         };
 
@@ -840,6 +845,7 @@ mod tests {
             sort_ascending: true,
             selected_rows: BTreeSet::new(),
             row_filter_query: String::new(),
+            row_filter_conditions: Vec::new(),
             visible_row_indices: vec![0, 1, 2, 3],
         };
 
@@ -910,6 +916,7 @@ mod tests {
             sort_ascending: true,
             selected_rows: BTreeSet::new(),
             row_filter_query: String::new(),
+            row_filter_conditions: Vec::new(),
             visible_row_indices: vec![0, 1, 2, 3],
         };
 
@@ -947,6 +954,7 @@ mod tests {
             sort_ascending: true,
             selected_rows: BTreeSet::new(),
             row_filter_query: String::new(),
+            row_filter_conditions: Vec::new(),
             visible_row_indices: vec![0, 1, 2, 3],
         };
 

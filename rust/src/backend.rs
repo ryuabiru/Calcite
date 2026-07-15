@@ -1431,6 +1431,58 @@ mod tests {
     }
 
     #[test]
+    fn advanced_filter_round_trips_through_project_save_load() {
+        let mut backend = AppBackend::new();
+        let path = std::env::temp_dir().join("calcite_rust_advanced_filter_backend_roundtrip");
+        let expected_loaded_file_path = path.join("input.csv");
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).expect("create temp dir");
+        fs::write(&expected_loaded_file_path, "name,value,group\nAlpha,1,A\nBeta,5,B\nGamma,9,A\n")
+            .expect("write csv");
+
+        backend
+            .dispatch(AppCommand::LoadCsv {
+                path: expected_loaded_file_path.clone(),
+            })
+            .expect("load csv");
+        backend
+            .dispatch(AppCommand::SetAdvancedRowFilter {
+                conditions: vec![
+                    crate::core::FilterCondition {
+                        connector: crate::core::FilterConnector::And,
+                        column: "group".to_owned(),
+                        operator: crate::core::FilterOperator::Equals,
+                        value: "A".to_owned(),
+                    },
+                    crate::core::FilterCondition {
+                        connector: crate::core::FilterConnector::And,
+                        column: "value".to_owned(),
+                        operator: crate::core::FilterOperator::GreaterThan,
+                        value: "5".to_owned(),
+                    },
+                ],
+            })
+            .expect("set advanced row filter");
+        backend
+            .dispatch(AppCommand::SaveProject {
+                directory: path.clone(),
+            })
+            .expect("save project");
+
+        let mut restored = AppBackend::new();
+        restored
+            .dispatch(AppCommand::LoadProject {
+                directory: path.clone(),
+            })
+            .expect("load project");
+
+        assert_eq!(restored.project().table_view.row_filter_conditions.len(), 2);
+        assert_eq!(restored.project().table_view.visible_row_indices, vec![2]);
+
+        let _ = fs::remove_dir_all(&path);
+    }
+
+    #[test]
     fn import_delimited_text_updates_table_state() {
         let mut backend = AppBackend::new();
 

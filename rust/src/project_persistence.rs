@@ -4,6 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::core::FilterCondition;
 use crate::state::{ColumnKind, HeatmapNormalizationMode, ProjectState, TableViewState};
 
 pub const PROJECT_SCHEMA_VERSION: u32 = 2;
@@ -60,6 +61,8 @@ pub struct PersistedTableView {
     pub sort_ascending: bool,
     pub selected_rows: Vec<usize>,
     pub row_filter_query: String,
+    #[serde(default)]
+    pub row_filter_conditions: Vec<FilterCondition>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,6 +138,7 @@ impl From<&ProjectState> for PersistedProjectState {
                 sort_ascending: state.table_view.sort_ascending,
                 selected_rows: state.table_view.selected_rows.iter().copied().collect(),
                 row_filter_query: state.table_view.row_filter_query.clone(),
+                row_filter_conditions: state.table_view.row_filter_conditions.clone(),
             },
             analysis: PersistedAnalysisState {
                 statistical_annotations: Vec::new(),
@@ -174,6 +178,7 @@ impl From<&TableViewState> for PersistedTableView {
             sort_ascending: state.sort_ascending,
             selected_rows: state.selected_rows.iter().copied().collect(),
             row_filter_query: state.row_filter_query.clone(),
+            row_filter_conditions: state.row_filter_conditions.clone(),
         }
     }
 }
@@ -431,6 +436,7 @@ mod tests {
             sort_ascending: false,
             selected_rows,
             row_filter_query: "beta".to_owned(),
+            row_filter_conditions: vec![],
             visible_row_indices: vec![0, 2],
         };
 
@@ -451,6 +457,7 @@ mod tests {
         assert_eq!(snapshot.table_view.sort_column, Some(1));
         assert_eq!(snapshot.table_view.selected_rows, vec![0, 2]);
         assert_eq!(snapshot.table_view.row_filter_query, "beta");
+        assert!(snapshot.table_view.row_filter_conditions.is_empty());
     }
 
     #[test]
@@ -517,6 +524,7 @@ mod tests {
                 sort_ascending: true,
                 selected_rows: vec![],
                 row_filter_query: String::new(),
+                row_filter_conditions: vec![],
             },
         };
         write_json(&temp_dir.join(SETTINGS_FILENAME), &settings).expect("write settings");
@@ -556,6 +564,48 @@ mod tests {
         assert_eq!(loaded.settings.current_graph_type, "Box Plot");
         assert!(loaded.settings.y_log_scale);
         assert_eq!(loaded.analysis.graph_annotation_summary, "Dunn: alpha != beta");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn save_and_load_project_preserves_advanced_filter_conditions() {
+        let temp_dir = std::env::temp_dir().join("calcite_rust_advanced_filter_roundtrip");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let mut project = ProjectState::new();
+        project.data_table = DataTable::from_rows(
+            vec!["group".to_owned(), "value".to_owned()],
+            vec![
+                vec!["A".to_owned(), "1".to_owned()],
+                vec!["B".to_owned(), "5".to_owned()],
+                vec!["A".to_owned(), "9".to_owned()],
+            ],
+        );
+        project
+            .set_advanced_row_filter(vec![
+                FilterCondition {
+                    connector: crate::core::FilterConnector::And,
+                    column: "group".to_owned(),
+                    operator: crate::core::FilterOperator::Equals,
+                    value: "A".to_owned(),
+                },
+                FilterCondition {
+                    connector: crate::core::FilterConnector::And,
+                    column: "value".to_owned(),
+                    operator: crate::core::FilterOperator::GreaterThan,
+                    value: "5".to_owned(),
+                },
+            ])
+            .expect("advanced filter");
+
+        save_project_directory(&temp_dir, &project).expect("save project");
+        let loaded = load_project_directory(&temp_dir).expect("load project");
+
+        assert_eq!(loaded.table_view.row_filter_conditions.len(), 2);
+        assert_eq!(loaded.table_view.row_filter_conditions[0].column, "group");
+        assert_eq!(loaded.table_view.row_filter_conditions[1].column, "value");
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
